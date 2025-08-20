@@ -9,3 +9,5 @@ coverage/
 .env.*.local
 # backups locales
 __backup_*/
+
+/generated/prisma
