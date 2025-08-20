@@ -1,0 +1,22 @@
+{
+  "name": "zona-natural",
+  "compatibility_date": "2025-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "pages_build_output_dir": ".vercel/output/static",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "zona-natural-db",
+      "database_id": "REEMPLAZA_CON_TU_ID" // ejemplo: "9d1050f7-9988-49c7-be50-96102caa8923"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "zona-natural"
+    }
+  ],
+  "vars": {
+    "SITE_NAME": "ZONA NATURAL"
+  }
+}
