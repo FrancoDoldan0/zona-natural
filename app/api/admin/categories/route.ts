@@ -14,11 +14,16 @@ function slugify(input: string) {
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const q = url.searchParams.get("q") ?? "";
-  const take = Math.min(parseInt(url.searchParams.get("take") || "50", 10), 100);
+  const take = Math.min(parseInt(url.searchParams.get("take") || "50", 10), 200);
   const skip = parseInt(url.searchParams.get("skip") || "0", 10);
-  const where = q
-    ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { slug: { contains: q, mode: "insensitive" } }] }
-    : {};
+
+  const where: any = q ? {
+    OR: [
+      { name: { contains: q, mode: "insensitive" } },
+      { slug: { contains: q, mode: "insensitive" } },
+    ]
+  } : {};
+
   const [items, total] = await Promise.all([
     prisma.category.findMany({ where, orderBy: { id: "desc" }, take, skip }),
     prisma.category.count({ where }),
@@ -30,16 +35,12 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const name: string | undefined = body?.name;
-    let slug: string | undefined = body?.slug;
-    if (!name || typeof name !== "string" || !name.trim()) {
-      return NextResponse.json({ ok: false, error: "Nombre requerido" }, { status: 400 });
-    }
-    slug = slug && typeof slug === "string" && slug.trim() ? slugify(slug) : slugify(name);
-    if (!slug) return NextResponse.json({ ok: false, error: "Slug inválido" }, { status: 400 });
+    if (!name || !name.trim()) return NextResponse.json({ ok: false, error: "Nombre requerido" }, { status: 400 });
+    const slug: string = body?.slug?.trim() ? slugify(body.slug) : slugify(name);
 
-    const created = await prisma.category.create({ data: { name: name.trim(), slug } });
-    return NextResponse.json({ ok: true, item: created });
-  } catch {
+    const item = await prisma.category.create({ data: { name: name.trim(), slug } });
+    return NextResponse.json({ ok: true, item });
+  } catch (e:any) {
     return NextResponse.json({ ok: false, error: "Bad request" }, { status: 400 });
   }
 }

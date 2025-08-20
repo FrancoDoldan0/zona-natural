@@ -11,39 +11,30 @@ function slugify(input: string) {
     .replace(/(^-|-$)+/g, "");
 }
 
-export async function GET(_: Request, ctx: { params: { id: string } }) {
-  const id = Number(ctx.params.id);
-  if (!Number.isInteger(id)) return NextResponse.json({ ok: false, error: "ID inválido" }, { status: 400 });
-  const item = await prisma.category.findUnique({ where: { id } });
-  if (!item) return NextResponse.json({ ok: false, error: "No encontrado" }, { status: 404 });
-  return NextResponse.json({ ok: true, item });
-}
-
 export async function PUT(req: Request, ctx: { params: { id: string } }) {
   const id = Number(ctx.params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ ok: false, error: "ID inválido" }, { status: 400 });
-  try {
-    const body = await req.json();
-    const data: any = {};
-    if (typeof body?.name === "string") data.name = body.name.trim();
-    if (typeof body?.slug === "string") data.slug = slugify(body.slug);
-    if (!Object.keys(data).length) {
-      return NextResponse.json({ ok: false, error: "Nada para actualizar" }, { status: 400 });
-    }
-    const updated = await prisma.category.update({ where: { id }, data });
-    return NextResponse.json({ ok: true, item: updated });
-  } catch {
-    return NextResponse.json({ ok: false, error: "Bad request" }, { status: 400 });
-  }
+  const body = await req.json().catch(() => ({}));
+  const data:any = {};
+  if (typeof body?.name === "string" && body.name.trim()) data.name = body.name.trim();
+  if (typeof body?.slug === "string" && body.slug.trim()) data.slug = slugify(body.slug);
+
+  const item = await prisma.category.update({ where: { id }, data });
+  return NextResponse.json({ ok: true, item });
 }
 
 export async function DELETE(_: Request, ctx: { params: { id: string } }) {
   const id = Number(ctx.params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ ok: false, error: "ID inválido" }, { status: 400 });
   try {
-    await prisma.category.delete({ where: { id } });
+    // Borra subcategorías y desasocia productos que dependan
+    await prisma.$transaction([
+      prisma.subcategory.deleteMany({ where: { categoryId: id } }),
+      prisma.product.updateMany({ where: { categoryId: id }, data: { categoryId: null } }),
+      prisma.category.delete({ where: { id } }),
+    ]);
     return NextResponse.json({ ok: true, deleted: true });
   } catch {
-    return NextResponse.json({ ok: false, error: "No encontrado" }, { status: 404 });
+    return NextResponse.json({ ok: false, error: "No se pudo borrar" }, { status: 409 });
   }
 }
