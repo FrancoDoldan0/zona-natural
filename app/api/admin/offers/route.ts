@@ -4,11 +4,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
-const bodySchema = z.object({
+const baseSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional().nullable(),
   discountType: z.enum(["PERCENT","AMOUNT"]),
-  discountVal: z.coerce.number().nonnegative(),
+  discountVal: z.coerce.number().positive(),
   startAt: z.string().datetime().optional().nullable(),
   endAt: z.string().datetime().optional().nullable(),
   productId: z.coerce.number().int().positive().optional().nullable(),
@@ -16,55 +16,76 @@ const bodySchema = z.object({
   tagId: z.coerce.number().int().positive().optional().nullable(),
 });
 
+function parseDates(v: any) {
+  const s = v?.startAt ? new Date(v.startAt) : null;
+  const e = v?.endAt ? new Date(v.endAt) : null;
+  if (s && isNaN(+s)) throw new Error("startAt inválido");
+  if (e && isNaN(+e)) throw new Error("endAt inválido");
+  if (s && e && e < s) throw new Error("endAt < startAt");
+  return { s, e };
+}
+
+function checkTargets(v: any) {
+  const tgt = [v.productId ?? null, v.categoryId ?? null, v.tagId ?? null].filter(x => x!=null);
+  if (tgt.length > 1) throw new Error("Solo se permite un destino (producto O categoría O tag)");
+}
+
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const q = searchParams.get("q")?.trim();
-  const take = Number(searchParams.get("take") ?? 100);
-  const where: any = {};
-  if (q) where.OR = [
-    { title:   { contains: q, mode: "insensitive" } },
-    { description: { contains: q, mode: "insensitive" } },
-  ];
+  const url = new URL(req.url);
+  const active = url.searchParams.get("active") === "1";
+  const now = new Date();
+
+  const where = active
+    ? {
+        AND: [
+          { OR: [{ startAt: null }, { startAt: { lte: now } }] },
+          { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+        ],
+      }
+    : {};
 
   const items = await prisma.offer.findMany({
     where,
-    take,
     orderBy: { createdAt: "desc" },
-    include: { product: { select: { id:true,name:true } },
-               category:{ select: { id:true,name:true } },
-               tag:{ select:{ id:true,name:true } } }
+    include: {
+      product: { select: { id:true, name:true, slug:true } },
+      category:{ select: { id:true, name:true, slug:true } },
+      tag:     { select: { id:true, name:true } },
+    },
   });
-  return NextResponse.json({ ok: true, items });
+
+  return NextResponse.json({ ok:true, items });
 }
 
 export async function POST(req: Request) {
   try {
-    const raw = await req.json();
-    const data = bodySchema.parse(raw);
-
-    // validar vínculo único
-    const links = [data.productId, data.categoryId, data.tagId].filter(v=>!!v);
-    if (links.length > 1) {
-      return NextResponse.json({ ok:false, error: "Elija solo un destino (producto o categoría o tag)." }, { status: 400 });
+    const body = baseSchema.parse(await req.json());
+    checkTargets(body);
+    if (body.discountType === "PERCENT" && (body.discountVal <= 0 || body.discountVal > 100)) {
+      return NextResponse.json({ ok:false, error:"PERCENT debe estar entre 0 y 100" }, { status:400 });
     }
+    const { s, e } = parseDates(body);
 
     const created = await prisma.offer.create({
       data: {
-        title: data.title,
-        description: data.description ?? null,
-        discountType: data.discountType,
-        discountVal: data.discountVal,
-        startAt: data.startAt ? new Date(data.startAt) : null,
-        endAt:   data.endAt   ? new Date(data.endAt)   : null,
-        productId: data.productId ?? null,
-        categoryId: data.categoryId ?? null,
-        tagId: data.tagId ?? null,
+        title: body.title,
+        description: body.description ?? null,
+        discountType: body.discountType,
+        discountVal: body.discountVal,
+        startAt: s, endAt: e,
+        productId: body.productId ?? null,
+        categoryId: body.categoryId ?? null,
+        tagId: body.tagId ?? null,
+      },
+      include: {
+        product: { select:{ id:true, name:true, slug:true } },
+        category:{ select:{ id:true, name:true, slug:true } },
+        tag:     { select:{ id:true, name:true } },
       }
     });
-
-    return NextResponse.json({ ok: true, item: created });
+    return NextResponse.json({ ok:true, item: created }, { status:201 });
   } catch (e:any) {
-    if (e?.issues) return NextResponse.json({ ok:false, error:"Datos inválidos", issues:e.issues }, { status:400 });
-    return NextResponse.json({ ok:false, error:"Error" }, { status:500 });
+    const msg = e?.issues ? "Datos inválidos" : (e?.message || "Error");
+    return NextResponse.json({ ok:false, error: msg, issues: e?.issues }, { status:400 });
   }
 }

@@ -1,31 +1,18 @@
 export const revalidate = 60;
-
-import { headers } from "next/headers";
+import BannerSlider from "@/components/public/BannerSlider";
 
 type PublicBanner = { id:number; title:string; imageUrl:string; link:string|null };
-type PublicOffer  = {
-  id:number; title:string; description:string|null;
-  discountType:"PERCENT"|"AMOUNT"; discountVal:number;
-  product?: { id:number; name:string; slug:string } | null;
-  category?: { id:number; name:string; slug:string } | null;
-};
-
-function baseUrl() {
-  // Si hay NEXT_PUBLIC_BASE_URL válida, úsala; si no, arma desde los headers
-  const envBase = process.env.NEXT_PUBLIC_BASE_URL;
-  if (envBase && /^https?:\/\//i.test(envBase)) return envBase.replace(/\/+$/,'');
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host  = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  return `${proto}://${host}`;
-}
+type PublicOffer = { id:number; title:string; description:string|null; discountType:"PERCENT"|"AMOUNT"; discountVal:number;
+  product?: { id:number; name:string; slug:string } | null; category?: { id:number; name:string; slug:string } | null; };
 
 async function getBanners(): Promise<PublicBanner[]>{
-  const r = await fetch(`${baseUrl()}/api/public/banners`, { next:{ revalidate:60 } });
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/,"");
+  const r = await fetch(`${base}/api/public/banners`, { next:{ revalidate:60 } });
   const j = await r.json(); return j.items || [];
 }
 async function getOffers(): Promise<PublicOffer[]>{
-  const r = await fetch(`${baseUrl()}/api/public/offers`, { next:{ revalidate:60 } });
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/,"");
+  const r = await fetch(`${base}/api/public/offers`, { next:{ revalidate:60 } });
   const j = await r.json(); return j.items || [];
 }
 
@@ -38,17 +25,10 @@ export default async function HomePage(){
         <p className="opacity-70">Catálogo y ofertas</p>
       </section>
 
-      {banners.length > 0 && (
+      {!!banners.length && (
         <section className="space-y-3">
-          <h2 className="text-xl font-semibold">Banners</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {banners.map(b=>(
-              <a key={b.id} href={b.link ?? "#"} className="block border rounded overflow-hidden">
-                <img src={b.imageUrl} alt={b.title} className="w-full h-40 object-cover" />
-                <div className="p-2 text-sm">{b.title}</div>
-              </a>
-            ))}
-          </div>
+          <h2 className="text-xl font-semibold">Destacados</h2>
+          <BannerSlider items={banners} />
         </section>
       )}
 
