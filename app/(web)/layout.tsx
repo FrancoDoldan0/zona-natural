@@ -1,0 +1,25 @@
+export const dynamic = "force-dynamic";
+
+export default function WebLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-dvh flex flex-col">
+      <header className="border-b">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-6">
+          <a href="/" className="text-xl font-semibold">Zona Natural</a>
+          <nav className="text-sm flex gap-4">
+            <a href="/productos" className="hover:underline">Productos</a>
+            <a href="/admin" className="hover:underline opacity-70">Admin</a>
+          </nav>
+        </div>
+      </header>
+
+      <main className="flex-1">{children}</main>
+
+      <footer className="border-t">
+        <div className="max-w-7xl mx-auto px-4 py-6 text-sm text-gray-500">
+          © {new Date().getFullYear()} Zona Natural
+        </div>
+      </footer>
+    </div>
+  );
+}

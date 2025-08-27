@@ -1,76 +1,58 @@
 export const runtime = "nodejs";
+import { NextRequest, NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+import { saveProductImage } from "@/lib/storage";
+import { extname } from "path";
 
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { promises as fs } from "fs";
-import path from "path";
+const OK_TYPES = new Set(["image/jpeg","image/jpg","image/png","image/webp","image/gif","image/avif"]);
+const OK_EXTS  = new Set([".jpg",".jpeg",".png",".webp",".gif",".avif"]);
 
-export async function GET(_req: Request, ctx: { params:{ id:string } }){
-  const productId = Number(ctx.params.id);
+function looksLikeImage(file: File){
+  const type = (file as any).type || "";
+  const name = (file as any).name || "";
+  const okType = OK_TYPES.has(String(type).toLowerCase());
+  const okExt  = OK_EXTS.has(extname(String(name)).toLowerCase());
+  return okType || okExt;
+}
+
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }){
+  const productId = Number(params.id);
   const items = await prisma.productImage.findMany({
-    where:{ productId },
-    orderBy:[{ sortOrder:"asc" }, { id:"asc" }]
+    where: { productId },
+    orderBy: { sortOrder: "asc" }
   });
   return NextResponse.json({ ok:true, items });
 }
 
-export async function POST(req: Request, ctx: { params:{ id:string } }){
-  const productId = Number(ctx.params.id);
-  const { url, alt, sortOrder } = await req.json().catch(()=> ({}));
-  if (!url || typeof url !== "string") return NextResponse.json({ ok:false, error:"url required" }, { status:400 });
-  const created = await prisma.productImage.create({
-    data: { productId, url, alt: alt ?? null, sortOrder: Number(sortOrder ?? 0) }
-  });
-  return NextResponse.json({ ok:true, item: created });
-}
+export async function POST(req: NextRequest, { params }: { params: { id: string } }){
+  try{
+    const productId = Number(params.id);
+    const fd = await req.formData();
+    const file = fd.get("file");
+    const alt = (fd.get("alt")?.toString() || "").slice(0,200);
 
-export async function PUT(req: Request, ctx:{ params:{ id:string } }){
-  const productId = Number(ctx.params.id);
-  const body = await req.json().catch(()=> ({}));
-  const imageId = Number(body.id);
-  if (!imageId) return NextResponse.json({ ok:false, error:"id required" }, { status:400 });
-  const data:any = {};
-  if ("url" in body) data.url = body.url;
-  if ("alt" in body) data.alt = body.alt ?? null;
-  if ("sortOrder" in body) data.sortOrder = Number(body.sortOrder ?? 0);
-  const updated = await prisma.productImage.update({
-    where:{ id: imageId, AND:{ productId } }, data
-  });
-  return NextResponse.json({ ok:true, item: updated });
-}
-
-export async function DELETE(req: Request, ctx:{ params:{ id:string } }){
-  const urlObj = new URL(req.url);
-  const productId = Number(ctx.params.id);
-  const idParam = urlObj.searchParams.get("id");
-  const removeFile = urlObj.searchParams.get("removeFile") === "1";
-
-  let imageId = Number(idParam);
-  if (!imageId) {
-    // fallback: permitir body JSON
-    const body = await req.json().catch(()=> ({}));
-    imageId = Number(body?.id);
-  }
-  if (!imageId) return NextResponse.json({ ok:false, error:"id required" }, { status:400 });
-
-  const row = await prisma.productImage.findUnique({ where:{ id:imageId } });
-  if (!row || row.productId !== productId) return NextResponse.json({ ok:false, error:"Not found" }, { status:404 });
-
-  await prisma.productImage.delete({ where:{ id:imageId } });
-
-  if (removeFile && row.url?.startsWith("/uploads/")){
-    // Solo borrar si nadie más referencia la misma URL
-    const still = await prisma.productImage.count({ where:{ url: row.url } });
-    if (still === 0) {
-      try {
-        const abs = path.join(process.cwd(), "public", row.url.replace(/^\/+/,""));
-        // Seguridad: dentro de /public
-        const pubRoot = path.join(process.cwd(), "public");
-        const real = path.resolve(abs);
-        if (real.startsWith(pubRoot)) await fs.unlink(real);
-      } catch {}
+    if (!(file instanceof File)) {
+      return NextResponse.json({ ok:false, error:"file_required" }, { status:400 });
     }
-  }
+    // tolerante: tipo o extensión
+    if (!looksLikeImage(file)) {
+      return NextResponse.json({ ok:false, error:"unsupported_type_or_ext" }, { status:415 });
+    }
+    const size = (file as any).size ?? 0;
+    if (size > 6_000_000) {
+      return NextResponse.json({ ok:false, error:"too_large", detail:"Máx 6MB" }, { status:413 });
+    }
 
-  return NextResponse.json({ ok:true, id: imageId, deleted:true, removedFile: removeFile || false });
+    const { publicUrl } = await saveProductImage(productId, file);
+    const max = await prisma.productImage.aggregate({ where:{ productId }, _max:{ sortOrder:true } });
+    const sortOrder = (max._max.sortOrder ?? -1) + 1;
+
+    const created = await prisma.productImage.create({
+      data: { productId, url: publicUrl, alt: alt || null, sortOrder }
+    });
+
+    return NextResponse.json({ ok:true, item: created }, { status:201 });
+  }catch(e:any){
+    return NextResponse.json({ ok:false, error:"upload_failed", detail: e?.message ?? String(e) }, { status:500 });
+  }
 }

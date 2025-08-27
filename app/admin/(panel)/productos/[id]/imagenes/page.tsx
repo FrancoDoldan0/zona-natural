@@ -1,93 +1,106 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { getCsrfTokenFromCookie } from "@/components/admin/csrf";
 
-type Row = { id:number; url:string; alt:string|null; sortOrder:number };
+type Img = { id:number; url:string; alt:string|null; sortOrder:number };
 
 export default function ProductImagesPage({ params }:{ params:{ id:string } }){
   const pid = Number(params.id);
-  const [items, setItems] = useState<Row[]>([]);
-  const [url, setUrl] = useState("");
+  const [items, setItems] = useState<Img[]>([]);
+  const [file, setFile] = useState<File|null>(null);
   const [alt, setAlt] = useState("");
-  const [order, setOrder] = useState("0");
+  const [msg, setMsg] = useState("");
 
   async function load(){
     const r = await fetch(`/api/admin/products/${pid}/images`, { cache:"no-store" });
-    const j = await r.json(); if (j.ok) setItems(j.items);
+    const j = await r.json();
+    if (j.ok) setItems(j.items);
   }
   useEffect(()=>{ load(); },[]);
 
-  async function add(e:React.FormEvent){
+  async function upload(e:React.FormEvent){
     e.preventDefault();
+    setMsg("");
+    if (!file) { setMsg("Elegí una imagen"); return; }
+    const fd = new FormData();
+    fd.set("file", file);
+    if (alt) fd.set("alt", alt);
     const r = await fetch(`/api/admin/products/${pid}/images`, {
-      method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ url, alt: alt || null, sortOrder: Number(order||0) })
+      method: "POST",
+      headers: { "x-csrf-token": getCsrfTokenFromCookie() },
+      body: fd
     });
     const j = await r.json();
-    if (j.ok){ setUrl(""); setAlt(""); setOrder("0"); load(); }
-    else alert(j.error || "Error");
+    if (j.ok){ setFile(null); setAlt(""); (document.getElementById("imgfile") as HTMLInputElement).value=""; await load(); }
+    else setMsg(j.error || "Error al subir");
   }
 
-  async function save(row: Row, patch: Partial<Row>){
-    const r = await fetch(`/api/admin/products/${pid}/images`, {
-      method:"PUT", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ id: row.id, ...patch })
+  async function setAltOf(id:number, value:string){
+    await fetch(`/api/admin/products/${pid}/images/${id}`, {
+      method:"PUT",
+      headers:{ "Content-Type":"application/json; charset=utf-8", "x-csrf-token": getCsrfTokenFromCookie() },
+      body: JSON.stringify({ alt: value })
     });
-    const j = await r.json();
-    if (j.ok) setItems(prev => prev.map(x => x.id===row.id ? j.item : x));
+    await load();
   }
 
-  async function del(row: Row){
-    if (!confirm("Eliminar la fila y, si corresponde, borrar el archivo físico?")) return;
-    const r = await fetch(`/api/admin/products/${pid}/images?id=${row.id}&removeFile=1`, { method:"DELETE" });
-    const j = await r.json();
-    if (j.ok) setItems(prev => prev.filter(x => x.id!==row.id));
+  async function move(id:number, dir:"up"|"down"){
+    await fetch(`/api/admin/products/${pid}/images/${id}`, {
+      method:"PUT",
+      headers:{ "Content-Type":"application/json; charset=utf-8", "x-csrf-token": getCsrfTokenFromCookie() },
+      body: JSON.stringify({ move: dir })
+    });
+    await load();
+  }
+
+  async function del(id:number){
+    if (!confirm("¿Eliminar imagen?")) return;
+    await fetch(`/api/admin/products/${pid}/images/${id}`, {
+      method:"DELETE",
+      headers:{ "x-csrf-token": getCsrfTokenFromCookie() }
+    });
+    await load();
   }
 
   return (
-    <main className="max-w-5xl mx-auto p-6 space-y-4">
-      <Link className="border rounded px-3 py-1 inline-block" href="/admin/productos">{'\u2190'} Volver</Link>
-      <h1 className="text-xl font-semibold">Imágenes del producto #{pid}</h1>
+    <main className="max-w-6xl mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <Link href={`/admin/productos/${pid}`} className="underline">← Volver</Link>
+        <h1 className="text-xl font-semibold">Imágenes del producto #{pid}</h1>
+      </div>
 
-      <p className="opacity-70 text-sm">Primero subí la imagen en <a className="underline" href="/admin/uploads" target="_blank">/admin/uploads</a> y pegá la URL.</p>
-
-      <form onSubmit={add} className="grid gap-2 md:grid-cols-6">
-        <input className="border rounded p-2 md:col-span-3" placeholder="URL (/uploads/...)" value={url} onChange={e=>setUrl(e.target.value)} />
-        <input className="border rounded p-2 md:col-span-2" placeholder="Alt (opcional)" value={alt} onChange={e=>setAlt(e.target.value)} />
-        <input className="border rounded p-2" type="number" min={0} value={order} onChange={e=>setOrder(e.target.value)} />
-        <button className="border rounded px-4 md:col-span-6 md:justify-self-start" type="submit">Agregar</button>
+      <form onSubmit={upload} className="border rounded p-4 grid md:grid-cols-4 gap-2">
+        <input id="imgfile" type="file" accept="image/*" className="md:col-span-2"
+               onChange={e=> setFile(e.target.files?.[0] || null)} />
+        <input className="border rounded p-2" placeholder="Texto ALT (opcional)" value={alt} onChange={e=>setAlt(e.target.value)} />
+        <button className="border rounded px-4 py-2">Subir</button>
+        {msg && <div className="text-sm text-red-600 md:col-span-4">{msg}</div>}
+        <div className="text-xs text-gray-500 md:col-span-4">Formatos: JPG/PNG/WebP/GIF/AVIF. Máx 6MB.</div>
       </form>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm border rounded">
-          <thead><tr className="bg-gray-50">
-            <th className="p-2 border">ID</th>
-            <th className="p-2 border">Preview</th>
-            <th className="p-2 border">URL</th>
-            <th className="p-2 border">Alt</th>
-            <th className="p-2 border">Orden</th>
-            <th className="p-2 border">Acciones</th>
-          </tr></thead>
-          <tbody>
-            {items.map(row=>(
-              <tr key={row.id}>
-                <td className="p-2 border">{row.id}</td>
-                <td className="p-2 border"><img src={row.url} alt={row.alt ?? ""} className="h-28 w-44 object-cover" /></td>
-                <td className="p-2 border">{row.url}</td>
-                <td className="p-2 border">
-                  <input className="border rounded p-1 w-48" defaultValue={row.alt ?? ""} onBlur={(e)=>save(row,{alt: e.target.value})}/>
-                </td>
-                <td className="p-2 border">
-                  <input className="border rounded p-1 w-16" type="number" defaultValue={String(row.sortOrder)} onBlur={(e)=>save(row,{sortOrder: Number(e.target.value||0)})}/>
-                </td>
-                <td className="p-2 border">
-                  <button className="text-red-600" onClick={()=>del(row)}>Eliminar (archivo)</button>
-                </td>
-              </tr>
-            ))}
-            {!items.length && <tr><td className="p-3 opacity-70" colSpan={6}>Sin imágenes</td></tr>}
-          </tbody>
-        </table>
+      <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {items.map((im, i)=>(
+          <div key={im.id} className="border rounded p-2 space-y-2">
+            <img src={im.url} alt={im.alt || ""} className="w-full h-40 object-cover rounded" />
+            <input className="border rounded p-2 w-full text-sm"
+                   value={im.alt || ""} placeholder="ALT…"
+                   onChange={e=>{
+                     const v = e.target.value;
+                     setItems(prev => prev.map(x => x.id===im.id ? { ...x, alt:v } : x));
+                   }}
+                   onBlur={e=> setAltOf(im.id, e.target.value)} />
+            <div className="flex items-center justify-between">
+              <div className="space-x-2">
+                <button className="border rounded px-2 py-1 text-xs" disabled={i===0} onClick={()=>move(im.id,"up")} type="button">↑</button>
+                <button className="border rounded px-2 py-1 text-xs" disabled={i===items.length-1} onClick={()=>move(im.id,"down")} type="button">↓</button>
+              </div>
+              <button className="border rounded px-2 py-1 text-xs text-red-600" onClick={()=>del(im.id)} type="button">Borrar</button>
+            </div>
+          </div>
+        ))}
+        {!items.length && <div className="opacity-70">Sin imágenes todavía.</div>}
       </div>
     </main>
   );

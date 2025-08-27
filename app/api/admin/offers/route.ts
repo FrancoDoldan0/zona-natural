@@ -1,91 +1,47 @@
 export const runtime = "nodejs";
-
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { audit } from "@/lib/audit";
 
-const baseSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional().nullable(),
+const Body = z.object({
+  title: z.string().min(1).max(120),
+  description: z.string().max(500).optional().nullable(),
   discountType: z.enum(["PERCENT","AMOUNT"]),
   discountVal: z.coerce.number().positive(),
-  startAt: z.string().datetime().optional().nullable(),
-  endAt: z.string().datetime().optional().nullable(),
-  productId: z.coerce.number().int().positive().optional().nullable(),
-  categoryId: z.coerce.number().int().positive().optional().nullable(),
-  tagId: z.coerce.number().int().positive().optional().nullable(),
+  startAt: z.string().or(z.date()).optional().nullable(),
+  endAt: z.string().or(z.date()).optional().nullable(),
+  productId: z.coerce.number().optional().nullable(),
+  categoryId: z.coerce.number().optional().nullable(),
 });
 
-function parseDates(v: any) {
-  const s = v?.startAt ? new Date(v.startAt) : null;
-  const e = v?.endAt ? new Date(v.endAt) : null;
-  if (s && isNaN(+s)) throw new Error("startAt inválido");
-  if (e && isNaN(+e)) throw new Error("endAt inválido");
-  if (s && e && e < s) throw new Error("endAt < startAt");
-  return { s, e };
+export async function GET(){
+  try{
+    const items = await prisma.offer.findMany({ orderBy:{ id:"desc" } });
+    return NextResponse.json(items);
+  }catch(e:any){
+    return NextResponse.json({ ok:false, error:"admin_offers_failed", detail: e?.message ?? String(e) }, { status:500 });
+  }
 }
 
-function checkTargets(v: any) {
-  const tgt = [v.productId ?? null, v.categoryId ?? null, v.tagId ?? null].filter(x => x!=null);
-  if (tgt.length > 1) throw new Error("Solo se permite un destino (producto O categoría O tag)");
-}
-
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const active = url.searchParams.get("active") === "1";
-  const now = new Date();
-
-  const where = active
-    ? {
-        AND: [
-          { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-          { OR: [{ endAt: null }, { endAt: { gte: now } }] },
-        ],
-      }
-    : {};
-
-  const items = await prisma.offer.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: {
-      product: { select: { id:true, name:true, slug:true } },
-      category:{ select: { id:true, name:true, slug:true } },
-      tag:     { select: { id:true, name:true } },
-    },
-  });
-
-  return NextResponse.json({ ok:true, items });
-}
-
-export async function POST(req: Request) {
-  try {
-    const body = baseSchema.parse(await req.json());
-    checkTargets(body);
-    if (body.discountType === "PERCENT" && (body.discountVal <= 0 || body.discountVal > 100)) {
-      return NextResponse.json({ ok:false, error:"PERCENT debe estar entre 0 y 100" }, { status:400 });
-    }
-    const { s, e } = parseDates(body);
-
+export async function POST(req: Request){
+  try{
+    const json = await req.json();
+    const parsed = Body.safeParse(json);
+    if(!parsed.success) return NextResponse.json({ ok:false, error:"validation_failed", detail: parsed.error.format() }, { status:400 });
+    const b = parsed.data;
     const created = await prisma.offer.create({
       data: {
-        title: body.title,
-        description: body.description ?? null,
-        discountType: body.discountType,
-        discountVal: body.discountVal,
-        startAt: s, endAt: e,
-        productId: body.productId ?? null,
-        categoryId: body.categoryId ?? null,
-        tagId: body.tagId ?? null,
-      },
-      include: {
-        product: { select:{ id:true, name:true, slug:true } },
-        category:{ select:{ id:true, name:true, slug:true } },
-        tag:     { select:{ id:true, name:true } },
+        title: b.title, description: b.description ?? null,
+        discountType: b.discountType, discountVal: b.discountVal,
+        startAt: b.startAt ? new Date(b.startAt as any) : null,
+        endAt: b.endAt ? new Date(b.endAt as any) : null,
+        productId: b.productId ?? null, categoryId: b.categoryId ?? null,
       }
     });
+    await audit(req, "CREATE", "Offer", created.id, b);
     return NextResponse.json({ ok:true, item: created }, { status:201 });
-  } catch (e:any) {
-    const msg = e?.issues ? "Datos inválidos" : (e?.message || "Error");
-    return NextResponse.json({ ok:false, error: msg, issues: e?.issues }, { status:400 });
+  }catch(e:any){
+    return NextResponse.json({ ok:false, error:"admin_offers_post_failed", detail: e?.message ?? String(e) }, { status:500 });
   }
 }
