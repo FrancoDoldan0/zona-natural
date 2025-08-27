@@ -1,13 +1,19 @@
-export async function GET(req: Request) {
-  const { origin } = new URL(req.url);
+export const runtime = "nodejs";
+import { NextResponse } from "next/server";
+import { siteUrl } from "@/lib/site";
+
+export async function GET() {
   const body = [
     "User-agent: *",
     "Allow: /",
-    "Disallow: /admin/",
-    "Disallow: /api/",
-    "",
-    `Sitemap: ${origin}/sitemap.xml`,
+    `Sitemap: ${siteUrl}/sitemap.xml`,
     ""
   ].join("\n");
-  return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+
+  return new NextResponse(body, {
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "public, max-age=300, s-maxage=600, stale-while-revalidate=86400",
+    },
+  });
 }

@@ -1,72 +1,102 @@
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
-import ProductCard from "@/components/web/ProductCard";
 import Link from "next/link";
-import { headers } from "next/headers";
+import Image from "next/image";
+import { siteUrl } from "@/lib/site";
 
-type Search = { q?: string; page?: string; perPage?: string; sort?: string };
+type Item = {
+  id: number;
+  name: string;
+  slug: string;
+  cover?: string | null;
+  priceOriginal: number | null;
+  priceFinal: number | null;
+  hasDiscount?: boolean;
+  discountPercent?: number;
+};
+type Catalog = { ok: boolean; page: number; perPage: number; total: number; items: Item[] };
 
-function baseUrl() {
-  const h = headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host  = h.get("host") ?? "localhost:3000";
-  return `${proto}://${host}`;
+export const revalidate = 120;
+
+function qsFrom(sp: Record<string, string | string[] | undefined>) {
+  const qp = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp || {})) {
+    if (Array.isArray(v)) v.forEach((x) => qp.append(k, String(x)));
+    else if (v != null && String(v).trim() !== "") qp.set(k, String(v));
+  }
+  return qp;
 }
 
-async function getJSON(path: string) {
-  const r = await fetch(`${baseUrl()}${path}`, { cache: "no-store" });
-  if (!r.ok) throw new Error(`GET ${path} -> ${r.status}`);
-  return r.json();
-}
-async function getJSONSafe(path: string) {
-  try { return await getJSON(path); } catch { return null; }
-}
-
-function clampInt(v: string|undefined, def: number, min=1, max=60){
-  const n = Number(v);
-  if (!Number.isFinite(n)) return def;
-  return Math.min(max, Math.max(min, Math.floor(n)));
+async function getCatalog(sp: Record<string, string | string[] | undefined>): Promise<Catalog> {
+  const base = process.env.SITE_URL?.replace(/\/$/, "") || "http://localhost:3000";
+  const qs = qsFrom(sp);
+  if (!qs.has("perPage")) qs.set("perPage", "20");
+  const res = await fetch(`${base}/api/public/catalogo?${qs.toString()}`, { next: { revalidate } });
+  if (!res.ok) return { ok: false, page: 1, perPage: 20, total: 0, items: [] } as any;
+  return res.json();
 }
 
-export default async function Page({ searchParams }: { searchParams: Search }) {
-  const q = (searchParams.q || "").trim();
-  const page = clampInt(searchParams.page, 1, 1, 9999);
-  const perPage = clampInt(searchParams.perPage, 12, 1, 32);
-  const sort = searchParams.sort || "-id";
+export default async function Page({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
+  const data = await getCatalog(searchParams);
+  const items = Array.isArray(data.items) ? data.items : [];
+  const page = Number(searchParams.page ?? "1") || 1;
 
-  const params = new URLSearchParams();
-  if (q) params.set("q", q);
-  params.set("page", String(page));
-  params.set("perPage", String(perPage));
-  params.set("sort", sort);
-
-  const data = await getJSONSafe(`/api/public/catalogo?${params.toString()}`) || { ok:false, items:[], total:0 };
-  const pages = Math.max(1, Math.ceil((data.total || 0) / perPage));
+  // JSON-LD ItemList (SEO)
+  const itemList = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    numberOfItems: items.length,
+    itemListOrder: "https://schema.org/ItemListUnordered",
+    itemListElement: items.map((it, idx) => ({
+      "@type": "ListItem",
+      position: idx + 1,
+      url: `${siteUrl}/producto/${it.slug}`,
+      name: it.name,
+    })),
+  };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-      {!data.ok && (
-        <div className="rounded border border-amber-200 bg-amber-50 text-amber-800 p-3 text-sm">
-          No pudimos cargar el catálogo ahora. Probá nuevamente o cambiá los filtros.
-        </div>
-      )}
-
-      <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {Array.isArray(data.items) && data.items.length
-          ? data.items.map((p: any) => <ProductCard key={p.id} p={p} />)
-          : <div className="opacity-60">Sin resultados.</div>}
+    <div style={{ padding: 16 }}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemList) }} />
+      <h1 style={{ margin: "4px 0 16px", fontSize: 24 }}>Productos</h1>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 16 }}>
+        {items.map((p) => {
+          const price = p.priceFinal ?? p.priceOriginal ?? null;
+          const cover = p.cover || "/placeholder.svg";
+          return (
+            <Link key={p.id} href={`/producto/${p.slug}`} style={{ textDecoration: "none", color: "inherit" }}>
+              <div style={{ border: "1px solid #eee", borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ width: "100%", aspectRatio: "1/1", background: "#fafafa", position: "relative" }}>
+                  <Image
+                    src={cover}
+                    alt={p.name}
+                    fill
+                    sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 20vw"
+                    priority={page === 1}
+                  />
+                </div>
+                <div style={{ padding: 12 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>{p.name}</div>
+                  {price != null && (
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontSize: 18, fontWeight: 800 }}>${price.toFixed(2)}</span>
+                      {p.hasDiscount && p.priceOriginal != null && (
+                        <span style={{ textDecoration: "line-through", color: "#888" }}>${p.priceOriginal.toFixed(2)}</span>
+                      )}
+                      {p.hasDiscount && typeof p.discountPercent === "number" && (
+                        <span style={{ background: "#10b981", color: "#fff", padding: "2px 6px", borderRadius: 999, fontSize: 12 }}>
+                          -{p.discountPercent}%
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Link>
+          );
+        })}
       </div>
-
-      {pages > 1 && (
-        <nav className="flex items-center gap-2">
-          <Link href={`/productos?${new URLSearchParams({ q, page: String(Math.max(1, page-1)), perPage: String(perPage), sort }).toString()}`}
-                className={`border rounded px-3 ${page<=1 ? "pointer-events-none opacity-50" : ""}`}>‹</Link>
-          <span className="text-sm">Página {page}/{pages}</span>
-          <Link href={`/productos?${new URLSearchParams({ q, page: String(Math.min(pages, page+1)), perPage: String(perPage), sort }).toString()}`}
-                className={`border rounded px-3 ${page>=pages ? "pointer-events-none opacity-50" : ""}`}>›</Link>
-        </nav>
-      )}
+      <div style={{ marginTop: 16, color: "#666" }}>
+        {data.total} resultados · Página {data.page}
+      </div>
     </div>
   );
 }
