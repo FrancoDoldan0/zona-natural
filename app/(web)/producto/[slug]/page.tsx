@@ -55,7 +55,7 @@ function toRelativeForNextImage(u?: string | null): string {
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const product = await getProduct(params.slug);
   const title = product ? `${product.name} | ${siteName}` : `Producto | ${siteName}`;
-  const desc  = product?.description || "Producto de catálogo";
+  const desc  = product?.description || "Producto de catÃ¡logo";
   const firstImg = product?.images?.[0]?.url;
   const ogImg = firstImg ? absUrl(firstImg) ?? undefined : undefined;
   const canonical = `${siteUrl}/producto/${params.slug}`;
@@ -142,6 +142,17 @@ export default async function Page({ params }: { params: { slug: string } }) {
         </div>
         <div>
           <h1 style={{margin:"4px 0 8px", fontSize:24}}>{product.name}</h1>
+            <a
+              href={/api/public/wa?slug=&qty=1}
+              target="_blank" rel="noopener noreferrer"
+              style={{
+                display:"inline-block", marginTop:12,
+                background:"#25D366", color:"#fff",
+                padding:"10px 14px", borderRadius:8, fontWeight:700
+              }}
+            >
+              Pedir por WhatsApp
+            </a>
           {price != null && (
             <div style={{display:"flex", alignItems:"baseline", gap:10, marginBottom:12}}>
               <span style={{fontSize:28, fontWeight:800}}>${price.toFixed(2)}</span>
