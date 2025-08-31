@@ -9,7 +9,7 @@ function isTruthy(v?: string | null){
 }
 function digits(s?: string | null){ return (s ?? "").replace(/\D+/g, ""); }
 
-/** Normaliza SOLO móviles UY a E.164: 5989XXXXXXX (9 + 7)
+/** Normaliza SOLO mÃ³viles UY a E.164: 5989XXXXXXX (9 + 7)
  *  Acepta: 5989XXXXXXX  |  09XXXXXXX  |  9XXXXXXX
  */
 function normalizeUyMobile(raw?: string | null): string | null {
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     const phoneE164 = normalizeUyMobile(phoneRaw);
 
     if (!isUyMobile(phoneE164)) {
-      const msg = "Configurá WA_PHONE en .env como móvil uruguayo en E.164: 5989XXXXXXX.";
+      const msg = "ConfigurÃ¡ WA_PHONE en .env como mÃ³vil uruguayo en E.164: 5989XXXXXXX.";
       if (dry) {
         return NextResponse.json({ ok:false, error: msg }, {
           status: 400,
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // (Opcional) nombre de producto — tolerante a fallos
+    // (Opcional) nombre de producto â€” tolerante a fallos
     let name = "Producto";
     if (slug) {
       try {
@@ -73,9 +73,13 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return NextResponse.redirect(wa, 302);
+    {
+  const res = NextResponse.redirect(wa, 302);
+  res.headers.set("cache-control", "no-store");
+  return res;
+}
   } catch (err: any) {
-    // Nunca 500 "en crudo": devolvemos JSON con detalle mínimo
+    // Nunca 500 "en crudo": devolvemos JSON con detalle mÃ­nimo
     return NextResponse.json(
       { ok:false, error:"wa_endpoint_failed", detail: String(err?.message ?? err) },
       { status: 500, headers: { "cache-control": "no-store" } }
