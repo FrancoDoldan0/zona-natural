@@ -1,0 +1,391 @@
+
+> zona-natural@0.1.0 dev
+> next dev -p 3000
+
+  ▲ Next.js 14.2.4
+  - Local:        http://localhost:3000
+  - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 2.1s
+ ✓ Compiled /api/public/tags in 296ms (56 modules)
+ GET /api/public/tags 200 in 460ms
+ GET /api/public/tags 200 in 10ms
+ GET /api/public/tags?onlyActive=1 200 in 11ms
+ ✓ Compiled /api/public/catalogo in 64ms (59 modules)
+ GET /api/public/catalogo?onSale=1&sort=final&perPage=20 200 in 99ms
+ GET /api/public/catalogo?tagId=1&sort=final&perPage=20 200 in 12ms
+ GET /api/public/catalogo?tagId=1&tagId=2&onSale=1&sort=final&perPage=50 200 in 9ms
+ GET /api/public/catalogo?tagIds=1,2&onSale=1&sort=final&perPage=50 200 in 12ms
+ GET /api/public/tags?onlyActive=1 200 in 12ms
+ GET /api/public/catalogo?onSale=1&sort=final&perPage=20 200 in 11ms
+ GET /api/public/catalogo?tagIds=1,2&onSale=1&sort=final&perPage=50 200 in 9ms
+ ✓ Compiled in 37ms (56 modules)
+ GET /api/public/tags 200 in 66ms
+ ✓ Compiled /api/public/catalogo in 34ms (59 modules)
+ GET /api/public/catalogo?onSale=1&sort=final&perPage=20 200 in 53ms
+ GET /api/public/catalogo?tagIds=1,2&match=any&onSale=1&sort=final&perPage=50 200 in 8ms
+ GET /api/public/catalogo?tagIds=1,2&match=all&onSale=1&sort=final&perPage=50 200 in 8ms
+ ✓ Compiled /api/public/producto/[slug] in 55ms (57 modules)
+ GET /api/public/producto/yerba-organica-500g-v2 200 in 373ms
+ ✓ Compiled /api/public/tags in 39ms (59 modules)
+ GET /api/public/tags?onlyActive=1 200 in 54ms
+ ✓ Compiled /api/public/catalogo in 20ms (61 modules)
+ GET /api/public/catalogo?tagIds=1,2&match=any&onSale=1&sort=final&perPage=50 200 in 39ms
+ GET /api/public/catalogo?tagIds=1,2&match=all&onSale=1&sort=final&perPage=50 200 in 7ms
+ ○ Compiling / ...
+ ✓ Compiled / in 1388ms (535 modules)
+ ✓ Compiled /api/public/banners in 54ms (296 modules)
+ GET /api/public/banners 200 in 143ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 153ms
+ GET / 200 in 1677ms
+ ✓ Compiled /middleware in 185ms (73 modules)
+ ○ Compiling /admin ...
+ ✓ Compiled /admin in 1176ms (759 modules)
+ GET /admin 200 in 1465ms
+ ✓ Compiled /admin/banners in 204ms (767 modules)
+ GET /admin/banners 200 in 454ms
+ ✓ Compiled /api/admin/banners in 218ms (552 modules)
+ GET /api/admin/banners?all=1 200 in 276ms
+ GET /api/admin/banners?all=1 200 in 277ms
+ ✓ Compiled /admin/ofertas in 222ms (786 modules)
+ GET /admin/ofertas 200 in 496ms
+ ✓ Compiled /api/admin/offers in 244ms (623 modules)
+ GET /api/admin/offers?all=1 200 in 292ms
+ GET /api/admin/offers?all=1 200 in 298ms
+ ✓ Compiled /api/admin/search/categories in 52ms (378 modules)
+ ✓ Compiled (380 modules)
+ GET /api/admin/search/categories?q= 200 in 162ms
+ GET /api/admin/search/products?q= 200 in 164ms
+ ✓ Compiled /api/public/tags in 52ms (377 modules)
+ GET /api/public/tags?onlyActive=1 200 in 78ms
+ ✓ Compiled /api/public/catalogo in 47ms (380 modules)
+ GET /api/public/catalogo?onSale=1&sort=final&perPage=20 200 in 70ms
+ ✓ Compiled /productos in 295ms (514 modules)
+ GET /productos 200 in 406ms
+ ✓ Compiled /api/public/catalogo in 54ms (295 modules)
+ ✓ Compiled (298 modules)
+ GET /api/public/tags?onlyActive=1 200 in 176ms
+ GET /api/public/tags?onlyActive=1 200 in 171ms
+ GET /api/public/catalogo?perPage=24&sort=final&minFinal=0&maxFinal=0 200 in 172ms
+ GET /api/public/catalogo?perPage=24&sort=final&minFinal=0&maxFinal=0 200 in 176ms
+ GET /api/public/catalogo?perPage=24&sort=final&tagIds=3&minFinal=0&maxFinal=0 200 in 12ms
+ GET /api/public/catalogo?perPage=24&sort=final&minFinal=0&maxFinal=0 200 in 13ms
+ GET /api/public/catalogo?perPage=24&sort=final&tagIds=1&minFinal=0&maxFinal=0 200 in 13ms
+ GET /api/public/catalogo?perPage=24&sort=final&tagIds=1&minFinal=0&maxFinal=0 200 in 12ms
+ GET /api/public/catalogo?perPage=24&sort=final&minFinal=0&maxFinal=0 200 in 12ms
+ GET /api/public/catalogo?perPage=24&sort=final&onSale=1&minFinal=0&maxFinal=0 200 in 11ms
+ GET /api/public/catalogo?perPage=24&sort=final&onSale=1&minFinal=0&maxFinal=0 200 in 12ms
+ GET /api/public/catalogo?perPage=24&sort=final&minFinal=0&maxFinal=0 200 in 12ms
+ GET /api/public/catalogo?perPage=24&sort=final&match=all&minFinal=0&maxFinal=0 200 in 11ms
+ GET /api/public/catalogo?perPage=24&sort=final&match=all&minFinal=0&maxFinal=0 200 in 11ms
+ ✓ Compiled /api/public/tags in 68ms (264 modules)
+ ✓ Compiled (295 modules)
+ GET /api/public/tags 200 in 195ms
+ ✓ Compiled /robots.txt in 74ms (295 modules)
+ ✓ Compiled (298 modules)
+ GET /robots.txt 200 in 101ms
+ ✓ Compiled /sitemap.xml in 117ms (330 modules)
+ GET /sitemap.xml 200 in 466ms
+ ✓ Compiled /producto/[slug] in 199ms (582 modules)
+ ✓ Compiled /api/public/producto/[slug] in 56ms (335 modules)
+ GET /api/public/producto/yerba-organica-500g-v2 200 in 96ms
+ ⨯ Internal error: Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624
+digest: "3904681648"
+ ⨯ Internal error: Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624
+digest: "3904681648"
+ ⨯ Internal error: Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624
+digest: "3904681648"
+Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624 {
+  digest: '3904681648'
+}
+ ⨯ Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624 {
+  digest: '3904681648',
+  page: '/producto/yerba-organica-500g-v2'
+}
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 843ms (809 modules)
+ GET /producto/yerba-organica-500g-v2 500 in 1746ms
+ ✓ Compiled /api/public/catalogo in 120ms (335 modules)
+ ✓ Compiled in 0ms (338 modules)
+ ✓ Compiled in 1ms (338 modules)
+ ✓ Compiled in 0ms (338 modules)
+ GET /api/public/banners 200 in 395ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 466ms
+Warning: Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://reactjs.org/link/invalid-hook-call for tips about how to debug and fix this problem.
+ ⨯ Internal error: TypeError: Cannot read properties of null (reading 'useContext')
+    at t.useContext (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:162241)
+    at LinkComponent (./node_modules/next/dist/client/link.js:125:40)
+    at au (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:10446)
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:44746)
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46505)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at aj (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:53793)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:42336
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:42822)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at aj (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:53793)
+    at aC (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:52874)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:50095)
+    at aj (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:53793)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:42336
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:42822)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at aj (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:53793)
+    at aC (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:52874)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:50095)
+    at aj (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:53793)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:42336
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:42822)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at aj (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:53793)
+    at aC (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:52874)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:50095)
+    at aj (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:53793)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:42336
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:42822)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:50067)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:58612
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59270
+    at aN (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59278)
+    at Timeout._onTimeout (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:6939)
+    at listOnTimeout (node:internal/timers:588:17)
+    at process.processTimers (node:internal/timers:523:7)
+digest: "4016029826"
+Warning: Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:
+1. You might have mismatching versions of React and the renderer (such as React DOM)
+2. You might be breaking the Rules of Hooks
+3. You might have more than one copy of React in the same app
+See https://reactjs.org/link/invalid-hook-call for tips about how to debug and fix this problem.
+TypeError: Cannot read properties of null (reading 'useContext')
+    at t.useContext (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:162241)
+    at usePathname (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/navigation.js:121:34)
+    at ErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:159:50)
+    at au (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:10446)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:15122
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at ab (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:11808)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16871
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46505)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at ab (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:11808)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16871
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:58612
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59270
+    at aN (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59278)
+    at Timeout._onTimeout (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:6939)
+    at listOnTimeout (node:internal/timers:588:17)
+    at process.processTimers (node:internal/timers:523:7)
+ ⨯ TypeError: Cannot read properties of null (reading 'useContext')
+    at t.useContext (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:162241)
+    at usePathname (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/navigation.js:121:34)
+    at ErrorBoundary (webpack-internal:///(ssr)/./node_modules/next/dist/client/components/error-boundary.js:159:50)
+    at au (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:10446)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:15122
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at ab (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:11808)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16871
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:46505)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at ab (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:11808)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16871
+    at aw (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:16908)
+    at a_ (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:49776)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:58612
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59270
+    at aN (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:59278)
+    at Timeout._onTimeout (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:35:6939)
+    at listOnTimeout (node:internal/timers:588:17)
+    at process.processTimers (node:internal/timers:523:7) {
+  page: '/'
+}
+ ✓ Compiled /_error in 163ms (772 modules)
+ GET / 500 in 745ms
+ ✓ Compiled /producto/[slug] in 120ms (342 modules)
+ ⨯ Internal error: Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624
+digest: "3904681648"
+ ⨯ Internal error: Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624
+digest: "3904681648"
+ ⨯ Internal error: Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624
+digest: "3904681648"
+Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624 {
+  digest: '3904681648'
+}
+ ⨯ Error: Invalid OpenGraph type: product
+    at ey.openGraph (D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:9712)
+    at D:\zona-natural\node_modules\next\dist\compiled\next-server\app-page.runtime.dev.js:36:10624 {
+  digest: '3904681648',
+  page: '/producto/yerba-organica-500g-v2'
+}
+ ✓ Compiled in 222ms (775 modules)
+ GET /producto/yerba-organica-500g-v2 500 in 378ms
+ GET /api/public/banners 200 in 26ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 30ms
+ GET / 200 in 336ms
+ ✓ Compiled /producto/[slug] in 83ms (305 modules)
+ ✓ Compiled (308 modules)
+ GET /producto/yerba-organica-500g-v2 200 in 259ms
+ ✓ Compiled in 140ms (308 modules)
+ ✓ Compiled /api/public/catalogo in 128ms (339 modules)
+ ✓ Compiled (342 modules)
+ GET /api/public/banners 200 in 270ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 273ms
+ GET /?_rsc=t3po2 200 in 498ms
+ ✓ Compiled /api/public/producto/[slug] in 176ms (340 modules)
+ GET /api/public/producto/yerba-organica-500g-v2 200 in 211ms
+ GET /producto/yerba-organica-500g-v2 200 in 304ms
+ ✓ Compiled in 77ms (305 modules)
+ ✓ Compiled /api/public/catalogo in 38ms (336 modules)
+ ✓ Compiled (339 modules)
+ GET /api/public/banners 200 in 180ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 183ms
+ GET / 200 in 415ms
+ GET /api/public/banners 200 in 17ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 24ms
+ GET / 200 in 96ms
+ ✓ Compiled /producto/[slug] in 120ms (342 modules)
+ GET /producto/yerba-organica-500g-v2 200 in 178ms
+ GET /api/public/banners 200 in 24ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 31ms
+ GET /?_rsc=t3po2 200 in 93ms
+ ✓ Compiled in 196ms (732 modules)
+ ✓ Compiled /api/public/banners in 48ms (334 modules)
+ ✓ Compiled (336 modules)
+ GET /api/public/banners 200 in 131ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 136ms
+ GET /api/public/catalogo?perPage=20 200 in 159ms
+ GET /?_rsc=t3po2 200 in 242ms
+ GET /productos 200 in 463ms
+ ✓ Compiled /sitemap.xml in 102ms (302 modules)
+ ✓ Compiled in 1ms (338 modules)
+ GET /sitemap.xml 200 in 350ms
+ ✓ Compiled /api/public/catalogo in 52ms (365 modules)
+ ✓ Compiled (368 modules)
+ GET /api/public/banners 200 in 187ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 187ms
+ GET /?_rsc=t3po2 200 in 501ms
+ GET /api/public/catalogo?perPage=20 200 in 22ms
+ GET /api/public/catalogo 200 in 22ms
+ GET /productos 200 in 275ms
+ GET /api/public/catalogo?tagId=1&page=2&perPage=20 200 in 18ms
+ GET /api/public/catalogo?tagId=1 200 in 20ms
+ GET /productos?tagId=1&page=2 200 in 57ms
+ GET /productos 200 in 35ms
+ GET /api/public/catalogo?page=2&perPage=20 200 in 15ms
+ GET /productos?page=2&perPage=20 200 in 48ms
+ GET /api/public/catalogo?page=9999&perPage=20 200 in 12ms
+ GET /productos?page=9999&perPage=20 200 in 47ms
+ ✓ Compiled in 624ms (772 modules)
+ ✓ Compiled /api/public/banners in 55ms (359 modules)
+ ✓ Compiled (361 modules)
+ GET /api/public/banners 200 in 140ms
+ GET /api/public/catalogo?perPage=20 200 in 167ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 146ms
+ GET /productos 200 in 906ms
+ GET /?_rsc=t3po2 200 in 280ms
+ ✓ Compiled /producto/[slug] in 215ms (810 modules)
+ ⨯ Error: Invalid src prop (http://localhost:3000/uploads/products/8/1756251332314-9692540e.jpg) on `next/image`, hostname "localhost" is not configured under images in your `next.config.js`
+See more info: https://nextjs.org/docs/messages/next-image-unconfigured-host
+    at Array.map (<anonymous>)
+digest: "3457041485"
+ ✓ Compiled /api/public/producto/[slug] in 90ms (366 modules)
+ GET /api/public/banners 200 in 204ms
+ GET /api/public/producto/yerba-organica-500g-v2 200 in 236ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 212ms
+ GET /producto/yerba-organica-500g-v2 500 in 569ms
+ GET /?_rsc=t3po2 200 in 342ms
+ ✓ Compiled /_not-found in 117ms (815 modules)
+ GET /esto-no-existe 404 in 178ms
+ ✓ Compiled /producto/[slug] in 89ms (327 modules)
+ ✓ Compiled (330 modules)
+ ✓ Compiled /api/public/producto/[slug] in 175ms (330 modules)
+ ✓ Compiled (362 modules)
+ GET /api/public/producto/yerba-organica-500g-v2 200 in 175ms
+ GET /producto/yerba-organica-500g-v2 200 in 537ms
+ ✓ Compiled /api/public/catalogo in 79ms (364 modules)
+ ✓ Compiled (366 modules)
+ GET /api/public/banners 200 in 226ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 227ms
+ GET /?_rsc=t3po2 200 in 538ms
+ GET /admin 200 in 253ms
+ ✓ Compiled /api/auth/login in 199ms (427 modules)
+ POST /api/auth/login 200 in 312ms
+   Reload env: .env
+ ✓ Compiled in 793ms (1312 modules)
+ ✓ Compiled /api/public/wa in 256ms (804 modules)
+ GET /api/public/wa?slug=yerba-organica-500g-v2&qty=1&dry=1 200 in 351ms
+ ✓ Compiled /api/public/catalogo in 51ms (361 modules)
+ ✓ Compiled (364 modules)
+ GET /api/public/banners 200 in 210ms
+ GET /api/public/catalogo?page=1&perPage=8&sort=-id 200 in 213ms
+ GET / 200 in 310ms
+ ⨯ ./app/(web)/producto/[slug]/page.tsx
+Error: 
+  [31mx[0m Unexpected token `div`. Expected jsx identifier
+     ,-[[36;1;4mD:\zona-natural\app\(web)\producto\[slug]\page.tsx[0m:123:1]
+ [2m123[0m |   };
+ [2m124[0m | 
+ [2m125[0m |   return (
+ [2m126[0m |     <div style={{ padding: 16 }}>
+     : [31;1m     ^^^[0m
+ [2m127[0m |       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+ [2m128[0m |       <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:24}}>
+ [2m129[0m |         <div>
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/(web)/producto/[slug]/page.tsx
+ ⨯ ./app/(web)/producto/[slug]/page.tsx
+Error: 
+  [31mx[0m Unexpected token `div`. Expected jsx identifier
+     ,-[[36;1;4mD:\zona-natural\app\(web)\producto\[slug]\page.tsx[0m:123:1]
+ [2m123[0m |   };
+ [2m124[0m | 
+ [2m125[0m |   return (
+ [2m126[0m |     <div style={{ padding: 16 }}>
+     : [31;1m     ^^^[0m
+ [2m127[0m |       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+ [2m128[0m |       <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:24}}>
+ [2m129[0m |         <div>
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./app/(web)/producto/[slug]/page.tsx
+ ○ Compiling /_not-found ...
+ GET /producto/yerba-organica-500g-v2 500 in 21ms
+^C^C
