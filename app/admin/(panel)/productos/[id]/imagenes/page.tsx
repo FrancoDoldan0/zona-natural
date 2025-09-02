@@ -2,105 +2,123 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getCsrfTokenFromCookie } from "@/components/admin/csrf";
 
-type Img = { id:number; url:string; alt:string|null; sortOrder:number };
+type Img = { id: number; url: string; alt?: string | null; sortOrder?: number | null };
+type ProductResp = { ok?: boolean; item?: { id: number; name: string; images?: Img[] } };
 
-export default function ProductImagesPage({ params }:{ params:{ id:string } }){
-  const pid = Number(params.id);
-  const [items, setItems] = useState<Img[]>([]);
-  const [file, setFile] = useState<File|null>(null);
+async function getProduct(id: number): Promise<ProductResp> {
+  // intenta /products y cae a /productos
+  let r = await fetch(`/api/admin/products/${id}`, { cache: "no-store" });
+  if (!r.ok) r = await fetch(`/api/admin/productos/${id}`, { cache: "no-store" });
+  return r.json();
+}
+
+export default function AdminProductImagesPage({ params }: { params: { id: string } }) {
+  const id = Number(params.id);
+  const [name, setName] = useState("");
+  const [images, setImages] = useState<Img[]>([]);
+  const [file, setFile] = useState<File | null>(null);
   const [alt, setAlt] = useState("");
-  const [msg, setMsg] = useState("");
 
-  async function load(){
-    const r = await fetch(`/api/admin/products/${pid}/images`, { cache:"no-store" });
-    const j = await r.json();
-    if (j.ok) setItems(j.items);
+  async function load() {
+    const data = await getProduct(id);
+    setName(data.item?.name ?? "");
+    setImages(data.item?.images ?? []);
   }
-  useEffect(()=>{ load(); },[]);
 
-  async function upload(e:React.FormEvent){
+  useEffect(() => {
+    load().catch((e) => {
+      console.error(e);
+      alert("No pude cargar las imágenes.");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  async function onUpload(e: React.FormEvent) {
     e.preventDefault();
-    setMsg("");
-    if (!file) { setMsg("Elegí una imagen"); return; }
+    if (!file) return;
+
     const fd = new FormData();
-    fd.set("file", file);
-    if (alt) fd.set("alt", alt);
-    const r = await fetch(`/api/admin/products/${pid}/images`, {
-      method: "POST",
-      headers: { "x-csrf-token": getCsrfTokenFromCookie() },
-      body: fd
-    });
-    const j = await r.json();
-    if (j.ok){ setFile(null); setAlt(""); (document.getElementById("imgfile") as HTMLInputElement).value=""; await load(); }
-    else setMsg(j.error || "Error al subir");
-  }
+    fd.append("file", file);
+    if (alt.trim()) fd.append("alt", alt.trim());
+    // sortOrder por defecto: al final
+    fd.append("sortOrder", String((images?.length ?? 0) + 1));
 
-  async function setAltOf(id:number, value:string){
-    await fetch(`/api/admin/products/${pid}/images/${id}`, {
-      method:"PUT",
-      headers:{ "Content-Type":"application/json; charset=utf-8", "x-csrf-token": getCsrfTokenFromCookie() },
-      body: JSON.stringify({ alt: value })
-    });
+    let r = await fetch(`/api/admin/products/${id}/images`, { method: "POST", body: fd });
+    if (!r.ok) r = await fetch(`/api/admin/productos/${id}/imagenes`, { method: "POST", body: fd });
+    if (!r.ok) {
+      const txt = await r.text();
+      alert("No se pudo subir la imagen.\n" + txt);
+      return;
+    }
+    setFile(null);
+    setAlt("");
     await load();
   }
 
-  async function move(id:number, dir:"up"|"down"){
-    await fetch(`/api/admin/products/${pid}/images/${id}`, {
-      method:"PUT",
-      headers:{ "Content-Type":"application/json; charset=utf-8", "x-csrf-token": getCsrfTokenFromCookie() },
-      body: JSON.stringify({ move: dir })
-    });
-    await load();
-  }
-
-  async function del(id:number){
+  async function onDelete(imageId: number) {
     if (!confirm("¿Eliminar imagen?")) return;
-    await fetch(`/api/admin/products/${pid}/images/${id}`, {
-      method:"DELETE",
-      headers:{ "x-csrf-token": getCsrfTokenFromCookie() }
-    });
+    let r = await fetch(`/api/admin/products/${id}/images?imageId=${imageId}`, { method: "DELETE" });
+    if (!r.ok)
+      r = await fetch(`/api/admin/productos/${id}/imagenes?imageId=${imageId}`, { method: "DELETE" });
+    if (!r.ok) {
+      const txt = await r.text();
+      alert("No se pudo eliminar.\n" + txt);
+      return;
+    }
     await load();
   }
 
   return (
-    <main className="max-w-6xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <Link href={`/admin/productos/${pid}`} className="underline">← Volver</Link>
-        <h1 className="text-xl font-semibold">Imágenes del producto #{pid}</h1>
+    <main className="max-w-4xl mx-auto p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">Imágenes — {name || `#${id}`}</h1>
+
+      <div className="flex items-center gap-3">
+        <Link href={`/admin/productos/${id}`} className="underline">
+          ← Volver al editor
+        </Link>
+        <Link href="/admin/productos" className="underline">
+          Listado
+        </Link>
       </div>
 
-      <form onSubmit={upload} className="border rounded p-4 grid md:grid-cols-4 gap-2">
-        <input id="imgfile" type="file" accept="image/*" className="md:col-span-2"
-               onChange={e=> setFile(e.target.files?.[0] || null)} />
-        <input className="border rounded p-2" placeholder="Texto ALT (opcional)" value={alt} onChange={e=>setAlt(e.target.value)} />
-        <button className="border rounded px-4 py-2">Subir</button>
-        {msg && <div className="text-sm text-red-600 md:col-span-4">{msg}</div>}
-        <div className="text-xs text-gray-500 md:col-span-4">Formatos: JPG/PNG/WebP/GIF/AVIF. Máx 6MB.</div>
+      <form onSubmit={onUpload} className="border rounded p-4 space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="border rounded p-2"
+          />
+          <input
+            className="border rounded p-2"
+            placeholder="Alt (opcional)"
+            value={alt}
+            onChange={(e) => setAlt(e.target.value)}
+          />
+          <button className="border rounded px-4 py-2" type="submit" disabled={!file}>
+            Subir
+          </button>
+        </div>
       </form>
 
-      <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {items.map((im, i)=>(
-          <div key={im.id} className="border rounded p-2 space-y-2">
-            <img src={im.url} alt={im.alt || ""} className="w-full h-40 object-cover rounded" />
-            <input className="border rounded p-2 w-full text-sm"
-                   value={im.alt || ""} placeholder="ALT…"
-                   onChange={e=>{
-                     const v = e.target.value;
-                     setItems(prev => prev.map(x => x.id===im.id ? { ...x, alt:v } : x));
-                   }}
-                   onBlur={e=> setAltOf(im.id, e.target.value)} />
-            <div className="flex items-center justify-between">
-              <div className="space-x-2">
-                <button className="border rounded px-2 py-1 text-xs" disabled={i===0} onClick={()=>move(im.id,"up")} type="button">↑</button>
-                <button className="border rounded px-2 py-1 text-xs" disabled={i===items.length-1} onClick={()=>move(im.id,"down")} type="button">↓</button>
-              </div>
-              <button className="border rounded px-2 py-1 text-xs text-red-600" onClick={()=>del(im.id)} type="button">Borrar</button>
-            </div>
-          </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+        {images.map((im) => (
+          <figure key={im.id} className="border rounded p-2">
+            <img
+              src={im.url?.startsWith("http") ? im.url : `/${im.url?.replace(/^\//, "")}`}
+              alt={im.alt ?? ""}
+              style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", borderRadius: 6 }}
+            />
+            <figcaption className="text-xs mt-2 break-all">
+              {im.alt || <span className="opacity-60">sin alt</span>}
+            </figcaption>
+            <button className="text-red-600 text-sm mt-2 underline" onClick={() => onDelete(im.id)}>
+              Eliminar
+            </button>
+          </figure>
         ))}
-        {!items.length && <div className="opacity-70">Sin imágenes todavía.</div>}
+        {!images.length && <p className="opacity-70">Sin imágenes.</p>}
       </div>
     </main>
   );

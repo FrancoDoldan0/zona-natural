@@ -1,19 +1,28 @@
 ﻿// app/(public)/productos/page.tsx
-import Link from "next/link";
 import { headers } from "next/headers";
-import SafeImage from "@/components/SafeImage";
+import ProductGrid from "./ProductGrid";
 
 export const runtime = "edge";
 export const revalidate = 60;
 
-type ProductImage = { url: string; alt?: string | null };
-type Product = {
+export type ProductImage = { url: string; alt?: string | null; sortOrder?: number | null };
+
+export type Product = {
   id: number;
   name: string;
   slug: string;
-  price?: number | null;
+  // catálgo puede traer "cover", detalle puede traer "coverUrl" o "images"
+  cover?: string | null;
   coverUrl?: string | null;
-  images?: ProductImage[];
+  images?: ProductImage[] | null;
+
+  // precios: distintos endpoints usan distintos campos
+  price?: number | null;
+  priceOriginal?: number | null;
+  priceFinal?: number | null;
+
+  hasDiscount?: boolean;
+  discountPercent?: number | null;
 };
 
 function getBaseUrl() {
@@ -23,24 +32,47 @@ function getBaseUrl() {
   return `${proto}://${host}`;
 }
 
+function normalizeProduct(raw: any): Product {
+  const price =
+    typeof raw?.price === "number"
+      ? raw.price
+      : typeof raw?.priceFinal === "number"
+      ? raw.priceFinal
+      : typeof raw?.priceOriginal === "number"
+      ? raw.priceOriginal
+      : null;
+
+  // El catálogo trae "cover"; el detalle puede traer "coverUrl" o "images"
+  const cover: string | null =
+    raw?.cover ?? raw?.coverUrl ?? (raw?.images?.[0]?.url ?? null);
+
+  return {
+    id: Number(raw?.id),
+    name: String(raw?.name ?? ""),
+    slug: String(raw?.slug ?? ""),
+    cover,
+    coverUrl: raw?.coverUrl ?? null,
+    images: raw?.images ?? null,
+    price,
+    priceOriginal: raw?.priceOriginal ?? null,
+    priceFinal: raw?.priceFinal ?? null,
+    hasDiscount: raw?.hasDiscount ?? false,
+    discountPercent: raw?.discountPercent ?? null,
+  };
+}
+
 async function getData(page = 1, perPage = 12) {
   const base = getBaseUrl();
   const url = `${base}/api/public/catalogo?page=${page}&perPage=${perPage}&sort=-id`;
 
-  const res = await fetch(url, {
-    // Puedes cachear si quieres: next: { revalidate }
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
-  }
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
 
   const data = await res.json();
-
-  // Soporta distintas formas de respuesta
-  const items: Product[] =
+  const rawItems: any[] =
     data.items ?? data.data ?? data.products ?? data.results ?? [];
+
+  const items: Product[] = rawItems.map(normalizeProduct);
   const total: number = data.total ?? items.length;
 
   return { items, total, page: data.page ?? page, perPage: data.perPage ?? perPage };
@@ -63,61 +95,8 @@ export default async function ProductosPage({
         {total} resultado{total === 1 ? "" : "s"}
       </p>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-          gap: 16,
-        }}
-      >
-        {items.map((p) => {
-          const firstImage = p.coverUrl || p.images?.[0]?.url || "/placeholder.png";
-          // Asegurar que las rutas relativas empiecen con "/"
-          const src =
-            firstImage?.startsWith("http") || firstImage?.startsWith("/")
-              ? (firstImage as string)
-              : `/${firstImage}`;
-
-        return (
-          <article
-            key={p.id}
-            style={{
-              border: "1px solid #2b2b2b",
-              borderRadius: 8,
-              padding: 12,
-            }}
-          >
-            <Link href={`/producto/${p.slug}`} style={{ textDecoration: "none" }}>
-              <div style={{ width: "100%", aspectRatio: "4/3", marginBottom: 8 }}>
-                <SafeImage
-                  src={src}
-                  alt={p.name}
-                  // cubre el contenedor
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    borderRadius: 6,
-                    display: "block",
-                    background: "#111",
-                  }}
-                />
-              </div>
-              <div style={{ color: "inherit" }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
-                {typeof p.price === "number" ? (
-                  <div style={{ opacity: 0.85 }}>
-                    ${p.price.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                  </div>
-                ) : (
-                  <div style={{ opacity: 0.6 }}>Sin precio</div>
-                )}
-              </div>
-            </Link>
-          </article>
-        );
-        })}
-      </div>
+      {/* Client Component: maneja <img> con onError sin romper RSC */}
+      <ProductGrid items={items} />
     </main>
   );
 }

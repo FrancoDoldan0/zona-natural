@@ -1,109 +1,257 @@
 "use client";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { getCsrfTokenFromCookie } from "@/components/admin/csrf";
 
-type Cat = { id:number; name:string; subcats:{ id:number; name:string }[] }
+type Category = { id: number; name: string };
+type Subcategory = { id: number; name: string; categoryId: number };
+type ProductImage = { id: number; url: string; alt?: string | null; sortOrder?: number | null };
+type Product = {
+  id: number;
+  name: string;
+  slug: string;
+  description: string | null;
+  price: number | null;
+  sku: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  categoryId: number | null;
+  subcategoryId: number | null;
+  category?: { id: number; name: string } | null;
+  subcategory?: { id: number; name: string } | null;
+  images?: ProductImage[];
+};
 
-export default function ProductEditPage({ params }:{ params:{ id:string } }){
-  const pid = Number(params.id);
-  const [cats, setCats] = useState<Cat[]>([]);
-  const [f,setF] = useState<any>(null);
-  const [msg,setMsg] = useState<string>("");
+async function fetchFirstOk<T>(urls: string[], init?: RequestInit): Promise<T> {
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, init);
+      if (r.ok) return (await r.json()) as T;
+    } catch {}
+  }
+  throw new Error("No pude leer la API en ninguna ruta.");
+}
 
-  const subcats = useMemo(
-    ()=> cats.find(c=>c.id===Number(f?.categoryId))?.subcats || [],
-    [cats, f?.categoryId]
+export default function AdminProductEditPage({ params }: { params: { id: string } }) {
+  const id = Number(params.id);
+
+  const [cats, setCats] = useState<Category[]>([]);
+  const [subs, setSubs] = useState<Subcategory[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // campos
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [description, setDescription] = useState("");
+  const [price, setPrice] = useState<string>("");
+  const [sku, setSku] = useState("");
+  const [status, setStatus] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
+  const [categoryId, setCategoryId] = useState<number | "">("");
+  const [subcategoryId, setSubcategoryId] = useState<number | "">("");
+
+  const subOptions = useMemo(
+    () => subs.filter((s) => (categoryId === "" ? true : s.categoryId === Number(categoryId))),
+    [subs, categoryId]
   );
 
-  async function loadCats(){
-    const r = await fetch("/api/public/categories", { cache:"no-store" });
-    const j = await r.json();
-    setCats((j.items||[]).map((c:any)=>({ id:c.id, name:c.name, subcats:(c.subcats||[]).map((s:any)=>({id:s.id,name:s.name})) })));
+  async function load() {
+    setLoading(true);
+
+    const [catsData, subsData] = await Promise.all([
+      fetchFirstOk<{ ok?: boolean; items?: Category[]; data?: Category[] }>([
+        "/api/admin/categories?take=999",
+        "/api/admin/categorias?take=999",
+      ]),
+      fetchFirstOk<{ ok?: boolean; items?: Subcategory[]; data?: Subcategory[] }>([
+        "/api/admin/subcategories?take=999",
+        "/api/admin/subcategorias?take=999",
+      ]),
+    ]);
+
+    setCats(catsData.items ?? catsData.data ?? []);
+    setSubs(subsData.items ?? subsData.data ?? []);
+
+    const prod = await fetchFirstOk<{ ok?: boolean; item?: Product; id?: number }>([
+      `/api/admin/products/${id}`,
+      `/api/admin/productos/${id}`,
+    ]);
+
+    const p = prod.item as Product;
+    setName(p.name ?? "");
+    setSlug(p.slug ?? "");
+    setDescription(p.description ?? "");
+    setPrice(p.price != null ? String(p.price) : "");
+    setSku(p.sku ?? "");
+    setStatus((p.status as any) === "INACTIVE" ? "INACTIVE" : "ACTIVE");
+    setCategoryId(p.categoryId ?? "");
+    setSubcategoryId(p.subcategoryId ?? "");
+
+    setLoading(false);
   }
-  async function load(){
-    const r = await fetch(`/api/admin/products/${pid}`, { cache:"no-store" });
-    const j = await r.json();
-    if (j.ok) {
-      const p = j.item;
-      setF({
-        name: p.name, slug: p.slug, description: p.description||"",
-        price: p.price??"", sku: p.sku??"",
-        status: p.status,
-        categoryId: p.categoryId??"",
-        subcategoryId: p.subcategoryId??"",
-      });
+
+  useEffect(() => {
+    load().catch((e) => {
+      console.error(e);
+      alert("No pude cargar el producto.");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  async function onSave(e: React.FormEvent) {
+    e.preventDefault();
+    const body: any = {
+      name: name.trim(),
+      // Si el slug se deja vacío, la API lo recalcula con el nombre
+      ...(slug.trim() !== "" ? { slug: slug.trim() } : {}),
+      description: description.trim() || null,
+      price: price.trim() === "" ? null : Number(price),
+      sku: sku.trim() || null,
+      status,
+      categoryId: categoryId === "" ? null : Number(categoryId),
+      subcategoryId: subcategoryId === "" ? null : Number(subcategoryId),
+    };
+
+    const reqInit: RequestInit = {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    };
+
+    try {
+      const r = await fetch(`/api/admin/products/${id}`, reqInit);
+      if (!r.ok) {
+        // fallback a /productos
+        const r2 = await fetch(`/api/admin/productos/${id}`, reqInit);
+        if (!r2.ok) throw new Error(await r2.text());
+      }
+      alert("Guardado ✔");
+      await load();
+    } catch (e: any) {
+      console.error(e);
+      alert("No se pudo guardar. " + (e?.message ?? ""));
     }
   }
-  useEffect(()=>{ loadCats(); load(); },[]);
-
-  async function save(e:React.FormEvent){
-    e.preventDefault();
-    setMsg("");
-    const body:any = {
-      name: f.name,
-      slug: f.slug || undefined,
-      description: f.description || null,
-      price: f.price===""? null : Number(f.price),
-      sku: f.sku || null,
-      status: f.status,
-      categoryId: f.categoryId===""? null : Number(f.categoryId),
-      subcategoryId: f.subcategoryId===""? null : Number(f.subcategoryId),
-    };
-    const r = await fetch(`/api/admin/products/${pid}`, {
-      method:"PUT",
-      headers: { "Content-Type":"application/json", "x-csrf-token": getCsrfTokenFromCookie() },
-      body: JSON.stringify(body),
-    });
-    const j = await r.json();
-    if (j.ok) setMsg("Guardado ✔"); else setMsg(j.error || "Error");
-  }
-
-  async function del(){
-    if (!confirm("¿Eliminar producto? (si tiene imágenes, primero borrarlas)")) return;
-    const r = await fetch(`/api/admin/products/${pid}`, {
-      method:"DELETE",
-      headers: { "x-csrf-token": getCsrfTokenFromCookie() }
-    });
-    const j = await r.json();
-    if (j.ok) window.location.href = "/admin/productos"; else alert(j.error || "Error");
-  }
-
-  if (!f) return <main className="max-w-5xl mx-auto p-6">Cargando…</main>;
 
   return (
-    <main className="max-w-5xl mx-auto p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <Link href="/admin/productos" className="underline">← Volver</Link>
-        <div className="flex gap-2">
-          <Link className="border rounded px-3 py-1" href={`/admin/productos/${pid}/imagenes`}>Imágenes…</Link>
-          <button className="border rounded px-3 py-1 text-red-600" onClick={del}>Eliminar</button>
-        </div>
+    <main className="max-w-4xl mx-auto p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">Editar producto #{id}</h1>
+
+      <div className="flex items-center gap-3">
+        <Link href="/admin/productos" className="underline">
+          ← Volver
+        </Link>
+        <Link href={`/admin/productos/${id}/imagenes`} className="underline">
+          Administrar imágenes
+        </Link>
+        {!loading && (
+          <Link href={`/productos/${slug}`} target="_blank" className="underline">
+            Ver en tienda
+          </Link>
+        )}
       </div>
 
-      <h1 className="text-xl font-semibold">Editar producto #{pid}</h1>
-      {msg && <div className="text-sm">{msg}</div>}
+      <form onSubmit={onSave} className="border rounded p-4 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="space-y-1">
+            <span className="text-sm opacity-70">Nombre</span>
+            <input
+              className="border rounded p-2 w-full"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </label>
 
-      <form onSubmit={save} className="grid md:grid-cols-6 gap-2 border rounded p-3">
-        <input className="border rounded p-2 md:col-span-3" placeholder="Nombre" value={f.name} onChange={e=>setF({...f,name:e.target.value})} required />
-        <input className="border rounded p-2 md:col-span-3" placeholder="Slug (opcional)" value={f.slug} onChange={e=>setF({...f,slug:e.target.value})} />
-        <textarea className="border rounded p-2 md:col-span-6" placeholder="Descripción" rows={4} value={f.description} onChange={e=>setF({...f,description:e.target.value})}/>
-        <input className="border rounded p-2" type="number" step="0.01" placeholder="Precio" value={f.price} onChange={e=>setF({...f,price:e.target.value})} />
-        <input className="border rounded p-2" placeholder="SKU" value={f.sku} onChange={e=>setF({...f,sku:e.target.value})} />
-        <select className="border rounded p-2" value={f.status} onChange={e=>setF({...f,status:e.target.value})}>
-          <option value="ACTIVE">Activo</option>
-          <option value="INACTIVE">Inactivo</option>
-        </select>
-        <select className="border rounded p-2" value={f.categoryId} onChange={e=>setF({...f,categoryId: (e.target.value===""?"":Number(e.target.value)), subcategoryId:""})}>
-          <option value="">Categoría</option>
-          {cats.map(c=> <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select className="border rounded p-2" value={f.subcategoryId} onChange={e=>setF({...f,subcategoryId: (e.target.value===""?"":Number(e.target.value))})}>
-          <option value="">Subcategoría</option>
-          {subcats.map(s=> <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+          <label className="space-y-1">
+            <span className="text-sm opacity-70">Slug (opcional)</span>
+            <input
+              className="border rounded p-2 w-full"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="vacío = se recalcula"
+            />
+          </label>
 
-        <button className="border rounded px-4 py-2 md:col-span-6">Guardar</button>
+          <label className="space-y-1">
+            <span className="text-sm opacity-70">Precio</span>
+            <input
+              className="border rounded p-2 w-full"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="ej: 199.99"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-sm opacity-70">SKU</span>
+            <input
+              className="border rounded p-2 w-full"
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-sm opacity-70">Estado</span>
+            <select
+              className="border rounded p-2 w-full"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as "ACTIVE" | "INACTIVE")}
+            >
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="INACTIVE">INACTIVE</option>
+            </select>
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-sm opacity-70">Categoría</span>
+            <select
+              className="border rounded p-2 w-full"
+              value={categoryId}
+              onChange={(e) => {
+                const v = e.target.value === "" ? "" : Number(e.target.value);
+                setCategoryId(v);
+                setSubcategoryId("");
+              }}
+            >
+              <option value="">—</option>
+              {cats.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-sm opacity-70">Subcategoría</span>
+            <select
+              className="border rounded p-2 w-full"
+              value={subcategoryId}
+              onChange={(e) => setSubcategoryId(e.target.value === "" ? "" : Number(e.target.value))}
+            >
+              <option value="">—</option>
+              {subOptions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <label className="space-y-1 block">
+          <span className="text-sm opacity-70">Descripción</span>
+          <textarea
+            className="border rounded p-2 w-full"
+            rows={5}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </label>
+
+        <button className="border rounded px-4 py-2" type="submit" disabled={loading}>
+          {loading ? "Cargando…" : "Guardar cambios"}
+        </button>
       </form>
     </main>
   );
