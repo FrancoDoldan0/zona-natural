@@ -1,59 +1,72 @@
-export const runtime = "nodejs";
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { audit } from '@/lib/audit';
 
-import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
-import { z } from "zod";
+export const runtime = 'edge';
 
-const BodySchema = z.object({
-  // Acepta números o strings numéricos
-  desiredIds: z.array(z.union([z.number().int(), z.string().regex(/^\d+$/)])).min(1),
-});
-type Body = z.infer<typeof BodySchema>;
+type ReorderBody = {
+  desiredIds: string[];
+};
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+// Cambia esto si querés fijarlo por env: NEXT_PUBLIC_IMG_SORT_FIELD=position, etc.
+const SORT_FIELD =
+  (process.env.NEXT_PUBLIC_IMG_SORT_FIELD as
+    | 'order'
+    | 'position'
+    | 'sort'
+    | 'sortOrder'
+    | 'index'
+    | 'idx') || 'order';
+
+export async function POST(
+  req: Request,
+  ctx: { params: { id: string } }
+) {
   try {
-    // params.id -> number (productImage.productId es Int en Prisma)
-    const productId = Number(params.id);
+    const productIdParam = ctx.params.id;
+    const productId = Number(productIdParam);
     if (!Number.isFinite(productId)) {
-      return NextResponse.json({ ok: false, error: "Invalid product id" }, { status: 400 });
-    }
-
-    // validar body y normalizar desiredIds a number[]
-    const body: Body = BodySchema.parse(await req.json());
-    const desiredIds: number[] = body.desiredIds.map(v => (typeof v === "string" ? Number(v) : v));
-
-    // Traer ids existentes del producto
-    const existing = await prisma.productImage.findMany({
-      where: { productId },
-      orderBy: { order: "asc" }, // Si tu campo se llama sortOrder, cambia aquí y abajo.
-      select: { id: true },
-    });
-
-    const existingIds = new Set(existing.map(e => e.id));
-    const missing = desiredIds.filter(id => !existingIds.has(id));
-    if (missing.length) {
       return NextResponse.json(
-        { ok: false, error: `IDs no pertenecen al producto: ${missing.join(", ")}` },
+        { ok: false, error: 'productId inválido' },
         { status: 400 }
       );
     }
 
-    // final: primero los solicitados (en su orden), luego el resto
-    const remainder = existing.map(e => e.id).filter(id => !desiredIds.includes(id));
-    const finalOrder = [...desiredIds, ...remainder];
+    const body = (await req.json()) as ReorderBody;
+    const desiredIds: string[] = Array.isArray(body?.desiredIds) ? body.desiredIds : [];
 
+    // Traer imágenes actuales; si el campo no existe, no ordenamos (queda por PK)
+    const existing = await prisma.productImage.findMany({
+      where: { productId },
+      // usamos any para no depender del nombre exacto del campo en el tipo generado por Prisma
+      ...(SORT_FIELD ? ({ orderBy: { [SORT_FIELD]: 'asc' } } as any) : {}),
+      select: { id: true },
+    });
+
+    // Validar que todas las deseadas pertenecen al producto
+    const included = desiredIds.map((id: string) => {
+      const img = existing.find((x) => x.id === id);
+      if (!img) throw new Error(`La imagen ${id} no pertenece al producto o no existe`);
+      return img;
+    });
+
+    const remainder = existing.filter((x) => !desiredIds.includes(x.id));
+    const final = [...included, ...remainder];
+
+    // Persistir orden 0..n en el campo configurado
     await prisma.$transaction(
-      finalOrder.map((id, idx) =>
+      final.map((img, index) =>
         prisma.productImage.update({
-          where: { id },
-          data: { order: idx }, // Si usas sortOrder, cambiar a { sortOrder: idx }
+          where: { id: img.id },
+          data: { [SORT_FIELD]: index } as any, // <- agnóstico
         })
       )
     );
 
-    return NextResponse.json({ ok: true, order: finalOrder });
-  } catch (err: any) {
-    console.error(err);
-    return NextResponse.json({ ok: false, error: err?.message ?? "Unexpected error" }, { status: 500 });
+    await audit('product_images.reorder', { productId, desiredIds, sortField: SORT_FIELD });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado';
+    return NextResponse.json({ ok: false, error: msg }, { status: 400 });
   }
 }
