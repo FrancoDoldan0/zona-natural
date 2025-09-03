@@ -1,55 +1,45 @@
-import { mkdir, writeFile, unlink } from 'fs/promises';
-import { join, extname } from 'path';
-import { randomUUID } from 'crypto';
+// lib/storage.ts
+import { getRequestContext } from '@cloudflare/next-on-pages';
 
-const UPLOAD_ROOT = join(process.cwd(), 'public', 'uploads');
-
-const OK_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif']);
-function normalizeExt(ext: string) {
-  ext = (ext || '').toLowerCase();
-  if (ext === '.jpeg') return '.jpg';
-  return ext;
-}
-function extFromType(type: string): string | undefined {
-  const t = (type || '').toLowerCase();
-  if (t.includes('jpeg') || t.includes('jpg')) return '.jpg';
-  if (t.includes('png')) return '.png';
-  if (t.includes('webp')) return '.webp';
-  if (t.includes('gif')) return '.gif';
-  if (t.includes('avif')) return '.avif';
-  return undefined;
-}
-function extFromName(name?: string): string | undefined {
-  if (!name) return undefined;
-  const e = normalizeExt(extname(name));
-  return OK_EXTS.has(e) ? e : undefined;
-}
-function safeName(base: string) {
-  return (base || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\-_.]+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 80);
+function getEnv() {
+  const { env } = getRequestContext();
+  return env as unknown as { R2: R2Bucket; PUBLIC_R2_BASE_URL?: string };
 }
 
-export async function saveProductImage(productId: number, file: File) {
-  const buf = Buffer.from(await file.arrayBuffer());
-  const name = (file as any).name as string | undefined;
-  const type = (file as any).type as string | undefined;
-
-  const ext = extFromType(type || '') || extFromName(name) || '.jpg'; // fallback seguro
-  const fname = `${Date.now()}-${randomUUID().slice(0, 8)}${ext}`;
-  const dir = join(UPLOAD_ROOT, 'products', String(productId));
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, safeName(fname)), buf);
-  const rel = join('products', String(productId), safeName(fname)).replace(/\\/g, '/');
-  const publicUrl = `/uploads/${rel}`;
-  return { publicUrl, relPath: rel };
+export function publicR2Url(key: string): string {
+  const base = getEnv().PUBLIC_R2_BASE_URL;
+  return base ? `${base.replace(/\/$/, '')}/${key}` : key; // fallback simple
 }
 
-export async function deleteUpload(relPath: string) {
-  const clean = String(relPath || '').replace(/^[/\\]+/, '');
-  try {
-    await unlink(join(UPLOAD_ROOT, clean));
-  } catch {}
+export async function r2Put(
+  key: string,
+  value: ReadableStream | ArrayBuffer | Blob,
+  contentType?: string
+) {
+  const { R2 } = getEnv();
+  await R2.put(key, value as any, { httpMetadata: { contentType } });
+  return publicR2Url(key);
+}
+
+export async function r2Delete(key: string) {
+  const { R2 } = getEnv();
+  await R2.delete(key);
+}
+
+export async function r2List(prefix: string, limit = 1000) {
+  const { R2 } = getEnv();
+  const res = await R2.list({ prefix, limit });
+  return res.objects.map(o => ({ key: o.key, size: o.size, uploaded: o.uploaded, etag: o.etag }));
+}
+
+/**
+ * Borra un objeto del bucket R2.
+ * No falla si no existe o si no hay binding en dev.
+ */
+export async function deleteUpload(key: string): Promise<void> {
+  const env = (typeof getRequestContext === 'function' ? getRequestContext().env : undefined) as
+    | { R2_BUCKET?: { delete: (k: string) => Promise<any> } }
+    | undefined;
+
+  await env?.R2_BUCKET?.delete(key).catch(() => {});
 }

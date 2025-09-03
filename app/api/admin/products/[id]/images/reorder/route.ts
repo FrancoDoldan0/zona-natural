@@ -1,60 +1,58 @@
-export const runtime = 'nodejs';
-import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { audit } from '@/lib/audit';
 
-function bad(msg: string, code = 400) {
-  return NextResponse.json({ ok: false, error: msg }, { status: code });
-}
+export const runtime = 'edge';
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+type ReorderBody = {
+  desiredIds: string[]; // IDs en el orden deseado
+};
+
+export async function POST(
+  req: Request,
+  ctx: { params: { id: string } }
+) {
   try {
-    const productId = Number(params.id);
-    if (!Number.isFinite(productId)) return bad('invalid_product_id', 400);
+    const productId = ctx.params.id;
 
-    let body: any = {};
-    try {
-      body = await req.json();
-    } catch {
-      body = {};
-    }
+    const body = (await req.json()) as ReorderBody;
+    const desiredIds: string[] = Array.isArray(body?.desiredIds) ? body.desiredIds : [];
 
-    const order = Array.isArray(body.order) ? body.order : [];
-    const desiredIds = order.map((v: any) => Number(v)).filter(Number.isFinite);
-
+    // Traemos las imágenes actuales del producto
     const existing = await prisma.productImage.findMany({
       where: { productId },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: { order: 'asc' },
+      select: { id: true },
     });
 
-    if (desiredIds.length === 0 && existing.length === 0) {
-      return NextResponse.json({ ok: true, items: [] });
-    }
+    // Re-armamos el orden: primero las deseadas (en ese orden), luego el resto
+    const included = desiredIds.map((id: string) => {
+      const img = existing.find((x) => x.id === id);
+      if (!img) {
+        throw new Error(`La imagen ${id} no pertenece al producto o no existe`);
+      }
+      return img;
+    });
 
-    const existIds = new Set(existing.map((x) => x.id));
-    for (const id of desiredIds) {
-      if (!existIds.has(id)) return bad('unknown_or_mismatched_id', 400);
-    }
-
-    const included = desiredIds.map((id) => existing.find((x) => x.id === id)!);
     const remainder = existing.filter((x) => !desiredIds.includes(x.id));
     const final = [...included, ...remainder];
 
-    const updates = final.map((img, i) =>
-      prisma.productImage.update({ where: { id: img.id }, data: { sortOrder: i } }),
+    // Persistimos el orden (0..n)
+    await prisma.$transaction(
+      final.map((img, index) =>
+        prisma.productImage.update({
+          where: { id: img.id },
+          data: { order: index },
+        })
+      )
     );
 
-    await prisma.$transaction(updates);
+    // Auditoría (si la tenés implementada)
+    await audit('product_images.reorder', { productId, desiredIds });
 
-    const items = await prisma.productImage.findMany({
-      where: { productId },
-      orderBy: { sortOrder: 'asc' },
-    });
-
-    return NextResponse.json({ ok: true, items });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: 'reorder_failed', detail: e?.message ?? String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Error inesperado';
+    return NextResponse.json({ ok: false, error: msg }, { status: 400 });
   }
 }

@@ -33,3 +33,14 @@ Thumbs.db
 
 # backups locales corruptos
 __backup_mojibake/
+
+__backup_mojibake/
+**/__backup_mojibake/**
+*.bak
+*.old
+*.orig
+
+# backups y directorios locales
+__backup*/
+.vercel/
+.wrangler/
