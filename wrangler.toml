@@ -1,0 +1,14 @@
+name = "zona-natural"
+compatibility_date = "2025-09-01"
+pages_build_output_dir = ".vercel/output/pages"
+
+# ---------- Bindings ----------
+# R2 para las imágenes (crearemos el bucket en el dashboard más adelante)
+[[r2_buckets]]
+binding = "R2"                # Así lo referiremos en el código (getRequestContext().env.R2)
+bucket_name = "zona-natural-uploads"
+
+# (Opcional) KV para rate-limit; lo activaremos en un paso posterior
+# [[kv_namespaces]]
+# binding = "KV"
+# id = "RELLENAR_EN_DASHBOARD"
