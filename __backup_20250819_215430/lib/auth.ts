@@ -45,7 +45,7 @@ export async function createSession(userId: string) {
     tokenHash,
     expiresAt: expires,
     ip,
-    userAgent: ua
+    userAgent: ua,
   });
 
   cookies().set({
@@ -55,7 +55,7 @@ export async function createSession(userId: string) {
     sameSite: 'strict',
     path: '/',
     secure: process.env.NODE_ENV !== 'development',
-    maxAge: SESSION_TTL_SEC
+    maxAge: SESSION_TTL_SEC,
   });
 
   return { token, expires };
@@ -84,7 +84,7 @@ export async function getCurrentUser(): Promise<SafeUser | null> {
       uid: adminUser.id,
       email: adminUser.email,
       role: adminUser.role,
-      expiresAt: sessionTable.expiresAt
+      expiresAt: sessionTable.expiresAt,
     })
     .from(sessionTable)
     .innerJoin(adminUser, eq(sessionTable.adminUserId, adminUser.id))

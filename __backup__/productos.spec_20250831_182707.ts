@@ -1,16 +1,12 @@
 import { test, expect, Page } from '@playwright/test';
 
-    
 // Helper robusto para esperar que rendericen tarjetas de producto
 async function waitForCards(page, timeout = 45000) {
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForFunction(
-    () => !!document.querySelector('a[href^="/producto/"]'),
-    null,
-    { timeout }
-  );
+  await page.waitForFunction(() => !!document.querySelector('a[href^="/producto/"]'), null, {
+    timeout,
+  });
 }
-
 
 const BASE = 'http://localhost:3000';
 
@@ -18,7 +14,7 @@ function url(path: string, params: Record<string, any> = {}): string {
   const u = new URL(path, BASE);
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null) continue;
-    if (Array.isArray(v)) v.forEach(val => u.searchParams.append(k, String(val)));
+    if (Array.isArray(v)) v.forEach((val) => u.searchParams.append(k, String(val)));
     else u.searchParams.set(k, String(v));
   }
   return u.toString();
@@ -36,7 +32,7 @@ function paginaRe(p: number, n: number): RegExp {
 async function getCounter(page: Page, _opts: { perPage?: number } = {}) {
   // Tomamos el bloque que contiene "resultados"
   const node = page.locator('text=/resultados/i').first();
-  const text = (await node.textContent() ?? '').replace(/\s+/g, ' ').trim();
+  const text = ((await node.textContent()) ?? '').replace(/\s+/g, ' ').trim();
 
   // X resultados
   const mTotal = /\b(\d+)\s*resultados\b/i.exec(text);
@@ -51,7 +47,9 @@ async function getCounter(page: Page, _opts: { perPage?: number } = {}) {
 }
 
 test.describe('Productos Ã¢â‚¬â€œ total filtrado, paginaciÃƒÂ³n y LCP priority', () => {
-  test('1) Sin filtros: contador visible y consistente (perPage=99: total == cards)', async ({ page }) => {
+  test('1) Sin filtros: contador visible y consistente (perPage=99: total == cards)', async ({
+    page,
+  }) => {
     const perPage = 99;
     await page.goto(url('/productos', { perPage }));
     await await waitForCards(page);
@@ -65,10 +63,16 @@ test.describe('Productos Ã¢â‚¬â€œ total filtrado, paginaciÃƒÂ³n y 
     await expect(page.getByText(paginaRe(1, 1))).toBeVisible();
   });
 
-  test('2) Con filtros (perPage=1): contador y paginaciÃƒÂ³n usan el mismo totalForView', async ({ page }) => {
+  test('2) Con filtros (perPage=1): contador y paginaciÃƒÂ³n usan el mismo totalForView', async ({
+    page,
+  }) => {
     const perPage = 1;
     await page.goto(url('/productos', { onSale: 1, match: 'all', perPage }));
-    await page.locator('a[href^="/producto/"]').first().waitFor({ timeout: 5000 }).catch(() => {});
+    await page
+      .locator('a[href^="/producto/"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => {});
 
     const cards = await countCards(page);
     if (cards === 0) test.skip(true, 'No hay productos con onSale=1; se salta la prueba.');
@@ -86,12 +90,18 @@ test.describe('Productos Ã¢â‚¬â€œ total filtrado, paginaciÃƒÂ³n y 
     expect(cards).toBe(1);
   });
 
-  test('3) Con filtros + perPage=1: "PÃƒÂ¡gina X de Y" refleja la navegaciÃƒÂ³n a page=2 cuando corresponde', async ({ page }) => {
+  test('3) Con filtros + perPage=1: "PÃƒÂ¡gina X de Y" refleja la navegaciÃƒÂ³n a page=2 cuando corresponde', async ({
+    page,
+  }) => {
     const perPage = 1;
 
     // PÃƒÂ¡gina 1 con filtros activos
     await page.goto(url('/productos', { onSale: 1, match: 'all', perPage }));
-    await page.locator('a[href^="/producto/"]').first().waitFor({ timeout: 5000 }).catch(() => {});
+    await page
+      .locator('a[href^="/producto/"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => {});
     const cardsP1 = await countCards(page);
     if (cardsP1 === 0) test.skip(true, 'No hay productos con onSale=1; se salta la prueba.');
 
@@ -117,7 +127,9 @@ test.describe('Productos Ã¢â‚¬â€œ total filtrado, paginaciÃƒÂ³n y 
     }
   });
 
-  test('4) LCP: en pÃƒÂ¡gina 1 hay entre 1 y 3 imÃƒÂ¡genes sin loading="lazy"', async ({ page }) => {
+  test('4) LCP: en pÃƒÂ¡gina 1 hay entre 1 y 3 imÃƒÂ¡genes sin loading="lazy"', async ({
+    page,
+  }) => {
     await page.goto(url('/productos', { page: 1 }));
     await await waitForCards(page);
     const nonLazy = await page.locator('img:not([loading="lazy"])').count();
@@ -125,7 +137,9 @@ test.describe('Productos Ã¢â‚¬â€œ total filtrado, paginaciÃƒÂ³n y 
     expect(nonLazy).toBeLessThanOrEqual(3);
   });
 
-  test('5) LCP: en pÃƒÂ¡gina 2 todas las imÃƒÂ¡genes son lazy (0 con prioridad)', async ({ page }) => {
+  test('5) LCP: en pÃƒÂ¡gina 2 todas las imÃƒÂ¡genes son lazy (0 con prioridad)', async ({
+    page,
+  }) => {
     await page.goto(url('/productos', { page: 2 }));
     await page.locator('body').waitFor();
     const nonLazy = await page.locator('img:not([loading="lazy"])').count();

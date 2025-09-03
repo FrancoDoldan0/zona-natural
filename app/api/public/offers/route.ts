@@ -1,6 +1,6 @@
-export const runtime = "nodejs";
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+export const runtime = 'nodejs';
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   const now = new Date();
@@ -9,11 +9,13 @@ export async function GET() {
       AND: [
         { OR: [{ startAt: null }, { startAt: { lte: now } }] },
         { OR: [{ endAt: null }, { endAt: { gte: now } }] },
-      ]
+      ],
     },
-    orderBy: { createdAt: "desc" },
-    include: { product: { select:{ id:true, name:true, slug:true } },
-               category:{ select:{ id:true, name:true, slug:true } } }
+    orderBy: { createdAt: 'desc' },
+    include: {
+      product: { select: { id: true, name: true, slug: true } },
+      category: { select: { id: true, name: true, slug: true } },
+    },
   });
-  return NextResponse.json({ ok:true, items });
+  return NextResponse.json({ ok: true, items });
 }

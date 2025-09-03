@@ -1,16 +1,18 @@
-import { json } from "@/lib/json";
-export const runtime = "nodejs";
+import { json } from '@/lib/json';
+export const runtime = 'nodejs';
 
-import prisma from "@/lib/prisma";
+import prisma from '@/lib/prisma';
 
-export async function GET(){
+export async function GET() {
   const cats = await prisma.category.findMany({
-    orderBy:{ name:"asc" },
-    include:{ subcats:{ orderBy:{ name:"asc" } } }
+    orderBy: { name: 'asc' },
+    include: { subcats: { orderBy: { name: 'asc' } } },
   });
-  const items = cats.map(c=>({
-    id:c.id, name:c.name, slug:c.slug,
-    subcats:(c.subcats||[]).map(s=>({ id:s.id, name:s.name, slug:s.slug }))
+  const items = cats.map((c) => ({
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    subcats: (c.subcats || []).map((s) => ({ id: s.id, name: s.name, slug: s.slug })),
   }));
-  return json({ ok:true, items });
+  return json({ ok: true, items });
 }

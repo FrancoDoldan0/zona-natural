@@ -1,7 +1,7 @@
-"use client";
+'use client';
 export const runtime = 'edge';
 
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 
 type Offer = { id: string; title: string; description?: string | null };
 
@@ -10,10 +10,10 @@ export default function OfertasPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/offers")
-      .then(r => r.ok ? r.json() : Promise.reject(`${r.status} ${r.statusText}`))
-      .then(json => setData(json.data ?? json))
-      .catch(e => setError(String(e)));
+    fetch('/api/admin/offers')
+      .then((r) => (r.ok ? r.json() : Promise.reject(`${r.status} ${r.statusText}`)))
+      .then((json) => setData(json.data ?? json))
+      .catch((e) => setError(String(e)));
   }, []);
 
   return (
@@ -26,9 +26,10 @@ export default function OfertasPage() {
           {data.length === 0 ? (
             <li>Sin ofertas</li>
           ) : (
-            data.map(o => (
+            data.map((o) => (
               <li key={o.id}>
-                <strong>{o.title}</strong>{o.description ? ` — ${o.description}` : ""}
+                <strong>{o.title}</strong>
+                {o.description ? ` — ${o.description}` : ''}
               </li>
             ))
           )}

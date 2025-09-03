@@ -30,3 +30,6 @@ Thumbs.db
 
 # Si NO querés subir todo uploads, podés ignorarlo (descomenta la línea de abajo)
 # public/uploads/
+
+# backups locales corruptos
+__backup_mojibake/

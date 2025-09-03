@@ -1,18 +1,18 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
   const slug = process.argv[2];
   const tagName = process.argv[3];
   if (!slug || !tagName) {
-    console.error("Uso: node scripts/seed-tag.mjs <slug> <tagName>");
+    console.error('Uso: node scripts/seed-tag.mjs <slug> <tagName>');
     process.exit(1);
   }
 
   // Producto por slug
   const product = await prisma.product.findUnique({ where: { slug } });
   if (!product) {
-    console.error("Producto no encontrado por slug:", slug);
+    console.error('Producto no encontrado por slug:', slug);
     process.exit(2);
   }
 
@@ -30,33 +30,39 @@ async function main() {
       where: { id: product.id },
       data: { tags: { connect: { id: tag.id } } },
     });
-    attachedVia = "product.tags (implícita)";
+    attachedVia = 'product.tags (implícita)';
   } catch (e1) {
     // 2) Fallback: tabla puente explícita ProductTag (productId, tagId)
     try {
       const exists = await prisma.productTag.findFirst({
-        where: { productId: product.id, tagId: tag.id }
+        where: { productId: product.id, tagId: tag.id },
       });
       if (!exists) {
         await prisma.productTag.create({
-          data: { productId: product.id, tagId: tag.id }
+          data: { productId: product.id, tagId: tag.id },
         });
       }
-      attachedVia = "ProductTag (explícita)";
+      attachedVia = 'ProductTag (explícita)';
     } catch (e2) {
-      console.error("No pude vincular el tag al producto (ni implícita ni explícita).");
-      console.error("Error 1 (implícita):", e1?.message || e1);
-      console.error("Error 2 (explícita):", e2?.message || e2);
+      console.error('No pude vincular el tag al producto (ni implícita ni explícita).');
+      console.error('Error 1 (implícita):', e1?.message || e1);
+      console.error('Error 2 (explícita):', e2?.message || e2);
       process.exit(3);
     }
   }
 
-  console.log(JSON.stringify({
-    ok: true,
-    product: { id: product.id, slug: product.slug },
-    tag: { id: tag.id, name: tag.name },
-    attachedVia
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        product: { id: product.id, slug: product.slug },
+        tag: { id: tag.id, name: tag.name },
+        attachedVia,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 main().finally(() => prisma.$disconnect());

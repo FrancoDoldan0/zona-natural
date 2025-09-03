@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams } from 'next/navigation';
 
 type ProductImage = {
   id: number;
@@ -13,18 +13,18 @@ type ProductImage = {
 
 function getCsrf() {
   const m = document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : "";
+  return m ? decodeURIComponent(m[1]) : '';
 }
 
 export default function ImagesPage() {
   const params = useParams<{ id: string }>();
   const productId = Number(params.id);
-  const base = useMemo(() => "", []);
+  const base = useMemo(() => '', []);
   const [items, setItems] = useState<ProductImage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [alt, setAlt] = useState("");
+  const [alt, setAlt] = useState('');
   const [saving, setSaving] = useState(false);
   const [savingId, setSavingId] = useState<number | null>(null);
 
@@ -37,9 +37,11 @@ export default function ImagesPage() {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`${base}/api/admin/products/${productId}/images`, { credentials: "include" });
+      const r = await fetch(`${base}/api/admin/products/${productId}/images`, {
+        credentials: 'include',
+      });
       const j = await r.json();
-      if (!j.ok) throw new Error(j.error || "load_failed");
+      if (!j.ok) throw new Error(j.error || 'load_failed');
       setItems((j.items as ProductImage[]).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
       setDirty(false);
     } catch (e: any) {
@@ -49,15 +51,24 @@ export default function ImagesPage() {
     }
   }
 
-  useEffect(() => { if (Number.isFinite(productId)) load(); }, [productId]);
+  useEffect(() => {
+    if (Number.isFinite(productId)) load();
+  }, [productId]);
 
-  function onDragStart(idx: number) { dragIndex.current = idx; }
-  function onDragOver(e: React.DragEvent, idx: number) { e.preventDefault(); overIndex.current = idx; }
+  function onDragStart(idx: number) {
+    dragIndex.current = idx;
+  }
+  function onDragOver(e: React.DragEvent, idx: number) {
+    e.preventDefault();
+    overIndex.current = idx;
+  }
   function onDrop() {
-    const from = dragIndex.current, to = overIndex.current;
-    dragIndex.current = null; overIndex.current = null;
+    const from = dragIndex.current,
+      to = overIndex.current;
+    dragIndex.current = null;
+    overIndex.current = null;
     if (from == null || to == null || from === to) return;
-    setItems(prev => {
+    setItems((prev) => {
       const next = prev.slice();
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
@@ -67,17 +78,18 @@ export default function ImagesPage() {
   }
 
   async function saveOrder() {
-    setSaving(true); setError(null);
+    setSaving(true);
+    setError(null);
     try {
-      const order = items.map(it => it.id);
+      const order = items.map((it) => it.id);
       const r = await fetch(`${base}/api/admin/products/${productId}/images/reorder`, {
-        method: "PUT",
-        headers: { "content-type": "application/json", "x-csrf-token": getCsrf() },
-        credentials: "include",
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': getCsrf() },
+        credentials: 'include',
         body: JSON.stringify({ order }),
       });
       const j = await r.json();
-      if (!r.ok || !j.ok) throw new Error(j.error || "reorder_failed");
+      if (!r.ok || !j.ok) throw new Error(j.error || 'reorder_failed');
       setItems((j.items as ProductImage[]).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
       setDirty(false);
     } catch (e: any) {
@@ -87,13 +99,14 @@ export default function ImagesPage() {
     }
   }
 
-  async function doMove(id: number, dir: "up" | "down") {
-    setSavingId(id); setError(null);
+  async function doMove(id: number, dir: 'up' | 'down') {
+    setSavingId(id);
+    setError(null);
     try {
       const r = await fetch(`${base}/api/admin/products/${productId}/images/${id}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json", "x-csrf-token": getCsrf() },
-        credentials: "include",
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': getCsrf() },
+        credentials: 'include',
         body: JSON.stringify({ move: dir }),
       });
       const j = await r.json();
@@ -107,16 +120,17 @@ export default function ImagesPage() {
   }
 
   async function doAlt(id: number, newAlt: string) {
-    setSavingId(id); setError(null);
+    setSavingId(id);
+    setError(null);
     try {
       const r = await fetch(`${base}/api/admin/products/${productId}/images/${id}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json", "x-csrf-token": getCsrf() },
-        credentials: "include",
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': getCsrf() },
+        credentials: 'include',
         body: JSON.stringify({ alt: newAlt }),
       });
       const j = await r.json();
-      if (!r.ok || !j.ok) throw new Error(j.error || "alt_update_failed");
+      if (!r.ok || !j.ok) throw new Error(j.error || 'alt_update_failed');
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -126,16 +140,17 @@ export default function ImagesPage() {
   }
 
   async function doDelete(id: number) {
-    if (!confirm("¿Eliminar esta imagen?")) return;
-    setSavingId(id); setError(null);
+    if (!confirm('¿Eliminar esta imagen?')) return;
+    setSavingId(id);
+    setError(null);
     try {
       const r = await fetch(`${base}/api/admin/products/${productId}/images/${id}`, {
-        method: "DELETE",
-        headers: { "x-csrf-token": getCsrf() },
-        credentials: "include",
+        method: 'DELETE',
+        headers: { 'x-csrf-token': getCsrf() },
+        credentials: 'include',
       });
       const j = await r.json();
-      if (!r.ok || !j.ok) throw new Error(j.error || "delete_failed");
+      if (!r.ok || !j.ok) throw new Error(j.error || 'delete_failed');
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -147,21 +162,24 @@ export default function ImagesPage() {
   async function doUpload(e: React.FormEvent) {
     e.preventDefault();
     if (!file) return;
-    setLoading(true); setError(null);
+    setLoading(true);
+    setError(null);
     try {
       const fd = new FormData();
-      fd.set("file", file, file.name);
-      if (alt.trim()) fd.set("alt", alt.trim());
+      fd.set('file', file, file.name);
+      if (alt.trim()) fd.set('alt', alt.trim());
       const r = await fetch(`${base}/api/admin/products/${productId}/images`, {
-        method: "POST",
-        headers: { "x-csrf-token": getCsrf() },
-        credentials: "include",
+        method: 'POST',
+        headers: { 'x-csrf-token': getCsrf() },
+        credentials: 'include',
         body: fd,
       });
       const j = await r.json();
-      if (!r.ok || !j.ok) throw new Error(j.error || "upload_failed");
-      setFile(null); setAlt("");
-      (document.getElementById("fileInput") as HTMLInputElement | null)?.value && ((document.getElementById("fileInput") as HTMLInputElement).value = "");
+      if (!r.ok || !j.ok) throw new Error(j.error || 'upload_failed');
+      setFile(null);
+      setAlt('');
+      (document.getElementById('fileInput') as HTMLInputElement | null)?.value &&
+        ((document.getElementById('fileInput') as HTMLInputElement).value = '');
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -178,9 +196,9 @@ export default function ImagesPage() {
           onClick={saveOrder}
           disabled={!dirty || saving}
           className="rounded px-4 py-2 bg-black text-white disabled:opacity-50"
-          title={!dirty ? "Sin cambios" : "Guardar nuevo orden"}
+          title={!dirty ? 'Sin cambios' : 'Guardar nuevo orden'}
         >
-          {saving ? "Guardando…" : "Guardar orden"}
+          {saving ? 'Guardando…' : 'Guardar orden'}
         </button>
       </div>
 
@@ -203,8 +221,11 @@ export default function ImagesPage() {
             maxLength={200}
           />
         </div>
-        <button className="rounded bg-black text-white px-4 py-2 disabled:opacity-50" disabled={loading || !file}>
-          {loading ? "Subiendo…" : "Subir imagen"}
+        <button
+          className="rounded bg-black text-white px-4 py-2 disabled:opacity-50"
+          disabled={loading || !file}
+        >
+          {loading ? 'Subiendo…' : 'Subir imagen'}
         </button>
       </form>
 
@@ -225,24 +246,50 @@ export default function ImagesPage() {
             >
               <span className="cursor-move select-none px-2 py-1 border rounded">↕</span>
 
-              <img src={it.url} alt={it.alt ?? ""} className="h-20 w-20 object-cover rounded" />
+              <img src={it.url} alt={it.alt ?? ''} className="h-20 w-20 object-cover rounded" />
 
               <div className="flex-1">
-                <div className="text-xs text-gray-500">id={it.id} • sortOrder={it.sortOrder}</div>
+                <div className="text-xs text-gray-500">
+                  id={it.id} • sortOrder={it.sortOrder}
+                </div>
                 <div className="mt-2 flex items-center gap-2">
                   <input
                     type="text"
-                    defaultValue={it.alt ?? ""}
+                    defaultValue={it.alt ?? ''}
                     placeholder="ALT"
                     className="border rounded p-2 w-full"
                     onBlur={(e) => {
-                      const val = e.currentTarget.value ?? "";
-                      if ((it.alt ?? "") !== val) doAlt(it.id, val);
+                      const val = e.currentTarget.value ?? '';
+                      if ((it.alt ?? '') !== val) doAlt(it.id, val);
                     }}
                   />
-                  <button type="button" onClick={() => doMove(it.id, "up")}   disabled={savingId === it.id} className="border rounded px-3 py-2" title="Mover arriba">↑</button>
-                  <button type="button" onClick={() => doMove(it.id, "down")} disabled={savingId === it.id} className="border rounded px-3 py-2" title="Mover abajo">↓</button>
-                  <button type="button" onClick={() => doDelete(it.id)}       disabled={savingId === it.id} className="border rounded px-3 py-2 text-red-600" title="Eliminar">Borrar</button>
+                  <button
+                    type="button"
+                    onClick={() => doMove(it.id, 'up')}
+                    disabled={savingId === it.id}
+                    className="border rounded px-3 py-2"
+                    title="Mover arriba"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => doMove(it.id, 'down')}
+                    disabled={savingId === it.id}
+                    className="border rounded px-3 py-2"
+                    title="Mover abajo"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => doDelete(it.id)}
+                    disabled={savingId === it.id}
+                    className="border rounded px-3 py-2 text-red-600"
+                    title="Eliminar"
+                  >
+                    Borrar
+                  </button>
                 </div>
               </div>
             </li>

@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 
 type Category = { id: number; name: string };
 type Subcategory = { id: number; name: string; categoryId: number };
@@ -13,7 +13,7 @@ type Product = {
   description: string | null;
   price: number | null;
   sku: string | null;
-  status: "ACTIVE" | "INACTIVE";
+  status: 'ACTIVE' | 'INACTIVE';
   categoryId: number | null;
   subcategoryId: number | null;
   category?: { id: number; name: string } | null;
@@ -28,7 +28,7 @@ async function fetchFirstOk<T>(urls: string[], init?: RequestInit): Promise<T> {
       if (r.ok) return (await r.json()) as T;
     } catch {}
   }
-  throw new Error("No pude leer la API en ninguna ruta.");
+  throw new Error('No pude leer la API en ninguna ruta.');
 }
 
 export default function AdminProductEditPage({ params }: { params: { id: string } }) {
@@ -39,18 +39,18 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
   const [loading, setLoading] = useState(true);
 
   // campos
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState<string>("");
-  const [sku, setSku] = useState("");
-  const [status, setStatus] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
-  const [categoryId, setCategoryId] = useState<number | "">("");
-  const [subcategoryId, setSubcategoryId] = useState<number | "">("");
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState<string>('');
+  const [sku, setSku] = useState('');
+  const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+  const [categoryId, setCategoryId] = useState<number | ''>('');
+  const [subcategoryId, setSubcategoryId] = useState<number | ''>('');
 
   const subOptions = useMemo(
-    () => subs.filter((s) => (categoryId === "" ? true : s.categoryId === Number(categoryId))),
-    [subs, categoryId]
+    () => subs.filter((s) => (categoryId === '' ? true : s.categoryId === Number(categoryId))),
+    [subs, categoryId],
   );
 
   async function load() {
@@ -58,12 +58,12 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
 
     const [catsData, subsData] = await Promise.all([
       fetchFirstOk<{ ok?: boolean; items?: Category[]; data?: Category[] }>([
-        "/api/admin/categories?take=999",
-        "/api/admin/categorias?take=999",
+        '/api/admin/categories?take=999',
+        '/api/admin/categorias?take=999',
       ]),
       fetchFirstOk<{ ok?: boolean; items?: Subcategory[]; data?: Subcategory[] }>([
-        "/api/admin/subcategories?take=999",
-        "/api/admin/subcategorias?take=999",
+        '/api/admin/subcategories?take=999',
+        '/api/admin/subcategorias?take=999',
       ]),
     ]);
 
@@ -76,14 +76,14 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
     ]);
 
     const p = prod.item as Product;
-    setName(p.name ?? "");
-    setSlug(p.slug ?? "");
-    setDescription(p.description ?? "");
-    setPrice(p.price != null ? String(p.price) : "");
-    setSku(p.sku ?? "");
-    setStatus((p.status as any) === "INACTIVE" ? "INACTIVE" : "ACTIVE");
-    setCategoryId(p.categoryId ?? "");
-    setSubcategoryId(p.subcategoryId ?? "");
+    setName(p.name ?? '');
+    setSlug(p.slug ?? '');
+    setDescription(p.description ?? '');
+    setPrice(p.price != null ? String(p.price) : '');
+    setSku(p.sku ?? '');
+    setStatus((p.status as any) === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+    setCategoryId(p.categoryId ?? '');
+    setSubcategoryId(p.subcategoryId ?? '');
 
     setLoading(false);
   }
@@ -91,7 +91,7 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
   useEffect(() => {
     load().catch((e) => {
       console.error(e);
-      alert("No pude cargar el producto.");
+      alert('No pude cargar el producto.');
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -101,18 +101,18 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
     const body: any = {
       name: name.trim(),
       // Si el slug se deja vacío, la API lo recalcula con el nombre
-      ...(slug.trim() !== "" ? { slug: slug.trim() } : {}),
+      ...(slug.trim() !== '' ? { slug: slug.trim() } : {}),
       description: description.trim() || null,
-      price: price.trim() === "" ? null : Number(price),
+      price: price.trim() === '' ? null : Number(price),
       sku: sku.trim() || null,
       status,
-      categoryId: categoryId === "" ? null : Number(categoryId),
-      subcategoryId: subcategoryId === "" ? null : Number(subcategoryId),
+      categoryId: categoryId === '' ? null : Number(categoryId),
+      subcategoryId: subcategoryId === '' ? null : Number(subcategoryId),
     };
 
     const reqInit: RequestInit = {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     };
 
@@ -123,11 +123,11 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
         const r2 = await fetch(`/api/admin/productos/${id}`, reqInit);
         if (!r2.ok) throw new Error(await r2.text());
       }
-      alert("Guardado ✔");
+      alert('Guardado ✔');
       await load();
     } catch (e: any) {
       console.error(e);
-      alert("No se pudo guardar. " + (e?.message ?? ""));
+      alert('No se pudo guardar. ' + (e?.message ?? ''));
     }
   }
 
@@ -195,7 +195,7 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
             <select
               className="border rounded p-2 w-full"
               value={status}
-              onChange={(e) => setStatus(e.target.value as "ACTIVE" | "INACTIVE")}
+              onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
             >
               <option value="ACTIVE">ACTIVE</option>
               <option value="INACTIVE">INACTIVE</option>
@@ -208,9 +208,9 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
               className="border rounded p-2 w-full"
               value={categoryId}
               onChange={(e) => {
-                const v = e.target.value === "" ? "" : Number(e.target.value);
+                const v = e.target.value === '' ? '' : Number(e.target.value);
                 setCategoryId(v);
-                setSubcategoryId("");
+                setSubcategoryId('');
               }}
             >
               <option value="">—</option>
@@ -227,7 +227,9 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
             <select
               className="border rounded p-2 w-full"
               value={subcategoryId}
-              onChange={(e) => setSubcategoryId(e.target.value === "" ? "" : Number(e.target.value))}
+              onChange={(e) =>
+                setSubcategoryId(e.target.value === '' ? '' : Number(e.target.value))
+              }
             >
               <option value="">—</option>
               {subOptions.map((s) => (
@@ -250,7 +252,7 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
         </label>
 
         <button className="border rounded px-4 py-2" type="submit" disabled={loading}>
-          {loading ? "Cargando…" : "Guardar cambios"}
+          {loading ? 'Cargando…' : 'Guardar cambios'}
         </button>
       </form>
     </main>

@@ -1,25 +1,25 @@
-export const runtime = "nodejs";
-import { NextRequest } from "next/server";
-import { json } from "@/lib/json";
-import prisma from "@/lib/prisma";
+export const runtime = 'nodejs';
+import { NextRequest } from 'next/server';
+import { json } from '@/lib/json';
+import prisma from '@/lib/prisma';
 
-function parseBool(v?: string | null){
-  if(!v) return false;
+function parseBool(v?: string | null) {
+  if (!v) return false;
   const s = v.trim().toLowerCase();
-  return s === "1" || s === "true" || s === "yes" || s === "on";
+  return s === '1' || s === 'true' || s === 'yes' || s === 'on';
 }
 
-export async function GET(req: NextRequest){
+export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const onlyActive = parseBool(url.searchParams.get("onlyActive"));
+  const onlyActive = parseBool(url.searchParams.get('onlyActive'));
 
   if (!onlyActive) {
     // Modo compatible: cuenta todos los vínculos (sin filtrar estado del producto)
     const rows = await prisma.tag.findMany({
-      orderBy: { name: "asc" },
+      orderBy: { name: 'asc' },
       include: { _count: { select: { productTags: true } } },
     });
-    const items = rows.map(t => ({
+    const items = rows.map((t) => ({
       id: t.id,
       name: t.name,
       productCount: t._count.productTags,
@@ -29,21 +29,21 @@ export async function GET(req: NextRequest){
 
   // Modo nuevo: contar SOLO productos activos -> usar relation filter con `is`
   const grouped = await prisma.productTag.groupBy({
-    by: ["tagId"],
+    by: ['tagId'],
     _count: { tagId: true },
-    where: { product: { is: { status: "ACTIVE" } } },
+    where: { product: { is: { status: 'ACTIVE' } } },
   });
 
-  const tagIds = grouped.map(g => g.tagId);
+  const tagIds = grouped.map((g) => g.tagId);
   if (tagIds.length === 0) return json({ ok: true, items: [] });
 
   const tags = await prisma.tag.findMany({
     where: { id: { in: tagIds } },
-    orderBy: { name: "asc" },
+    orderBy: { name: 'asc' },
   });
 
-  const countMap = new Map(grouped.map(g => [g.tagId, g._count.tagId]));
-  const items = tags.map(t => ({
+  const countMap = new Map(grouped.map((g) => [g.tagId, g._count.tagId]));
+  const items = tags.map((t) => ({
     id: t.id,
     name: t.name,
     productCount: countMap.get(t.id) ?? 0,

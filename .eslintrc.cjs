@@ -3,6 +3,6 @@ module.exports = {
   extends: ['next/core-web-vitals'],
   plugins: ['next-on-pages'],
   rules: {
-    'next-on-pages/no-top-level-getrequestcontext': 'error'
-  }
+    'next-on-pages/no-top-level-getrequestcontext': 'error',
+  },
 };

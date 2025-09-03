@@ -1,24 +1,27 @@
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
-import { NextResponse } from "next/server";
-import { prisma } from "../../../../../lib/prisma";
+import { NextResponse } from 'next/server';
+import { prisma } from '../../../../../lib/prisma';
 
 function slugify(input: string) {
   return input
     .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "");
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '');
 }
 
 export async function PUT(req: Request, ctx: { params: { id: string } }) {
   const id = Number(ctx.params.id);
-  if (!Number.isInteger(id)) return NextResponse.json({ ok: false, error: "ID inválido" }, { status: 400 });
+  if (!Number.isInteger(id))
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
   const body = await req.json().catch(() => ({}));
-  const data:any = {};
-  if (typeof body?.name === "string" && body.name.trim()) data.name = body.name.trim();
-  if (typeof body?.slug === "string" && body.slug.trim()) data.slug = slugify(body.slug);
-  if ("categoryId" in body) data.categoryId = Number.isInteger(body?.categoryId) ? Number(body.categoryId) : null;
+  const data: any = {};
+  if (typeof body?.name === 'string' && body.name.trim()) data.name = body.name.trim();
+  if (typeof body?.slug === 'string' && body.slug.trim()) data.slug = slugify(body.slug);
+  if ('categoryId' in body)
+    data.categoryId = Number.isInteger(body?.categoryId) ? Number(body.categoryId) : null;
 
   const item = await prisma.subcategory.update({ where: { id }, data });
   return NextResponse.json({ ok: true, item });
@@ -26,7 +29,8 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
 
 export async function DELETE(_: Request, ctx: { params: { id: string } }) {
   const id = Number(ctx.params.id);
-  if (!Number.isInteger(id)) return NextResponse.json({ ok: false, error: "ID inválido" }, { status: 400 });
+  if (!Number.isInteger(id))
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
   try {
     await prisma.$transaction([
       prisma.product.updateMany({ where: { subcategoryId: id }, data: { subcategoryId: null } }),
@@ -34,6 +38,6 @@ export async function DELETE(_: Request, ctx: { params: { id: string } }) {
     ]);
     return NextResponse.json({ ok: true, deleted: true });
   } catch {
-    return NextResponse.json({ ok: false, error: "No se pudo borrar" }, { status: 409 });
+    return NextResponse.json({ ok: false, error: 'No se pudo borrar' }, { status: 409 });
   }
 }

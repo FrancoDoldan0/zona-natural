@@ -6,7 +6,7 @@ function url(path: string, params: Record<string, any> = {}): string {
   const u = new URL(path, BASE);
   for (const [k, v] of Object.entries(params)) {
     if (v === undefined || v === null) continue;
-    if (Array.isArray(v)) v.forEach(val => u.searchParams.append(k, String(val)));
+    if (Array.isArray(v)) v.forEach((val) => u.searchParams.append(k, String(val)));
     else u.searchParams.set(k, String(v));
   }
   return u.toString();
@@ -24,7 +24,7 @@ function paginaRe(p: number, n: number): RegExp {
 async function getCounter(page: Page, _opts: { perPage?: number } = {}) {
   // Tomamos el bloque que contiene "resultados"
   const node = page.locator('text=/resultados/i').first();
-  const text = (await node.textContent() ?? '').replace(/\s+/g, ' ').trim();
+  const text = ((await node.textContent()) ?? '').replace(/\s+/g, ' ').trim();
 
   // X resultados
   const mTotal = /\b(\d+)\s*resultados\b/i.exec(text);
@@ -39,7 +39,9 @@ async function getCounter(page: Page, _opts: { perPage?: number } = {}) {
 }
 
 test.describe('Productos â€“ total filtrado, paginaciÃ³n y LCP priority', () => {
-  test('1) Sin filtros: contador visible y consistente (perPage=99: total == cards)', async ({ page }) => {
+  test('1) Sin filtros: contador visible y consistente (perPage=99: total == cards)', async ({
+    page,
+  }) => {
     const perPage = 99;
     await page.goto(url('/productos', { perPage }));
     await page.locator('a[href^="/producto/"]').first().waitFor();
@@ -53,10 +55,16 @@ test.describe('Productos â€“ total filtrado, paginaciÃ³n y LCP priority',
     await expect(page.getByText(paginaRe(1, 1))).toBeVisible();
   });
 
-  test('2) Con filtros (perPage=1): contador y paginaciÃ³n usan el mismo totalForView', async ({ page }) => {
+  test('2) Con filtros (perPage=1): contador y paginaciÃ³n usan el mismo totalForView', async ({
+    page,
+  }) => {
     const perPage = 1;
     await page.goto(url('/productos', { onSale: 1, match: 'all', perPage }));
-    await page.locator('a[href^="/producto/"]').first().waitFor({ timeout: 5000 }).catch(() => {});
+    await page
+      .locator('a[href^="/producto/"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => {});
 
     const cards = await countCards(page);
     if (cards === 0) test.skip(true, 'No hay productos con onSale=1; se salta la prueba.');
@@ -74,12 +82,18 @@ test.describe('Productos â€“ total filtrado, paginaciÃ³n y LCP priority',
     expect(cards).toBe(1);
   });
 
-  test('3) Con filtros + perPage=1: "PÃ¡gina X de Y" refleja la navegaciÃ³n a page=2 cuando corresponde', async ({ page }) => {
+  test('3) Con filtros + perPage=1: "PÃ¡gina X de Y" refleja la navegaciÃ³n a page=2 cuando corresponde', async ({
+    page,
+  }) => {
     const perPage = 1;
 
     // PÃ¡gina 1 con filtros activos
     await page.goto(url('/productos', { onSale: 1, match: 'all', perPage }));
-    await page.locator('a[href^="/producto/"]').first().waitFor({ timeout: 5000 }).catch(() => {});
+    await page
+      .locator('a[href^="/producto/"]')
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => {});
     const cardsP1 = await countCards(page);
     if (cardsP1 === 0) test.skip(true, 'No hay productos con onSale=1; se salta la prueba.');
 

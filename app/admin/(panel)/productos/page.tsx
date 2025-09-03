@@ -1,8 +1,8 @@
 // app/admin/(panel)/productos/page.tsx
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 
 type Category = { id: number; name: string };
 type Subcategory = { id: number; name: string; categoryId: number };
@@ -13,7 +13,7 @@ type Product = {
   description: string | null;
   price: number | null;
   sku: string | null;
-  status: "ACTIVE" | "DRAFT" | string;
+  status: 'ACTIVE' | 'DRAFT' | string;
   categoryId: number | null;
   subcategoryId: number | null;
   category?: { id: number; name: string } | null;
@@ -26,39 +26,39 @@ export default function ProductosPage() {
   const [items, setItems] = useState<Product[]>([]);
 
   // filtros
-  const [q, setQ] = useState("");
-  const [fCat, setFCat] = useState<number | "">("");
-  const [fSub, setFSub] = useState<number | "">("");
+  const [q, setQ] = useState('');
+  const [fCat, setFCat] = useState<number | ''>('');
+  const [fSub, setFSub] = useState<number | ''>('');
   const subOptions = useMemo(
-    () => subs.filter((s) => (fCat === "" ? true : s.categoryId === Number(fCat))),
-    [subs, fCat]
+    () => subs.filter((s) => (fCat === '' ? true : s.categoryId === Number(fCat))),
+    [subs, fCat],
   );
 
   // form crear
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState<string>("");
-  const [sku, setSku] = useState("");
-  const [status, setStatus] = useState<"ACTIVE" | "DRAFT">("ACTIVE");
-  const [cId, setCId] = useState<number | "">("");
-  const [sId, setSId] = useState<number | "">("");
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState<string>('');
+  const [sku, setSku] = useState('');
+  const [status, setStatus] = useState<'ACTIVE' | 'DRAFT'>('ACTIVE');
+  const [cId, setCId] = useState<number | ''>('');
+  const [sId, setSId] = useState<number | ''>('');
 
   async function loadCats() {
-    const res = await fetch("/api/admin/categories?take=999", { cache: "no-store" });
+    const res = await fetch('/api/admin/categories?take=999', { cache: 'no-store' });
     const data = await res.json();
     if (data.ok) setCats(data.items);
   }
   async function loadSubs() {
-    const res = await fetch("/api/admin/subcategories?take=999", { cache: "no-store" });
+    const res = await fetch('/api/admin/subcategories?take=999', { cache: 'no-store' });
     const data = await res.json();
     if (data.ok) setSubs(data.items);
   }
   async function load() {
     const u = new URLSearchParams();
-    if (q) u.set("q", q);
-    if (fCat !== "") u.set("categoryId", String(fCat));
-    if (fSub !== "") u.set("subcategoryId", String(fSub));
-    const res = await fetch(`/api/admin/products?${u.toString()}`, { cache: "no-store" });
+    if (q) u.set('q', q);
+    if (fCat !== '') u.set('categoryId', String(fCat));
+    if (fSub !== '') u.set('subcategoryId', String(fSub));
+    const res = await fetch(`/api/admin/products?${u.toString()}`, { cache: 'no-store' });
     const data = await res.json();
     if (data.ok) setItems(data.items);
   }
@@ -72,37 +72,37 @@ export default function ProductosPage() {
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
     const body: any = { name: name.trim(), status };
-    if (description.trim() !== "") body.description = description.trim();
-    if (price.trim() !== "") body.price = Number(price);
-    if (sku.trim() !== "") body.sku = sku.trim();
-    if (cId !== "") body.categoryId = Number(cId);
-    if (sId !== "") body.subcategoryId = Number(sId);
+    if (description.trim() !== '') body.description = description.trim();
+    if (price.trim() !== '') body.price = Number(price);
+    if (sku.trim() !== '') body.sku = sku.trim();
+    if (cId !== '') body.categoryId = Number(cId);
+    if (sId !== '') body.subcategoryId = Number(sId);
 
-    const res = await fetch("/api/admin/products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch('/api/admin/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     const data = await res.json();
     if (data.ok) {
-      setName("");
-      setDescription("");
-      setPrice("");
-      setSku("");
-      setCId("");
-      setSId("");
+      setName('');
+      setDescription('');
+      setPrice('');
+      setSku('');
+      setCId('');
+      setSId('');
       await load();
     } else {
-      alert(data.error || "Error");
+      alert(data.error || 'Error');
     }
   }
 
   async function onDelete(id: number) {
-    if (!confirm("¿Eliminar producto?")) return;
-    const res = await fetch(`/api/admin/products/${id}`, { method: "DELETE" });
+    if (!confirm('¿Eliminar producto?')) return;
+    const res = await fetch(`/api/admin/products/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.ok) setItems((prev) => prev.filter((x) => x.id !== id));
-    else alert(data.error || "No se pudo borrar");
+    else alert(data.error || 'No se pudo borrar');
   }
 
   return (
@@ -144,9 +144,9 @@ export default function ProductosPage() {
             className="border rounded p-2"
             value={cId}
             onChange={(e) => {
-              const v = e.target.value === "" ? "" : Number(e.target.value);
+              const v = e.target.value === '' ? '' : Number(e.target.value);
               setCId(v);
-              setSId("");
+              setSId('');
             }}
           >
             <option value="">Categoría</option>
@@ -159,7 +159,7 @@ export default function ProductosPage() {
           <select
             className="border rounded p-2"
             value={sId}
-            onChange={(e) => setSId(e.target.value === "" ? "" : Number(e.target.value))}
+            onChange={(e) => setSId(e.target.value === '' ? '' : Number(e.target.value))}
           >
             <option value="">Subcategoría</option>
             {subOptions.map((s) => (
@@ -190,15 +190,15 @@ export default function ProductosPage() {
           placeholder="Buscar por nombre/slug/SKU…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && load()}
+          onKeyDown={(e) => e.key === 'Enter' && load()}
         />
         <select
           className="border rounded p-2"
           value={fCat}
           onChange={(e) => {
-            const v = e.target.value === "" ? "" : Number(e.target.value);
+            const v = e.target.value === '' ? '' : Number(e.target.value);
             setFCat(v);
-            setFSub("");
+            setFSub('');
           }}
         >
           <option value="">Todas las categorías</option>
@@ -211,7 +211,7 @@ export default function ProductosPage() {
         <select
           className="border rounded p-2"
           value={fSub}
-          onChange={(e) => setFSub(e.target.value === "" ? "" : Number(e.target.value))}
+          onChange={(e) => setFSub(e.target.value === '' ? '' : Number(e.target.value))}
         >
           <option value="">Todas las subcategorías</option>
           {subOptions.map((s) => (
@@ -249,23 +249,20 @@ export default function ProductosPage() {
                 <td className="p-2 border">{p.name}</td>
                 <td className="p-2 border">{p.slug}</td>
                 <td className="p-2 border">
-                  {typeof p.price === "number"
-                    ? `$${p.price.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
-                    : "-"}
+                  {typeof p.price === 'number'
+                    ? `$${p.price.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                    : '-'}
                 </td>
-                <td className="p-2 border">{p.sku ?? "-"}</td>
+                <td className="p-2 border">{p.sku ?? '-'}</td>
                 <td className="p-2 border">{p.status}</td>
-                <td className="p-2 border">{p.category?.name ?? "-"}</td>
-                <td className="p-2 border">{p.subcategory?.name ?? "-"}</td>
+                <td className="p-2 border">{p.category?.name ?? '-'}</td>
+                <td className="p-2 border">{p.subcategory?.name ?? '-'}</td>
                 <td className="p-2 border max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">
-                  {p.description ?? "-"}
+                  {p.description ?? '-'}
                 </td>
                 <td className="p-2 border space-x-2">
                   {/* NUEVO: botón Editar */}
-                  <Link
-                    href={`/admin/productos/${p.id}`}
-                    className="text-blue-600 underline"
-                  >
+                  <Link href={`/admin/productos/${p.id}`} className="text-blue-600 underline">
                     Editar
                   </Link>
                   <button className="text-red-600" onClick={() => onDelete(p.id)}>

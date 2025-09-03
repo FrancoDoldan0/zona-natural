@@ -1,5 +1,5 @@
-import Link from "next/link";
-import Price from "@/components/web/Price";
+import Link from 'next/link';
+import Price from '@/components/web/Price';
 
 export default function ProductCard({ p }: { p: any }) {
   const img = p?.images?.[0]?.url as string | undefined;
@@ -16,7 +16,11 @@ export default function ProductCard({ p }: { p: any }) {
         </div>
         <div className="p-3 space-y-2">
           <div className="font-medium line-clamp-2">{p.name}</div>
-          <Price priceOriginal={p.priceOriginal} priceFinal={p.priceFinal} offerLabel={p.offer?.label} />
+          <Price
+            priceOriginal={p.priceOriginal}
+            priceFinal={p.priceFinal}
+            offerLabel={p.offer?.label}
+          />
         </div>
       </Link>
     </div>
