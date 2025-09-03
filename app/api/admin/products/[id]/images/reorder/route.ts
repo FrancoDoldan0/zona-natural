@@ -4,66 +4,62 @@ import { audit } from '@/lib/audit';
 
 export const runtime = 'edge';
 
-type ReorderBody = {
-  desiredIds: string[];
-};
-
-// Cambia esto si querés fijarlo por env: NEXT_PUBLIC_IMG_SORT_FIELD=position, etc.
-const SORT_FIELD =
-  (process.env.NEXT_PUBLIC_IMG_SORT_FIELD as
-    | 'order'
-    | 'position'
-    | 'sort'
-    | 'sortOrder'
-    | 'index'
-    | 'idx') || 'order';
+type ReorderBody = { desiredIds: (string | number)[] };
 
 export async function POST(
   req: Request,
   ctx: { params: { id: string } }
 ) {
   try {
-    const productIdParam = ctx.params.id;
-    const productId = Number(productIdParam);
+    // productId viene por ruta -> a número
+    const productId = Number(ctx.params.id);
     if (!Number.isFinite(productId)) {
-      return NextResponse.json(
-        { ok: false, error: 'productId inválido' },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: 'productId inválido' }, { status: 400 });
     }
 
     const body = (await req.json()) as ReorderBody;
-    const desiredIds: string[] = Array.isArray(body?.desiredIds) ? body.desiredIds : [];
+    const desiredIdsRaw = Array.isArray(body?.desiredIds) ? body.desiredIds : [];
 
-    // Traer imágenes actuales; si el campo no existe, no ordenamos (queda por PK)
+    // Normalizamos a números y descartamos valores no válidos
+    const desiredIds = desiredIdsRaw
+      .map((v) => Number(v))
+      .filter((v): v is number => Number.isFinite(v));
+
+    // Traer imágenes actuales del producto, ordenadas por sortOrder
     const existing = await prisma.productImage.findMany({
       where: { productId },
-      // usamos any para no depender del nombre exacto del campo en el tipo generado por Prisma
-      ...(SORT_FIELD ? ({ orderBy: { [SORT_FIELD]: 'asc' } } as any) : {}),
+      orderBy: { sortOrder: 'asc' },
       select: { id: true },
     });
+    // existing: { id: number }[]
 
-    // Validar que todas las deseadas pertenecen al producto
-    const included = desiredIds.map((id: string) => {
+    // Validar que todos los IDs pedidos pertenecen al producto
+    const included = desiredIds.map((id) => {
       const img = existing.find((x) => x.id === id);
       if (!img) throw new Error(`La imagen ${id} no pertenece al producto o no existe`);
       return img;
     });
 
+    // Mantener el resto al final
     const remainder = existing.filter((x) => !desiredIds.includes(x.id));
     const final = [...included, ...remainder];
 
-    // Persistir orden 0..n en el campo configurado
+    // Persistir nuevo orden 0..n en sortOrder
     await prisma.$transaction(
       final.map((img, index) =>
         prisma.productImage.update({
           where: { id: img.id },
-          data: { [SORT_FIELD]: index } as any, // <- agnóstico
+          data: { sortOrder: index },
         })
       )
     );
 
-    await audit('product_images.reorder', { productId, desiredIds, sortField: SORT_FIELD });
+    await audit('product_images.reorder', {
+      productId,
+      desiredIds,
+      sortField: 'sortOrder',
+    });
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Error inesperado';
