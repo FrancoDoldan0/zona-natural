@@ -11,7 +11,7 @@ export async function POST(
   ctx: { params: { id: string } }
 ) {
   try {
-    // productId viene por ruta -> a número
+    // productId por ruta -> número
     const productId = Number(ctx.params.id);
     if (!Number.isFinite(productId)) {
       return NextResponse.json({ ok: false, error: 'productId inválido' }, { status: 400 });
@@ -54,11 +54,14 @@ export async function POST(
       )
     );
 
-    await audit(req, 'product_images.reorder', {
-      productId,
-      desiredIds,
-      sortField: 'sortOrder',
-    });
+    // 👇 Ajuste: pasar 4–5 argumentos a audit (acción, entidad, id, detalles, req)
+    await audit(
+      'product_images.reorder',     // acción
+      'product',                    // entidad
+      String(productId),            // entityId
+      { desiredIds, sortField: 'sortOrder' }, // detalles
+      req                           // (opcional) request para IP/UA si tu audit lo usa
+    );
 
     return NextResponse.json({ ok: true });
   } catch (err) {
