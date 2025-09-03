@@ -54,7 +54,7 @@ export async function POST(
       )
     );
 
-    await audit('product_images.reorder', {
+    await audit(req, 'product_images.reorder', {
       productId,
       desiredIds,
       sortField: 'sortOrder',
