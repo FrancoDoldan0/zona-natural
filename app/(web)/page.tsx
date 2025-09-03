@@ -1,5 +1,5 @@
 export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 import ProductCard from '@/components/web/ProductCard';
 import { headers } from 'next/headers';

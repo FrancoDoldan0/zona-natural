@@ -1,5 +1,5 @@
 import { json } from '@/lib/json';
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 
 import prisma from '@/lib/prisma';
 
