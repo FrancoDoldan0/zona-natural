@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const minPrice = parseFloat(url.searchParams.get('minPrice') || '');
   const maxPrice = parseFloat(url.searchParams.get('maxPrice') || '');
   const minFinal = parseFloat(url.searchParams.get('minFinal') || '');
-  the const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
+  const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
   const onSale = parseBool(url.searchParams.get('onSale'));
 
   // --- Filtros base ---
