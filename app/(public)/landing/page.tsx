@@ -21,7 +21,7 @@ async function getBanners(): Promise<PublicBanner[]> {
 async function getOffers(): Promise<PublicOffer[]> {
   const base = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
   const r = await fetch(`${base}/api/public/offers`, { next: { revalidate: 60 } });
-  const j = await r.json();
+  const j = await r.json<{ items?: PublicOffer[] }>();
   return j.items || [];
 }
 
