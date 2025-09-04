@@ -33,8 +33,8 @@ async function getData(params: URLSearchParams) {
     fetch(`${base}/api/public/categories`, { next: { revalidate: 60 } }),
     fetch(`${base}/api/public/catalogo?${params.toString()}`, { next: { revalidate: 30 } }),
   ]);
-  const catsJson = await catsRes.json();
-  const listJson = await listRes.json();
+  const catsJson = await catsRes.json<{ items?: Cat[] }>();
+  const listJson = await listRes.json<any>();
   return { cats: (catsJson.items ?? []) as Cat[], data: listJson };
 }
 
