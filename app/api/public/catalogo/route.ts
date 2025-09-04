@@ -1,8 +1,10 @@
 export const runtime = 'edge';
+
 import { NextRequest } from 'next/server';
 import { json } from '@/lib/json';
 import prisma from '@/lib/prisma';
 import { computePricesBatch } from '@/lib/pricing';
+import type { Prisma } from '@prisma/client';
 
 function parseBool(v?: string | null) {
   if (!v) return false;
@@ -32,11 +34,12 @@ export async function GET(req: NextRequest) {
   const minPrice = parseFloat(url.searchParams.get('minPrice') || '');
   const maxPrice = parseFloat(url.searchParams.get('maxPrice') || '');
   const minFinal = parseFloat(url.searchParams.get('minFinal') || '');
-  const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
+  the const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
   const onSale = parseBool(url.searchParams.get('onSale'));
-  const sort = (url.searchParams.get('sort') || '-id').toLowerCase();
 
+  // --- Filtros base ---
   const where: any = { status: 'ACTIVE' };
+
   if (q) {
     where.OR = [
       { name: { contains: q } },
@@ -45,12 +48,13 @@ export async function GET(req: NextRequest) {
       { sku: { contains: q } },
     ];
   }
+
   if (Number.isFinite(categoryId)) where.categoryId = categoryId;
   if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
 
   if (tagIds.length) {
     if (match === 'all') {
-      // requiere TODOS los tags (intersección): AND de sub-condiciones
+      // Requiere TODOS los tags (intersección): AND de sub-condiciones
       where.AND = (where.AND || []).concat(
         tagIds.map((id) => ({ productTags: { some: { tagId: id } } })),
       );
@@ -66,16 +70,35 @@ export async function GET(req: NextRequest) {
     if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
   }
 
-  const orderBy =
-    sort === 'price'
-      ? { price: 'asc' }
-      : sort === '-price'
-        ? { price: 'desc' }
-        : sort === 'name'
-          ? { name: 'asc' }
-          : sort === '-name'
-            ? { name: 'desc' }
-            : { id: 'desc' };
+  // --- Orden (tipado para Prisma) ---
+  const sortParam = (url.searchParams.get('sort') || '-id').toLowerCase();
+  let orderBy: Prisma.ProductOrderByWithRelationInput;
+  switch (sortParam) {
+    case 'price':
+    case 'price_asc':
+      orderBy = { price: 'asc' };
+      break;
+    case '-price':
+    case 'price_desc':
+      orderBy = { price: 'desc' };
+      break;
+    case 'name':
+    case 'name_asc':
+      orderBy = { name: 'asc' };
+      break;
+    case '-name':
+    case 'name_desc':
+      orderBy = { name: 'desc' };
+      break;
+    case 'id':
+    case 'id_asc':
+      orderBy = { id: 'asc' };
+      break;
+    case '-id':
+    default:
+      orderBy = { id: 'desc' };
+      break;
+  }
 
   const skip = (page - 1) * perPage;
 
@@ -99,6 +122,7 @@ export async function GET(req: NextRequest) {
     categoryId: p.categoryId,
     tags: (p.productTags || []).map((t: any) => t.tagId),
   }));
+
   const priced = await computePricesBatch(bare);
 
   let items = itemsRaw.map((p: any) => {
@@ -108,6 +132,7 @@ export async function GET(req: NextRequest) {
     const discountPercent = hasDiscount
       ? Math.round((1 - pr.priceFinal / pr.priceOriginal) * 100)
       : 0;
+
     return {
       id: p.id,
       name: p.name,
@@ -129,12 +154,12 @@ export async function GET(req: NextRequest) {
     items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
 
   // Orden adicional por precio FINAL (post query)
-  if (sort === 'final') {
+  if (sortParam === 'final') {
     items.sort(
       (a: any, b: any) =>
         (a.priceFinal ?? Number.POSITIVE_INFINITY) - (b.priceFinal ?? Number.POSITIVE_INFINITY),
     );
-  } else if (sort === '-final') {
+  } else if (sortParam === '-final') {
     items.sort(
       (a: any, b: any) =>
         (b.priceFinal ?? Number.NEGATIVE_INFINITY) - (a.priceFinal ?? Number.NEGATIVE_INFINITY),
@@ -164,7 +189,7 @@ export async function GET(req: NextRequest) {
       minFinal: Number.isFinite(minFinal) ? minFinal : null,
       maxFinal: Number.isFinite(maxFinal) ? maxFinal : null,
       onSale,
-      sort,
+      sort: sortParam,
     },
     items,
   });
