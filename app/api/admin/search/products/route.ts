@@ -1,22 +1,45 @@
+// app/api/admin/search/products/route.ts
 export const runtime = 'edge';
+
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(req: Request) {
-  const q = new URL(req.url).searchParams.get('q')?.trim() || '';
-  const items = await prisma.product.findMany({
-    where: q
+  try {
+    const { searchParams } = new URL(req.url);
+    const q = (searchParams.get('q') || '').trim();
+    const takeRaw = searchParams.get('take') || '20';
+    const take = Math.max(1, Math.min(50, Number(takeRaw) || 20));
+
+    const where = q
       ? {
           OR: [
-            { name: { contains: q, mode: 'insensitive' } },
-            { slug: { contains: q, mode: 'insensitive' } },
-            { sku: { contains: q, mode: 'insensitive' } },
+            { name: { contains: q } },
+            { slug: { contains: q } },
+            { sku:  { contains: q } },
           ],
         }
-      : undefined,
-    select: { id: true, name: true, slug: true },
-    take: 20,
-    orderBy: { updatedAt: 'desc' },
-  });
-  return NextResponse.json({ ok: true, items });
+      : undefined;
+
+    const items = await prisma.product.findMany({
+      where,
+      take,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        sku: true,
+        price: true,
+        status: true,
+      },
+    });
+
+    return NextResponse.json({ ok: true, items });
+  } catch (err: any) {
+    return NextResponse.json(
+      { ok: false, error: err?.message || 'unknown_error' },
+      { status: 500 }
+    );
+  }
 }
