@@ -15,7 +15,7 @@ type PublicOffer = {
 async function getBanners(): Promise<PublicBanner[]> {
   const base = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
   const r = await fetch(`${base}/api/public/banners`, { next: { revalidate: 60 } });
-  const j = await r.json();
+  const j = await r.json<{ items?: any[] }>();
   return j.items || [];
 }
 async function getOffers(): Promise<PublicOffer[]> {
