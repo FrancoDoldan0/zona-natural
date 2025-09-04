@@ -11,7 +11,7 @@ export type Product = {
   id: number;
   name: string;
   slug: string;
-  // catálgo puede traer "cover", detalle puede traer "coverUrl" o "images"
+  // catálogo puede traer "cover", detalle puede traer "coverUrl" o "images"
   cover?: string | null;
   coverUrl?: string | null;
   images?: ProductImage[] | null;
@@ -37,10 +37,10 @@ function normalizeProduct(raw: any): Product {
     typeof raw?.price === 'number'
       ? raw.price
       : typeof raw?.priceFinal === 'number'
-        ? raw.priceFinal
-        : typeof raw?.priceOriginal === 'number'
-          ? raw.priceOriginal
-          : null;
+      ? raw.priceFinal
+      : typeof raw?.priceOriginal === 'number'
+      ? raw.priceOriginal
+      : null;
 
   // El catálogo trae "cover"; el detalle puede traer "coverUrl" o "images"
   const cover: string | null = raw?.cover ?? raw?.coverUrl ?? raw?.images?.[0]?.url ?? null;
@@ -60,20 +60,40 @@ function normalizeProduct(raw: any): Product {
   };
 }
 
-async function getData(page = 1, perPage = 12) {
+type ProductsApiResp = {
+  items?: any[];
+  data?: any[];
+  products?: any[];
+  results?: any[];
+  total?: number;
+  page?: number;
+  perPage?: number;
+};
+
+async function getData(page = 1, perPage = 12): Promise<{
+  items: Product[];
+  total: number;
+  page: number;
+  perPage: number;
+}> {
   const base = getBaseUrl();
   const url = `${base}/api/public/catalogo?page=${page}&perPage=${perPage}&sort=-id`;
 
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
 
-  const data = await res.json();
+  const data = await res.json<ProductsApiResp>();
   const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
 
   const items: Product[] = rawItems.map(normalizeProduct);
   const total: number = data.total ?? items.length;
 
-  return { items, total, page: data.page ?? page, perPage: data.perPage ?? perPage };
+  return {
+    items,
+    total,
+    page: typeof data.page === 'number' ? data.page : page,
+    perPage: typeof data.perPage === 'number' ? data.perPage : perPage,
+  };
 }
 
 export default async function ProductosPage({
@@ -81,8 +101,8 @@ export default async function ProductosPage({
 }: {
   searchParams?: { page?: string; perPage?: string };
 }) {
-  const page = Number(searchParams?.page ?? 1);
-  const perPage = Number(searchParams?.perPage ?? 8);
+  const page = Math.max(1, parseInt(String(searchParams?.page ?? '1'), 10) || 1);
+  const perPage = Math.max(1, parseInt(String(searchParams?.perPage ?? '8'), 10) || 8);
 
   const { items, total } = await getData(page, perPage);
 
