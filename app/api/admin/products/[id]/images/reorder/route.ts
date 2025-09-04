@@ -54,13 +54,13 @@ export async function POST(
       )
     );
 
-    // 👇 Ajuste: pasar 4–5 argumentos a audit (acción, entidad, id, detalles, req)
+    // ✅ audit(req, action, entity, entityId, details)
     await audit(
-      'product_images.reorder',     // acción
-      'product',                    // entidad
-      String(productId),            // entityId
-      { desiredIds, sortField: 'sortOrder' }, // detalles
-      req                           // (opcional) request para IP/UA si tu audit lo usa
+      req,
+      'product_images.reorder',
+      'product',
+      String(productId),
+      { desiredIds, sortField: 'sortOrder' }
     );
 
     return NextResponse.json({ ok: true });
