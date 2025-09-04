@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
     const hasDiscount =
       pr.priceOriginal != null && pr.priceFinal != null && pr.priceFinal < pr.priceOriginal;
     const discountPercent = hasDiscount
-      ? Math.round((1 - pr.priceFinal / pr.priceOriginal) * 100)
+      ? Math.round((1 - pr.priceFinal! / pr.priceOriginal!) * 100)
       : 0;
 
     return {
