@@ -9,7 +9,7 @@ const MAX_BYTES = 5 * 1024 * 1024; // 5MB
 
 export async function POST(req: Request) {
   const ip = req.headers.get('cf-connecting-ip') ?? '0.0.0.0';
-  if (!rateLimit(`upload:${ip}`, 8, 60_000)) {
+  if (!rateLimit(req, ['upload', ip], { max: 8, windowMs: 60_000 }).ok) {
     return NextResponse.json({ error: 'Too many uploads' }, { status: 429 });
   }
 
