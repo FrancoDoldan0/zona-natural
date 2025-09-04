@@ -39,11 +39,21 @@ function absUrl(u?: string | null) {
 async function getProduct(slug: string): Promise<Product | null> {
   const base = getBaseUrl();
   const url = `${base}/api/public/producto/${encodeURIComponent(slug)}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, { next: { revalidate } });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Producto: ${res.status} ${res.statusText}`);
-  const data = await res.json();
-  return (data?.item ?? data ?? null) as Product | null;
+
+  // La API puede devolver { item: Product } o directamente Product
+  type ProductResp = Product | { item?: Product };
+
+  const data = await res.json<ProductResp>();
+
+  const item: Product | null =
+    data && typeof data === 'object' && 'item' in data
+      ? (data as { item?: Product }).item ?? null
+      : (data as Product | null);
+
+  return item;
 }
 
 export async function generateMetadata({
@@ -70,7 +80,7 @@ export async function generateMetadata({
     description,
     alternates: { canonical },
     openGraph: {
-      type: 'website', // ← evitar el error de Next (no usar "product")
+      type: 'website', // evitar warning de Next con "product"
       url: canonical,
       title,
       description,
