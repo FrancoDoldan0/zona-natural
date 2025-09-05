@@ -96,11 +96,8 @@ async function getData(page = 1, perPage = 12): Promise<{
   };
 }
 
-export default async function ProductosPage({
-  searchParams,
-}: {
-  searchParams?: { page?: string; perPage?: string };
-}) {
+// ⚠️ Next 15: no tipar explícitamente PageProps (searchParams)
+export default async function ProductosPage({ searchParams }: any) {
   const page = Math.max(1, parseInt(String(searchParams?.page ?? '1'), 10) || 1);
   const perPage = Math.max(1, parseInt(String(searchParams?.perPage ?? '8'), 10) || 8);
 
