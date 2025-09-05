@@ -1,3 +1,5 @@
+// app/(public)/catalogo/page.tsx
+export const runtime = 'edge';
 export const revalidate = 30;
 
 type Cat = {
@@ -6,6 +8,7 @@ type Cat = {
   slug: string;
   subcats?: { id: number; name: string; slug: string }[];
 };
+
 type Item = {
   id: number;
   name: string;
@@ -33,18 +36,29 @@ async function getData(params: URLSearchParams) {
     fetch(`${base}/api/public/categories`, { next: { revalidate: 60 } }),
     fetch(`${base}/api/public/catalogo?${params.toString()}`, { next: { revalidate: 30 } }),
   ]);
+
   const catsJson = await catsRes.json<{ items?: Cat[] }>();
-  const listJson = await listRes.json<any>();
+  const listJson = await listRes.json<{ items?: Item[]; page?: number; perPage?: number; total?: number }>();
   return { cats: (catsJson.items ?? []) as Cat[], data: listJson };
 }
 
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Record<string, string | undefined>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const sp = (await searchParams) ?? {};
   const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(searchParams)) if (v) qs.set(k, v);
+
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) {
+      for (const one of v) if (one != null) qs.append(k, one);
+    } else {
+      qs.set(k, v);
+    }
+  }
+
   const { cats, data } = await getData(qs);
   const items: Item[] = data.items ?? [];
   const page = data.page ?? 1;
