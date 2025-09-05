@@ -39,28 +39,20 @@ function absUrl(u?: string | null) {
 async function getProduct(slug: string): Promise<Product | null> {
   const base = getBaseUrl();
   const url = `${base}/api/public/producto/${encodeURIComponent(slug)}`;
-  const res = await fetch(url, { next: { revalidate } });
+  const res = await fetch(url, { cache: 'no-store' });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Producto: ${res.status} ${res.statusText}`);
 
-  // La API puede devolver { item: Product } o directamente Product
-  type ProductResp = Product | { item?: Product };
-
-  const data = await res.json<ProductResp>();
-
+  const data = (await res.json<{ item?: Product }>().catch(() => ({} as any))) ?? {};
   const item: Product | null =
-    data && typeof data === 'object' && 'item' in data
-      ? (data as { item?: Product }).item ?? null
-      : (data as Product | null);
+    (typeof data === 'object' && data && 'item' in data ? (data as any).item : (data as any)) ??
+    null;
 
   return item;
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: { slug: string };
-}): Promise<Metadata> {
+// ⚠️ No tipamos el parámetro para evitar choque con PageProps de Next 15
+export async function generateMetadata({ params }: any): Promise<Metadata> {
   const item = await getProduct(params.slug);
   if (!item) {
     return { title: 'Producto no encontrado', robots: { index: false } };
@@ -80,7 +72,7 @@ export async function generateMetadata({
     description,
     alternates: { canonical },
     openGraph: {
-      type: 'website', // evitar warning de Next con "product"
+      type: 'website', // evita warning de Next
       url: canonical,
       title,
       description,
@@ -89,7 +81,8 @@ export async function generateMetadata({
   };
 }
 
-export default async function ProductPage({ params }: { params: { slug: string } }) {
+// ⚠️ Igual aquí: sin tipar el parámetro
+export default async function ProductPage({ params }: any) {
   const item = await getProduct(params.slug);
   if (!item) notFound();
 
