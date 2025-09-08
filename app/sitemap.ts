@@ -1,8 +1,11 @@
+export const runtime = 'edge';
+
 import type { MetadataRoute } from 'next';
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 import { siteUrl } from '@/lib/site';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const prisma = createPrisma();
   const now = new Date();
 
   const [products, categories, subcats, tags, totalActive] = await Promise.all([

@@ -1,4 +1,4 @@
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 
 type DiscountType = 'PERCENT' | 'AMOUNT';
 export type OfferInfo = {
@@ -12,7 +12,9 @@ export type OfferInfo = {
 function apply(type: DiscountType, price: number, val: number) {
   if (!Number.isFinite(price)) return price;
   const v = Number(val) || 0;
-  if (type === 'PERCENT') return Math.max(0, Math.round(price * (1 - v / 100) * 100) / 100);
+  if (type === 'PERCENT') {
+    return Math.max(0, Math.round(price * (1 - v / 100) * 100) / 100);
+  }
   return Math.max(0, Math.round((price - v) * 100) / 100);
 }
 
@@ -23,7 +25,7 @@ function activeNow(now: Date) {
       { OR: [{ startAt: null }, { startAt: { lte: now } }] },
       { OR: [{ endAt: null }, { endAt: { gte: now } }] },
     ],
-  };
+  } as const;
 }
 
 export function labelFor(type: DiscountType, val: number) {
@@ -36,11 +38,15 @@ export async function bestOfferFor(
   categoryId?: number | null,
   tagIds?: number[],
 ) {
+  const prisma = createPrisma();
   const now = new Date();
   const ors: any[] = [{ productId }];
   if (categoryId) ors.push({ categoryId });
   if (tagIds && tagIds.length) ors.push({ tagId: { in: tagIds } });
-  return prisma.offer.findMany({ where: { OR: ors, ...activeNow(now) }, orderBy: { id: 'desc' } });
+  return prisma.offer.findMany({
+    where: { OR: ors, ...activeNow(now) },
+    orderBy: { id: 'desc' },
+  });
 }
 
 export async function computePriceForProduct(p: {
@@ -55,9 +61,11 @@ export async function computePriceForProduct(p: {
       priceFinal: null as number | null,
       offer: null as OfferInfo | null,
     };
+
   const offers = await bestOfferFor(p.id, p.categoryId ?? null, p.tags ?? []);
   let best: OfferInfo | null = null;
   let final = p.price;
+
   for (const o of offers) {
     const f = apply(o.discountType as DiscountType, p.price, Number(o.discountVal));
     if (best === null || f < final) {
@@ -77,6 +85,7 @@ export async function computePriceForProduct(p: {
 // --- API batch (recomendada para listas) ---
 type BareProd = { id: number; price: number | null; categoryId: number | null; tags: number[] };
 export async function computePricesBatch(products: BareProd[]) {
+  const prisma = createPrisma();
   const now = new Date();
   const result = new Map<
     number,
@@ -121,10 +130,12 @@ export async function computePricesBatch(products: BareProd[]) {
         (o.productId && o.productId === p.id) ||
         (o.categoryId && o.categoryId === p.categoryId) ||
         (o.tagId && (p.tags || []).includes(o.tagId));
+
       if (!matches || p.price == null) continue;
 
       const cur = result.get(p.id)!;
       const f = apply(o.discountType as DiscountType, p.price, Number(o.discountVal));
+
       if (cur.priceFinal == null || f < cur.priceFinal) {
         result.set(p.id, {
           priceOriginal: p.price,
@@ -140,5 +151,6 @@ export async function computePricesBatch(products: BareProd[]) {
       }
     }
   }
+
   return result;
 }
