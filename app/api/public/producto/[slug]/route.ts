@@ -1,61 +1,71 @@
+// app/api/public/producto/[slug]/route.ts
 export const runtime = 'edge';
-import { NextRequest } from 'next/server';
-import { json } from '@/lib/json';
-import prisma from '@/lib/prisma';
-import { computePriceForProduct } from '@/lib/pricing';
 
-export async function GET(_req: NextRequest, ctx: { params: { slug: string } }) {
-  const slug = ctx.params.slug;
+import { NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { computePricesBatch } from '@/lib/pricing';
+
+// Next 15: no tipar el 2º argumento; usar destructuring con `any`
+export async function GET(_req: Request, { params }: any) {
+  const slug = String(params?.slug ?? '').trim();
+  if (!slug) {
+    return NextResponse.json({ error: 'missing slug' }, { status: 400 });
+  }
+
   const p = await prisma.product.findUnique({
     where: { slug },
     include: {
-      images: { orderBy: { sortOrder: 'asc' } },
-      category: true,
-      subcategory: true,
+      images: {
+        orderBy: { sortOrder: 'asc' },
+        select: { url: true, alt: true, sortOrder: true },
+      },
+      category: { select: { id: true, name: true, slug: true } },
       productTags: { select: { tagId: true } },
     },
   });
-  if (!p || p.status !== 'ACTIVE') return json({ ok: false, error: 'not_found' }, { status: 404 });
 
-  const tags = (p.productTags || []).map((t) => t.tagId);
-  const { priceOriginal, priceFinal, offer } = await computePriceForProduct({
-    id: p.id,
-    price: p.price,
-    categoryId: p.categoryId,
-    tags,
-  });
+  if (!p) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
 
-  const hasDiscount = priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
-  const discountPercent = hasDiscount ? Math.round((1 - priceFinal! / priceOriginal!) * 100) : 0;
-
-  const breadcrumbs = [
-    { label: 'Inicio', href: '/' },
-    p.category ? { label: p.category.name, href: `/c/${p.category.slug}` } : null,
-    p.subcategory
-      ? { label: p.subcategory.name, href: `/c/${p.category?.slug}/${p.subcategory.slug}` }
-      : null,
-  ].filter(Boolean) as any[];
-
-  return json({
-    ok: true,
-    item: {
+  // Precios y oferta (mismo helper que catálogo)
+  const bare = [
+    {
       id: p.id,
-      name: p.name,
-      slug: p.slug,
-      description: p.description,
-      images: p.images.map((i) => ({ url: i.url, alt: i.alt })),
-      priceOriginal,
-      priceFinal,
-      offer,
-      hasDiscount,
-      discountPercent,
-      category: p.category
-        ? { id: p.category.id, name: p.category.name, slug: p.category.slug }
-        : null,
-      subcategory: p.subcategory
-        ? { id: p.subcategory.id, name: p.subcategory.name, slug: p.subcategory.slug }
-        : null,
-      breadcrumbs,
+      price: p.price,
+      categoryId: p.categoryId,
+      tags: (p.productTags || []).map((t) => t.tagId),
     },
-  });
+  ];
+  const priced = await computePricesBatch(bare);
+  const pr = priced.get(p.id);
+
+  const hasDiscount =
+    pr?.priceOriginal != null && pr?.priceFinal != null && pr.priceFinal < pr.priceOriginal;
+
+  const item = {
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    description: p.description,
+    price: p.price,
+    sku: p.sku,
+    coverUrl: p.images?.[0]?.url ?? null,
+    images: p.images ?? [],
+    category: p.category
+      ? { id: p.category.id, name: p.category.name, slug: p.category.slug }
+      : null,
+
+    // datos enriquecidos para la UI
+    priceOriginal: pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null),
+    priceFinal: pr?.priceFinal ?? (typeof p.price === 'number' ? p.price : null),
+    offer: pr?.offer ?? null,
+    hasDiscount,
+    discountPercent:
+      hasDiscount && pr?.priceOriginal && pr?.priceFinal
+        ? Math.round((1 - pr.priceFinal! / pr.priceOriginal!) * 100)
+        : 0,
+  };
+
+  return NextResponse.json({ ok: true, item });
 }

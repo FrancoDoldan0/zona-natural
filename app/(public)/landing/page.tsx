@@ -12,16 +12,21 @@ type PublicOffer = {
   category?: { id: number; name: string; slug: string } | null;
 };
 
+// Usamos solo la base pública (evitamos headers() para Next 15)
+function baseUrl() {
+  const env = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  return env;
+}
+
 async function getBanners(): Promise<PublicBanner[]> {
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  const r = await fetch(`${base}/api/public/banners`, { next: { revalidate: 60 } });
-  const j = await r.json<{ items?: any[] }>();
+  const r = await fetch(`${baseUrl()}/api/public/banners`, { next: { revalidate: 60 } });
+  const j = await r.json<{ items?: PublicBanner[] }>().catch(() => ({ items: [] as PublicBanner[] }));
   return j.items || [];
 }
+
 async function getOffers(): Promise<PublicOffer[]> {
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  const r = await fetch(`${base}/api/public/offers`, { next: { revalidate: 60 } });
-  const j = await r.json<{ items?: PublicOffer[] }>();
+  const r = await fetch(`${baseUrl()}/api/public/offers`, { next: { revalidate: 60 } });
+  const j = await r.json<{ items?: PublicOffer[] }>().catch(() => ({ items: [] as PublicOffer[] }));
   return j.items || [];
 }
 

@@ -36,7 +36,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = await req.json<any>();
     const name: string | undefined = body?.name;
     if (!name || !name.trim())
       return NextResponse.json({ ok: false, error: 'Nombre requerido' }, { status: 400 });

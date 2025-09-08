@@ -9,7 +9,7 @@ const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret-ch
 
 export async function POST(req: Request) {
   try {
-    const { email, password } = await req.json();
+    const { email, password } = await req.json<any>();
     if (!email || !password) {
       return NextResponse.json({ ok: false, error: 'Missing email or password' }, { status: 400 });
     }

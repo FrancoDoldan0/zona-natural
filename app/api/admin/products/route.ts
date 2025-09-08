@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
 // POST /api/admin/products
 export async function POST(req: NextRequest) {
   try {
-    const json = await req.json();
+    const json = await req.json<any>();
     const parsed = CreateSchema.safeParse(json);
     if (!parsed.success) {
       return NextResponse.json(

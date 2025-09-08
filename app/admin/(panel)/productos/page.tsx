@@ -45,12 +45,12 @@ export default function ProductosPage() {
 
   async function loadCats() {
     const res = await fetch('/api/admin/categories?take=999', { cache: 'no-store' });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) setCats(data.items);
   }
   async function loadSubs() {
     const res = await fetch('/api/admin/subcategories?take=999', { cache: 'no-store' });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) setSubs(data.items);
   }
   async function load() {
@@ -59,7 +59,7 @@ export default function ProductosPage() {
     if (fCat !== '') u.set('categoryId', String(fCat));
     if (fSub !== '') u.set('subcategoryId', String(fSub));
     const res = await fetch(`/api/admin/products?${u.toString()}`, { cache: 'no-store' });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) setItems(data.items);
   }
 
@@ -83,7 +83,7 @@ export default function ProductosPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) {
       setName('');
       setDescription('');
@@ -100,7 +100,7 @@ export default function ProductosPage() {
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar producto?')) return;
     const res = await fetch(`/api/admin/products/${id}`, { method: 'DELETE' });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) setItems((prev) => prev.filter((x) => x.id !== id));
     else alert(data.error || 'No se pudo borrar');
   }

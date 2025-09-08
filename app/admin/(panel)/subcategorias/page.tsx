@@ -15,7 +15,7 @@ export default function SubcategoriasPage() {
 
   async function loadCats() {
     const res = await fetch('/api/admin/categories?take=999', { cache: 'no-store' });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) setCats(data.items);
   }
   async function load() {
@@ -23,7 +23,7 @@ export default function SubcategoriasPage() {
     if (q) u.set('q', q);
     if (filterCat !== '') u.set('categoryId', String(filterCat));
     const res = await fetch(`/api/admin/subcategories?${u.toString()}`, { cache: 'no-store' });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) setItems(data.items);
   }
   useEffect(() => {
@@ -43,7 +43,7 @@ export default function SubcategoriasPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, slug: slug || undefined, categoryId: cid }),
     });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) {
       setName('');
       setSlug('');
@@ -55,7 +55,7 @@ export default function SubcategoriasPage() {
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar subcategoría?')) return;
     const res = await fetch(`/api/admin/subcategories/${id}`, { method: 'DELETE' });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) setItems((prev) => prev.filter((x) => x.id !== id));
     else alert(data.error || 'No se pudo borrar');
   }

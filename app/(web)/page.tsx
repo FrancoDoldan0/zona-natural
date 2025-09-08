@@ -1,5 +1,4 @@
 // app/(web)/page.tsx
-import { headers } from 'next/headers';
 // Si ya tenés un ProductCard en esta carpeta, mantené el import:
 import ProductCard from './components/ProductCard';
 
@@ -16,11 +15,9 @@ type CategoriesResp = { items?: Category[] };
 
 type OffersResp = { items?: any[] };
 
+// Base pública (evitamos headers() para Next 15/Edge)
 function getBaseUrl() {
-  const h = headers();
-  const proto = h.get('x-forwarded-proto') ?? 'http';
-  const host = h.get('host') ?? 'localhost:3000';
-  return `${proto}://${host}`;
+  return (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
 }
 
 export default async function Page() {

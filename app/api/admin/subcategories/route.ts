@@ -39,7 +39,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = await req.json<any>();
     const name: string | undefined = body?.name;
     const categoryId = Number(body?.categoryId);
     if (!name || !name.trim())

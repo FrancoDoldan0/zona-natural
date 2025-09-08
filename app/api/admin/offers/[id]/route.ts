@@ -1,68 +1,112 @@
+// app/api/admin/offers/[id]/route.ts
 export const runtime = 'edge';
+
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { z } from 'zod';
+import prisma from '@/lib/prisma';
 import { audit } from '@/lib/audit';
 
-const Body = z.object({
-  title: z.string().min(1).max(120),
-  description: z.string().max(500).optional().nullable(),
-  discountType: z.enum(['PERCENT', 'AMOUNT']),
-  discountVal: z.coerce.number().positive(),
-  startAt: z.string().or(z.date()).optional().nullable(),
-  endAt: z.string().or(z.date()).optional().nullable(),
-  productId: z.coerce.number().optional().nullable(),
-  categoryId: z.coerce.number().optional().nullable(),
-});
-
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
-  try {
-    const id = Number(params.id);
-    if (!Number.isFinite(id))
-      return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
-    const json = await req.json();
-    const parsed = Body.safeParse(json);
-    if (!parsed.success)
-      return NextResponse.json(
-        { ok: false, error: 'validation_failed', detail: parsed.error.format() },
-        { status: 400 },
-      );
-    const b = parsed.data;
-    const updated = await prisma.offer.update({
-      where: { id },
-      data: {
-        title: b.title,
-        description: b.description ?? null,
-        discountType: b.discountType,
-        discountVal: b.discountVal,
-        startAt: b.startAt ? new Date(b.startAt as any) : null,
-        endAt: b.endAt ? new Date(b.endAt as any) : null,
-        productId: b.productId ?? null,
-        categoryId: b.categoryId ?? null,
-      },
-    });
-    await audit(req, 'UPDATE', 'Offer', id, b);
-    return NextResponse.json({ ok: true, item: updated });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: 'admin_offers_put_failed', detail: e?.message ?? String(e) },
-      { status: 500 },
-    );
-  }
+// --- helpers ---
+async function readId(ctx: any): Promise<number | null> {
+  const p = ctx?.params;
+  const obj = typeof p?.then === 'function' ? await p : p;
+  const id = obj?.id;
+  return Number.isFinite(Number(id)) ? Number(id) : null;
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
-  try {
-    const id = Number(params.id);
-    if (!Number.isFinite(id))
-      return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
-    await prisma.offer.delete({ where: { id } });
-    await audit(req, 'DELETE', 'Offer', id);
-    return NextResponse.json({ ok: true, id, deleted: true });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: 'admin_offers_delete_failed', detail: e?.message ?? String(e) },
-      { status: 500 },
-    );
+function strOrNull(v: unknown) {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  return t === '' ? null : t;
+}
+
+function numOrNull(v: unknown) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function dateOrNull(v: unknown) {
+  if (!v) return null;
+  const d = new Date(String(v));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+type DiscountType = 'PERCENT' | 'AMOUNT';
+function parseDiscountType(v: unknown): DiscountType | null {
+  if (typeof v !== 'string') return null;
+  const s = v.trim().toUpperCase();
+  return s === 'PERCENT' || s === 'AMOUNT' ? (s as DiscountType) : null;
+}
+
+// --- GET ---
+export async function GET(_req: Request, ctx: any) {
+  const id = await readId(ctx);
+  if (id == null) {
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
   }
+
+  const item = await prisma.offer.findUnique({ where: { id } });
+  if (!item) {
+    return NextResponse.json({ ok: false, error: 'No encontrado' }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true, item });
+}
+
+// --- PUT (update) ---
+export async function PUT(req: Request, ctx: any) {
+  const id = await readId(ctx);
+  if (id == null) {
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
+  }
+
+  const body = await req.json<any>().catch(() => ({} as any));
+
+  const data: any = {};
+  const title = strOrNull(body.title);
+  if (title !== null) data.title = title;
+
+  // puede venir vacío => null
+  const description = typeof body.description === 'string' ? body.description : null;
+  if (description !== undefined) data.description = description;
+
+  const dt = parseDiscountType(body.discountType);
+  if (dt) data.discountType = dt;
+
+  const discountVal = numOrNull(body.discountVal);
+  if (discountVal !== null) data.discountVal = discountVal;
+
+  const startAt = dateOrNull(body.startAt);
+  if (body.startAt !== undefined) data.startAt = startAt;
+
+  const endAt = dateOrNull(body.endAt);
+  if (body.endAt !== undefined) data.endAt = endAt;
+
+  const productId = numOrNull(body.productId);
+  if (body.productId !== undefined) data.productId = productId;
+
+  const categoryId = numOrNull(body.categoryId);
+  if (body.categoryId !== undefined) data.categoryId = categoryId;
+
+  const tagId = numOrNull(body.tagId);
+  if (body.tagId !== undefined) data.tagId = tagId;
+
+  const item = await prisma.offer.update({ where: { id }, data });
+
+  await audit(req, 'offer.update', 'offer', String(id), { data });
+
+  return NextResponse.json({ ok: true, item });
+}
+
+// --- DELETE ---
+export async function DELETE(req: Request, ctx: any) {
+  const id = await readId(ctx);
+  if (id == null) {
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
+  }
+
+  await prisma.offer.delete({ where: { id } });
+
+  await audit(req, 'offer.delete', 'offer', String(id));
+
+  return NextResponse.json({ ok: true });
 }

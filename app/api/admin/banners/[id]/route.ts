@@ -1,42 +1,80 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { z } from 'zod';
+import prisma from '@/lib/prisma';
+import { audit } from '@/lib/audit';
 
-const schema = z.object({
-  title: z.string().min(1).optional(),
-  imageUrl: z.string().url().optional(),
-  link: z.string().url().nullable().optional(),
-  active: z.coerce.boolean().optional(),
-  sortOrder: z.coerce.number().int().min(0).optional(),
-});
+// Helper para leer el id sin pelearse con los tipos de Next 15
+function readId(ctx: any): number | null {
+  const p = ctx?.params;
+  const obj = typeof p?.then === 'function' ? undefined : p; // si es promesa, lo resolvemos abajo
+  if (obj && obj.id != null) return Number(obj.id);
+  return null;
+}
 
-export async function GET(_req: Request, ctx: { params: { id: string } }) {
-  const id = Number(ctx.params.id);
-  const item = await prisma.banner.findUnique({ where: { id } });
-  if (!item) return NextResponse.json({ ok: false, error: 'No encontrado' }, { status: 404 });
+export async function GET(req: Request, ctx: any) {
+  // En Next 15, ctx.params puede ser objeto o Promesa
+  let id = readId(ctx);
+  if (id == null && typeof ctx?.params?.then === 'function') {
+    const resolved = await ctx.params;
+    id = Number(resolved?.id);
+  }
+  if (!Number.isFinite(id)) {
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
+  }
+
+  const item = await prisma.banner.findUnique({
+    where: { id: id! },
+  });
+
+  if (!item) {
+    return NextResponse.json({ ok: false, error: 'No encontrado' }, { status: 404 });
+  }
+
   return NextResponse.json({ ok: true, item });
 }
 
-export async function PUT(req: Request, ctx: { params: { id: string } }) {
-  const id = Number(ctx.params.id);
-  const data = schema.parse(await req.json().catch(() => ({})));
-  const updated = await prisma.banner.update({
-    where: { id },
-    data: {
-      ...('title' in data ? { title: data.title! } : {}),
-      ...('imageUrl' in data ? { imageUrl: data.imageUrl! } : {}),
-      ...('link' in data ? { link: data.link ?? null } : {}),
-      ...('active' in data ? { active: !!data.active } : {}),
-      ...('sortOrder' in data ? { sortOrder: data.sortOrder! } : {}),
-    },
+export async function PUT(req: Request, ctx: any) {
+  let id = readId(ctx);
+  if (id == null && typeof ctx?.params?.then === 'function') {
+    const resolved = await ctx.params;
+    id = Number(resolved?.id);
+  }
+  if (!Number.isFinite(id)) {
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
+  }
+
+  const body = await req.json<any>().catch(() => ({} as any));
+  const data: any = {};
+
+  if (typeof body.title === 'string') data.title = body.title.trim();
+  if (typeof body.imageUrl === 'string') data.imageUrl = body.imageUrl.trim();
+  if (typeof body.link === 'string' || body.link === null) data.link = body.link ?? null;
+  if (typeof body.active === 'boolean') data.active = body.active;
+  if (typeof body.sortOrder === 'number') data.sortOrder = body.sortOrder;
+
+  const item = await prisma.banner.update({
+    where: { id: id! },
+    data,
   });
-  return NextResponse.json({ ok: true, item: updated });
+
+  await audit(req, 'banner.update', 'banner', String(id), { data });
+
+  return NextResponse.json({ ok: true, item });
 }
 
-export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
-  const id = Number(ctx.params.id);
-  await prisma.banner.delete({ where: { id } });
-  return NextResponse.json({ ok: true, id, deleted: true });
+export async function DELETE(req: Request, ctx: any) {
+  let id = readId(ctx);
+  if (id == null && typeof ctx?.params?.then === 'function') {
+    const resolved = await ctx.params;
+    id = Number(resolved?.id);
+  }
+  if (!Number.isFinite(id)) {
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
+  }
+
+  await prisma.banner.delete({ where: { id: id! } });
+  await audit(req, 'banner.delete', 'banner', String(id));
+
+  return NextResponse.json({ ok: true });
 }

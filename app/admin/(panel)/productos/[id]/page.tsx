@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 
 type Category = { id: number; name: string };
 type Subcategory = { id: number; name: string; categoryId: number };
@@ -25,14 +26,15 @@ async function fetchFirstOk<T>(urls: string[], init?: RequestInit): Promise<T> {
   for (const u of urls) {
     try {
       const r = await fetch(u, init);
-      if (r.ok) return (await r.json()) as T;
+      if (r.ok) return (await r.json<any>()) as T;
     } catch {}
   }
   throw new Error('No pude leer la API en ninguna ruta.');
 }
 
-export default function AdminProductEditPage({ params }: { params: { id: string } }) {
-  const id = Number(params.id);
+export default function AdminProductEditPage() {
+  const { id: idParam } = useParams<{ id: string }>();
+  const id = Number.parseInt(String(idParam ?? ''), 10);
 
   const [cats, setCats] = useState<Category[]>([]);
   const [subs, setSubs] = useState<Subcategory[]>([]);
@@ -76,19 +78,23 @@ export default function AdminProductEditPage({ params }: { params: { id: string 
     ]);
 
     const p = prod.item as Product;
-    setName(p.name ?? '');
-    setSlug(p.slug ?? '');
-    setDescription(p.description ?? '');
-    setPrice(p.price != null ? String(p.price) : '');
-    setSku(p.sku ?? '');
-    setStatus((p.status as any) === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
-    setCategoryId(p.categoryId ?? '');
-    setSubcategoryId(p.subcategoryId ?? '');
+    setName(p?.name ?? '');
+    setSlug(p?.slug ?? '');
+    setDescription(p?.description ?? '');
+    setPrice(p?.price != null ? String(p.price) : '');
+    setSku(p?.sku ?? '');
+    setStatus((p?.status as any) === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+    setCategoryId(p?.categoryId ?? '');
+    setSubcategoryId(p?.subcategoryId ?? '');
 
     setLoading(false);
   }
 
   useEffect(() => {
+    if (!Number.isFinite(id)) {
+      console.error('ID de producto inválido en la URL');
+      return;
+    }
     load().catch((e) => {
       console.error(e);
       alert('No pude cargar el producto.');

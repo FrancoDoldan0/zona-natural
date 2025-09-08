@@ -40,7 +40,7 @@ export default function OffersPage() {
 
   async function load() {
     const r = await fetch('/api/admin/offers?all=1', { cache: 'no-store' });
-    const j = await r.json();
+    const j = await r.json<any>();
     if (j.ok) setItems(j.items);
   }
   useEffect(() => {
@@ -53,7 +53,7 @@ export default function OffersPage() {
     const t = setTimeout(async () => {
       const url = '/api/admin/search/products?q=' + encodeURIComponent(prodQ);
       const r = await fetch(url);
-      const j = await r.json();
+      const j = await r.json<any>();
       if (j.ok) setProdOpts(j.items);
     }, 250);
     return () => clearTimeout(t);
@@ -63,7 +63,7 @@ export default function OffersPage() {
     const t = setTimeout(async () => {
       const url = '/api/admin/search/categories?q=' + encodeURIComponent(catQ);
       const r = await fetch(url);
-      const j = await r.json();
+      const j = await r.json<any>();
       if (j.ok) setCatOpts(j.items);
     }, 250);
     return () => clearTimeout(t);
@@ -87,7 +87,7 @@ export default function OffersPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const j = await r.json();
+    const j = await r.json<any>();
     if (j.ok) {
       setTitle('');
       setDescription('');
@@ -105,7 +105,7 @@ export default function OffersPage() {
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar esta oferta?')) return;
     const r = await fetch(`/api/admin/offers/${id}`, { method: 'DELETE' });
-    const j = await r.json();
+    const j = await r.json<any>();
     if (j.ok) setItems((prev) => prev.filter((x) => x.id !== id));
   }
 

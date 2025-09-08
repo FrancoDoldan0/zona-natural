@@ -40,7 +40,7 @@ export default function ImagesPage() {
       const r = await fetch(`${base}/api/admin/products/${productId}/images`, {
         credentials: 'include',
       });
-      const j = await r.json();
+      const j = await r.json<any>();
       if (!j.ok) throw new Error(j.error || 'load_failed');
       setItems((j.items as ProductImage[]).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
       setDirty(false);
@@ -88,7 +88,7 @@ export default function ImagesPage() {
         credentials: 'include',
         body: JSON.stringify({ order }),
       });
-      const j = await r.json();
+      const j = await r.json<any>();
       if (!r.ok || !j.ok) throw new Error(j.error || 'reorder_failed');
       setItems((j.items as ProductImage[]).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
       setDirty(false);
@@ -109,7 +109,7 @@ export default function ImagesPage() {
         credentials: 'include',
         body: JSON.stringify({ move: dir }),
       });
-      const j = await r.json();
+      const j = await r.json<any>();
       if (!r.ok || !j.ok) throw new Error(j.error || `move_${dir}_failed`);
       await load();
     } catch (e: any) {
@@ -129,7 +129,7 @@ export default function ImagesPage() {
         credentials: 'include',
         body: JSON.stringify({ alt: newAlt }),
       });
-      const j = await r.json();
+      const j = await r.json<any>();
       if (!r.ok || !j.ok) throw new Error(j.error || 'alt_update_failed');
       await load();
     } catch (e: any) {
@@ -149,7 +149,7 @@ export default function ImagesPage() {
         headers: { 'x-csrf-token': getCsrf() },
         credentials: 'include',
       });
-      const j = await r.json();
+      const j = await r.json<any>();
       if (!r.ok || !j.ok) throw new Error(j.error || 'delete_failed');
       await load();
     } catch (e: any) {
@@ -174,7 +174,7 @@ export default function ImagesPage() {
         credentials: 'include',
         body: fd,
       });
-      const j = await r.json();
+      const j = await r.json<any>();
       if (!r.ok || !j.ok) throw new Error(j.error || 'upload_failed');
       setFile(null);
       setAlt('');

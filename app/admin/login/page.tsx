@@ -16,7 +16,7 @@ export default function LoginPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) router.push('/admin/ofertas');
     else setErr(data.error || 'Error');
   }

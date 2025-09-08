@@ -17,8 +17,8 @@ const UpdateSchema = z.object({
 });
 
 // GET /api/admin/products/:id
-export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
-  const id = Number(ctx.params.id);
+export async function GET(_req: NextRequest, { params }: any) {
+  const id = Number(params.id);
   const item = await prisma.product.findUnique({
     where: { id },
     include: {
@@ -32,10 +32,10 @@ export async function GET(_req: NextRequest, ctx: { params: { id: string } }) {
 }
 
 // PUT /api/admin/products/:id
-export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }: any) {
   try {
-    const id = Number(ctx.params.id);
-    const json = await req.json();
+    const id = Number(params.id);
+    const json = await req.json<any>();
     const parsed = UpdateSchema.safeParse(json);
     if (!parsed.success) {
       return NextResponse.json(
@@ -74,9 +74,9 @@ export async function PUT(req: NextRequest, ctx: { params: { id: string } }) {
 }
 
 // DELETE /api/admin/products/:id
-export async function DELETE(req: NextRequest, ctx: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: any) {
   try {
-    const id = Number(ctx.params.id);
+    const id = Number(params.id);
     const imgCount = await prisma.productImage.count({ where: { productId: id } });
     if (imgCount > 0) {
       return NextResponse.json(

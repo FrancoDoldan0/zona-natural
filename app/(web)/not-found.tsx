@@ -1,20 +1,14 @@
+// app/(web)/not-found.tsx
+import Link from 'next/link';
+
 export default function NotFound() {
   return (
-    <div style={{ padding: 24, textAlign: 'center' }}>
-      <meta name="robots" content="noindex, follow" />
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Página no encontrada</h1>
-      <p>Lo sentimos, el recurso solicitado no existe.</p>
-      <a
-        href="/"
-        style={{
-          display: 'inline-block',
-          marginTop: 12,
-          color: '#2563eb',
-          textDecoration: 'underline',
-        }}
-      >
+    <main className="max-w-3xl mx-auto px-4 py-10 space-y-4">
+      <h1 className="text-2xl font-bold">Página no encontrada</h1>
+      <p className="opacity-80">Lo sentimos, no pudimos encontrar lo que buscabas.</p>
+      <Link href="/" className="text-blue-600 hover:underline">
         Volver al inicio
-      </a>
-    </div>
+      </Link>
+    </main>
   );
 }

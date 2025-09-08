@@ -38,7 +38,7 @@ export default function AdminProductImagesPage() {
         cache: 'no-store',
       });
       if (!res.ok) throw new Error(`GET product ${id}: ${res.status}`);
-      const data = await res.json();
+      const data = await res.json<any>();
       const p: Product = data.item ?? data?.data ?? data;
       setProduct(p);
       const imgs = (p.images ?? []).slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));

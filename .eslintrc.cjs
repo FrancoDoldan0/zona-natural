@@ -1,8 +1,18 @@
+/** @type {import('eslint').Linter.Config} */
 module.exports = {
   root: true,
-  extends: ['plugin:next-on-pages/recommended', 'next/core-web-vitals'],
-  plugins: ['next-on-pages'],
+  extends: ['next/core-web-vitals'],
+  ignorePatterns: [
+    'node_modules/**',
+    '.next/**',
+    '.vercel/**',
+    '.wrangler/**',
+    '__backup__/**',
+    '**/*.bak',
+    'scripts/**',
+  ],
   rules: {
+    // Tenemos <img> sueltas en varias páginas
+    '@next/next/no-img-element': 'off',
   },
 };
-

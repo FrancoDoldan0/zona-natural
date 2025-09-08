@@ -1,7 +1,6 @@
 // app/(public)/productos/[slug]/page.tsx
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import SafeImage from '@/components/SafeImage';
 
@@ -22,57 +21,47 @@ type Product = {
   category?: Category | null;
 };
 
-function getBaseUrl() {
-  const h = headers();
-  const proto = h.get('x-forwarded-proto') ?? 'http';
-  const host = h.get('host') ?? 'localhost:3000';
-  return `${proto}://${host}`;
+// Base pública (evitamos headers() en Next 15)
+function baseUrl() {
+  return (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
 }
 
 function absUrl(u?: string | null) {
   if (!u) return undefined;
   if (u.startsWith('http')) return u;
-  const base = getBaseUrl();
+  const base = baseUrl();
   return u.startsWith('/') ? `${base}${u}` : `${base}/${u}`;
 }
 
 async function getProduct(slug: string): Promise<Product | null> {
-  const base = getBaseUrl();
-  const url = `${base}/api/public/producto/${encodeURIComponent(slug)}`;
+  const url = `${baseUrl()}/api/public/producto/${encodeURIComponent(slug)}`;
   const res = await fetch(url, { cache: 'no-store' });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Producto: ${res.status} ${res.statusText}`);
-
-  const data = (await res.json<{ item?: Product }>().catch(() => ({} as any))) ?? {};
-  const item: Product | null =
-    (typeof data === 'object' && data && 'item' in data ? (data as any).item : (data as any)) ??
-    null;
-
-  return item;
+  const data = await res.json<any>();
+  return (data?.item ?? data ?? null) as Product | null;
 }
 
-// ⚠️ No tipamos el parámetro para evitar choque con PageProps de Next 15
 export async function generateMetadata({ params }: any): Promise<Metadata> {
   const item = await getProduct(params.slug);
   if (!item) {
     return { title: 'Producto no encontrado', robots: { index: false } };
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || getBaseUrl();
   const title = `${item.name} | Zona Natural`;
   const description =
     (item.description && item.description.slice(0, 160)) || `Compra ${item.name} en Zona Natural.`;
 
   const firstImg = item.coverUrl || item.images?.[0]?.url || '/placeholder.jpg';
   const ogImage = absUrl(firstImg);
-  const canonical = `${siteUrl}/productos/${item.slug}`;
+  const canonical = `${baseUrl()}/productos/${item.slug}`;
 
   return {
     title,
     description,
     alternates: { canonical },
     openGraph: {
-      type: 'website', // evita warning de Next
+      type: 'website', // evitar warning de Next (no usar "product")
       url: canonical,
       title,
       description,
@@ -81,7 +70,6 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
   };
 }
 
-// ⚠️ Igual aquí: sin tipar el parámetro
 export default async function ProductPage({ params }: any) {
   const item = await getProduct(params.slug);
   if (!item) notFound();
@@ -90,13 +78,13 @@ export default async function ProductPage({ params }: any) {
   const imgSrc =
     firstImg?.startsWith('http') || firstImg?.startsWith('/') ? String(firstImg) : `/${firstImg}`;
 
-  const canonical = `/productos/${item.slug}`;
+  const canonicalPath = `/productos/${item.slug}`;
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: item.name,
     sku: item.sku || undefined,
-    url: absUrl(canonical),
+    url: absUrl(canonicalPath),
     image: absUrl(firstImg),
     description: item.description || undefined,
     category: item.category?.name || undefined,

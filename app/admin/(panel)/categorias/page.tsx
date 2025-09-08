@@ -13,7 +13,7 @@ export default function CategoriasPage() {
     const u = new URLSearchParams();
     if (q) u.set('q', q);
     const res = await fetch(`/api/admin/categories?${u.toString()}`, { cache: 'no-store' });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) setItems(data.items);
   }
   useEffect(() => {
@@ -27,7 +27,7 @@ export default function CategoriasPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, slug: slug || undefined }),
     });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) {
       setName('');
       setSlug('');
@@ -38,7 +38,7 @@ export default function CategoriasPage() {
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar categoría (y sus subcategorías)?')) return;
     const res = await fetch(`/api/admin/categories/${id}`, { method: 'DELETE' });
-    const data = await res.json();
+    const data = await res.json<any>();
     if (data.ok) setItems((prev) => prev.filter((x) => x.id !== id));
     else alert(data.error || 'No se pudo borrar');
   }

@@ -16,7 +16,7 @@ export default function UploadsPage() {
     const fd = new FormData();
     fd.append('file', file);
     const res = await fetch('/api/admin/uploads', { method: 'POST', body: fd });
-    const j = await res.json();
+    const j = await res.json<any>();
     if (j.ok) setUrl(j.url);
     else setErr(j.error || 'Error');
     setBusy(false);

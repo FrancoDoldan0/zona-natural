@@ -24,7 +24,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = schema.parse(await req.json());
+    const body = schema.parse(await req.json<any>());
     const created = await prisma.banner.create({
       data: {
         title: body.title,

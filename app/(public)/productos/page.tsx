@@ -1,5 +1,4 @@
 ﻿// app/(public)/productos/page.tsx
-import { headers } from 'next/headers';
 import ProductGrid from './ProductGrid';
 
 export const runtime = 'edge';
@@ -25,11 +24,9 @@ export type Product = {
   discountPercent?: number | null;
 };
 
-function getBaseUrl() {
-  const h = headers();
-  const proto = h.get('x-forwarded-proto') ?? 'http';
-  const host = h.get('host') ?? 'localhost:3000';
-  return `${proto}://${host}`;
+// Evitamos headers() en Next 15: usamos BASE_URL pública
+function baseUrl() {
+  return (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
 }
 
 function normalizeProduct(raw: any): Product {
@@ -42,7 +39,6 @@ function normalizeProduct(raw: any): Product {
       ? raw.priceOriginal
       : null;
 
-  // El catálogo trae "cover"; el detalle puede traer "coverUrl" o "images"
   const cover: string | null = raw?.cover ?? raw?.coverUrl ?? raw?.images?.[0]?.url ?? null;
 
   return {
@@ -76,15 +72,12 @@ async function getData(page = 1, perPage = 12): Promise<{
   page: number;
   perPage: number;
 }> {
-  const base = getBaseUrl();
-  const url = `${base}/api/public/catalogo?page=${page}&perPage=${perPage}&sort=-id`;
-
+  const url = `${baseUrl()}/api/public/catalogo?page=${page}&perPage=${perPage}&sort=-id`;
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
 
   const data = await res.json<ProductsApiResp>();
   const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
-
   const items: Product[] = rawItems.map(normalizeProduct);
   const total: number = data.total ?? items.length;
 
@@ -96,10 +89,10 @@ async function getData(page = 1, perPage = 12): Promise<{
   };
 }
 
-// ⚠️ Next 15: no tipar explícitamente PageProps (searchParams)
-export default async function ProductosPage({ searchParams }: any) {
-  const page = Math.max(1, parseInt(String(searchParams?.page ?? '1'), 10) || 1);
-  const perPage = Math.max(1, parseInt(String(searchParams?.perPage ?? '8'), 10) || 8);
+export default async function ProductosPage(props: any) {
+  const sp = props?.searchParams ?? {};
+  const page = Math.max(1, parseInt(String(sp.page ?? '1'), 10) || 1);
+  const perPage = Math.max(1, parseInt(String(sp.perPage ?? '8'), 10) || 8);
 
   const { items, total } = await getData(page, perPage);
 

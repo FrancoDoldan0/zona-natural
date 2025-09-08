@@ -29,7 +29,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const json = await req.json();
+    const json = await req.json<any>();
     const parsed = Body.safeParse(json);
     if (!parsed.success)
       return NextResponse.json(
