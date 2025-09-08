@@ -1,10 +1,12 @@
 export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 import { z } from 'zod';
 import { slugify } from '@/lib/slug';
 import { audit } from '@/lib/audit';
 
+
+const prisma = createPrisma();
 const CreateSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(1).optional(),

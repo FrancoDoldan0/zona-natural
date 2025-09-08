@@ -2,10 +2,14 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 import { audit } from '@/lib/audit';
 import { deleteUpload } from '@/lib/storage';
 
+
+
+import { getEnv } from '@/lib/cf-env';
+const prisma = createPrisma();
 // -------- utils --------
 async function readParams(ctx: any): Promise<{ productId: number | null; imageId: number | null }> {
   const p = ctx?.params;
@@ -108,7 +112,7 @@ export async function DELETE(req: Request, ctx: any) {
   await prisma.productImage.delete({ where: { id: imageId } });
 
   // Intentar borrar el objeto en R2 si la URL coincide con tu base pública
-  const publicBase = process.env.PUBLIC_R2_BASE_URL || undefined;
+  const publicBase = getEnv().PUBLIC_R2_BASE_URL || undefined;
   const key = keyFromPublicUrl(img.url, publicBase);
   if (key) {
     // deleteUpload ya maneja el caso de que no exista binding en dev

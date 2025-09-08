@@ -1,9 +1,11 @@
 export const runtime = 'edge';
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 import { z } from 'zod';
 import { audit } from '@/lib/audit';
 
+
+const prisma = createPrisma();
 const Body = z.object({
   title: z.string().min(1).max(120),
   description: z.string().max(500).optional().nullable(),

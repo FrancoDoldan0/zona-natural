@@ -1,7 +1,9 @@
 import { json } from '@/lib/json';
+
+const prisma = createPrisma();
 export const runtime = 'edge';
 
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 
 export async function GET() {
   const cats = await prisma.category.findMany({

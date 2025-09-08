@@ -1,9 +1,11 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 import { z } from 'zod';
 
+
+const prisma = createPrisma();
 const schema = z.object({
   title: z.string().min(1),
   imageUrl: z.string().url(),

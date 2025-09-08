@@ -1,9 +1,11 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 import { audit } from '@/lib/audit';
 
+
+const prisma = createPrisma();
 // Helper para leer el id sin pelearse con los tipos de Next 15
 function readId(ctx: any): number | null {
   const p = ctx?.params;

@@ -1,8 +1,12 @@
 export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
 import { siteUrl } from '@/lib/site';
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 
+
+
+import { getEnv } from '@/lib/cf-env';
+const prisma = createPrisma();
 // ---- utils ----
 function isTruthy(v?: string | null) {
   return ['1', 'true', 'yes', 'on'].includes(String(v ?? '').toLowerCase());
@@ -38,7 +42,7 @@ export async function GET(req: NextRequest) {
     const dry = isTruthy(url.searchParams.get('dry'));
 
     // Siempre .env (ignora ?phone)
-    const phoneRaw = process.env.WA_PHONE || '';
+    const phoneRaw = getEnv().WA_PHONE || '';
     const phoneE164 = normalizeUyMobile(phoneRaw);
 
     if (!isUyMobile(phoneE164)) {

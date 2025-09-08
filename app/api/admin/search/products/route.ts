@@ -2,8 +2,10 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 
+
+const prisma = createPrisma();
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);

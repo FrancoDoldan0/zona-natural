@@ -2,9 +2,11 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 import { computePricesBatch } from '@/lib/pricing';
 
+
+const prisma = createPrisma();
 // Next 15: no tipar el 2º argumento; usar destructuring con `any`
 export async function GET(_req: Request, { params }: any) {
   const slug = String(params?.slug ?? '').trim();

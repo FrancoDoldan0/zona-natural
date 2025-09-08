@@ -1,11 +1,15 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 import bcrypt from 'bcryptjs';
 import { SignJWT } from 'jose';
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret-change-me');
+
+
+import { getEnv } from '@/lib/cf-env';
+const prisma = createPrisma();
+const secret = new TextEncoder().encode(getEnv().JWT_SECRET || 'dev-secret-change-me');
 
 export async function POST(req: Request) {
   try {

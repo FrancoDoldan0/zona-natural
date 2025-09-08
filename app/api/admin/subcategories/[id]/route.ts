@@ -2,8 +2,10 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 
+
+const prisma = createPrisma();
 // ⚠️ Next 15: NO tipar el 2º argumento. Usamos { params }: any
 export async function GET(_req: Request, { params }: any) {
   const id = Number(params?.id);

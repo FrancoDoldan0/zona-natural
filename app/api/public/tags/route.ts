@@ -1,8 +1,10 @@
 export const runtime = 'edge';
 import { NextRequest } from 'next/server';
 import { json } from '@/lib/json';
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 
+
+const prisma = createPrisma();
 function parseBool(v?: string | null) {
   if (!v) return false;
   const s = v.trim().toLowerCase();

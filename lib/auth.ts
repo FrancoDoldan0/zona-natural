@@ -1,6 +1,8 @@
 import { jwtVerify, SignJWT } from 'jose';
 
-const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'dev-secret-change-me');
+
+import { getEnv } from '@/lib/cf-env';
+const secret = new TextEncoder().encode(getEnv().JWT_SECRET || 'dev-secret-change-me');
 
 export async function signSession(payload: Record<string, any>, days = 7) {
   return new SignJWT(payload)

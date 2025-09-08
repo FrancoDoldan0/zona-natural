@@ -2,9 +2,11 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 import { audit } from '@/lib/audit';
 
+
+const prisma = createPrisma();
 // --- helpers ---
 async function readId(ctx: any): Promise<number | null> {
   const p = ctx?.params;

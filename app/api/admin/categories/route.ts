@@ -1,8 +1,10 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import { prisma } from '../../../../lib/prisma';
+import { createPrisma } from '@/lib/prisma-edge';
 
+
+const prisma = createPrisma();
 function slugify(input: string) {
   return input
     .toLowerCase()
