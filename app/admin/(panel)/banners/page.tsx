@@ -21,7 +21,7 @@ export default function BannersPage() {
 
   async function load(all = false) {
     const res = await fetch('/api/admin/banners?all=' + (all ? 1 : 0), { cache: 'no-store' });
-    const data = await res.json();
+    const data = await res.json<{ ok?: boolean; items?: any[] }>();
     if (data.ok) setItems(data.items);
   }
   useEffect(() => {
@@ -41,7 +41,7 @@ export default function BannersPage() {
         sortOrder: Number(sortOrder || 0),
       }),
     });
-    const data = await res.json();
+    const data = await res.json<{ ok?: boolean; items?: any[] }>();
     if (data.ok) {
       setTitle('');
       setImageUrl('');
@@ -57,13 +57,13 @@ export default function BannersPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !b.active }),
     });
-    const data = await res.json();
+    const data = await res.json<{ ok?: boolean; items?: any[] }>();
     if (data.ok) setItems((prev) => prev.map((x) => (x.id === b.id ? data.item : x)));
   }
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar banner?')) return;
     const res = await fetch(`/api/admin/banners/${id}`, { method: 'DELETE' });
-    const data = await res.json();
+    const data = await res.json<{ ok?: boolean; items?: any[] }>();
     if (data.ok) setItems((prev) => prev.filter((x) => x.id !== id));
   }
 
