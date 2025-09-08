@@ -22,7 +22,8 @@
     "cf:deploy": "wrangler pages deploy .vercel/output/pages"
   },
   "dependencies": {
-    "@prisma/client": "^6.14.0",
+    "@prisma/client": "^6.15.0",
+    "@prisma/extension-accelerate": "^2.0.2",
     "bcryptjs": "3.0.2",
     "drizzle-orm": "^0.33.0",
     "jose": "6.0.12",
