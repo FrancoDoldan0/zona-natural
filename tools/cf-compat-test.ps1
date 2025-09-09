@@ -52,7 +52,10 @@ export\s+const\s+runtime\s*=\s*["']nodejs["']
 '@
 
 foreach($f in $files){
-  $t = Get-Content -Raw -LiteralPath $f.FullName
+  # Ignorar el helper de env (tiene fallback a process.env a propósito)
+  if ($f.FullName -match '(^|\\|/)lib(\\|/)cf-env\.ts$') { continue }
+
+  $t = Get-Content -LiteralPath $f.FullName -Raw
 
   # 1) .json() sin genérico (req.json/res.json). Evita NextResponse.json({...})
   $m1 = [regex]::Matches(
@@ -77,6 +80,7 @@ foreach($f in $files){
     if(-not $mod){ continue }
     $modNorm = $mod
     if($mod -like "node:*"){ $modNorm = $mod.Substring(5) }
+
     if($NODE_CORE -contains $modNorm){
       $line = LinesUntil $t $im.Index
       Show "ERROR" $f.FullName $line ("Import de Node core '{0}' no disponible en Workers/Edge." -f $mod) ("import/require: " + $im.Value.Trim())
@@ -86,24 +90,26 @@ foreach($f in $files){
       Show "WARN"  $f.FullName $line ("Paquete potencialmente incompatible en Edge: '{0}'." -f $mod) ("import: " + $im.Value.Trim())
       $warn++
     }
-    # Prisma client directo (no type-only)
+
+    # Prisma client Node (no type-only)
     if($mod -eq "@prisma/client" -and $im.Value -notmatch "import\s+type"){
       $line = LinesUntil $t $im.Index
       Show "WARN"  $f.FullName $line "Prisma Client Node no corre en Workers; usa Accelerate/Data Proxy o drivers HTTP." ("import: " + $im.Value.Trim())
       $warn++
     }
-    # lib/prisma uso
-    if($mod -match "lib/prisma"){
+
+    # Avisar solo si importan lib/prisma (NO prisma-edge)
+    if($mod -match '(^|/|\\)lib/prisma$'){
       $line = LinesUntil $t $im.Index
       Show "WARN"  $f.FullName $line "Uso de prisma local: verifica que sea compatible con Edge (Accelerate/Data Proxy)." ("import: " + $im.Value.Trim())
       $warn++
     }
   }
 
-  # 3) Globales Node
+  # 3) Globales Node (afinado a secretos no públicos)
   $globals = @(
-    @{pat='\bprocess\.'; msg='process.* en Edge: evita leer en runtime; usa bindings/env de Pages/Workers.'},
-    @{pat='(?<![A-Za-z0-9_])Buffer(?![A-Za-z0-9_])'; msg='Buffer en Edge: preferí TextEncoder/Decoder o atob/btoa/Web Streams.'},
+    @{pat='process\.env\.(?!NEXT_PUBLIC_|NODE_ENV\b)[A-Z0-9_]+\b'; msg='process.env.* en Edge (no NEXT_PUBLIC/NODE_ENV): usa getEnv() o bindings.'},
+    @{pat='(?<![A-Za-z0-9_])Buffer(?![A-Za-z0-9_])'; msg='Buffer en Edge: preferí TextEncoder/Decoder o Web Streams.'},
     @{pat='__dirname|__filename'; msg='__dirname/__filename no existen en Edge.'},
     @{pat='(?<![A-Za-z0-9_])global\.'; msg='global.*: usa globalThis en Edge.'}
   )

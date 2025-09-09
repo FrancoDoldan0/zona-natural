@@ -19,13 +19,14 @@ function apply(type: DiscountType, price: number, val: number) {
 }
 
 // Activa si (startAt es null OR startAt <= now) AND (endAt es null OR endAt >= now)
+// ⚠️ Importante: NO usar `as const` aquí para que los arrays no sean readonly.
 function activeNow(now: Date) {
   return {
     AND: [
       { OR: [{ startAt: null }, { startAt: { lte: now } }] },
       { OR: [{ endAt: null }, { endAt: { gte: now } }] },
     ],
-  } as const;
+  };
 }
 
 export function labelFor(type: DiscountType, val: number) {
@@ -43,6 +44,7 @@ export async function bestOfferFor(
   const ors: any[] = [{ productId }];
   if (categoryId) ors.push({ categoryId });
   if (tagIds && tagIds.length) ors.push({ tagId: { in: tagIds } });
+
   return prisma.offer.findMany({
     where: { OR: ors, ...activeNow(now) },
     orderBy: { id: 'desc' },

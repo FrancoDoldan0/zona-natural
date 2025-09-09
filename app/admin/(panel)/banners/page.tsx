@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import type React from 'react';
 
 type Banner = {
   id: number;
@@ -9,6 +10,18 @@ type Banner = {
   active: boolean;
   sortOrder: number;
 };
+
+type ApiList<T> =
+  | { ok: true; items: T[] }
+  | { ok: false; error: string };
+
+type ApiItem<T> =
+  | { ok: true; item: T }
+  | { ok: false; error: string };
+
+type ApiOk =
+  | { ok: true }
+  | { ok: false; error: string };
 
 export default function BannersPage() {
   const [items, setItems] = useState<Banner[]>([]);
@@ -21,14 +34,16 @@ export default function BannersPage() {
 
   async function load(all = false) {
     const res = await fetch('/api/admin/banners?all=' + (all ? 1 : 0), { cache: 'no-store' });
-    const data = await res.json<{ ok?: boolean; items?: any[] }>();
+    const data = await res.json<ApiList<Banner>>();
     if (data.ok) setItems(data.items);
+    else setItems([]);
   }
+
   useEffect(() => {
     load(true);
   }, []);
 
-  async function onCreate(e: React.FormEvent) {
+  async function onCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const res = await fetch('/api/admin/banners', {
       method: 'POST',
@@ -41,7 +56,7 @@ export default function BannersPage() {
         sortOrder: Number(sortOrder || 0),
       }),
     });
-    const data = await res.json<{ ok?: boolean; items?: any[] }>();
+    const data = await res.json<ApiOk>();
     if (data.ok) {
       setTitle('');
       setImageUrl('');
@@ -49,22 +64,30 @@ export default function BannersPage() {
       setSortOrder('0');
       setActive(true);
       load(true);
-    } else alert(data.error || 'Error');
+    } else {
+      alert(data.error || 'Error');
+    }
   }
+
   async function onToggleActive(b: Banner) {
     const res = await fetch(`/api/admin/banners/${b.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !b.active }),
     });
-    const data = await res.json<{ ok?: boolean; items?: any[] }>();
-    if (data.ok) setItems((prev) => prev.map((x) => (x.id === b.id ? data.item : x)));
+    const data = await res.json<ApiItem<Banner>>();
+    if (data.ok) {
+      setItems((prev) => prev.map((x) => (x.id === b.id ? data.item : x)));
+    }
   }
+
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar banner?')) return;
     const res = await fetch(`/api/admin/banners/${id}`, { method: 'DELETE' });
-    const data = await res.json<{ ok?: boolean; items?: any[] }>();
-    if (data.ok) setItems((prev) => prev.filter((x) => x.id !== id));
+    const data = await res.json<ApiOk>();
+    if (data.ok) {
+      setItems((prev) => prev.filter((x) => x.id !== id));
+    }
   }
 
   const filtered = items.filter((i) => !q || i.title.toLowerCase().includes(q.toLowerCase()));
