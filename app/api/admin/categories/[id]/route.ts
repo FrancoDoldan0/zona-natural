@@ -1,40 +1,61 @@
-export const runtime = "nodejs";
+// app/api/admin/categories/[id]/route.ts
+export const runtime = 'edge';
 
-import { NextResponse } from "next/server";
-import { prisma } from "../../../../../lib/prisma";
+import { NextResponse } from 'next/server';
+import { createPrisma } from '@/lib/prisma-edge';
+import { audit } from '@/lib/audit';
 
-function slugify(input: string) {
-  return input
-    .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "");
+
+const prisma = createPrisma();
+// Lee el id desde ctx.params (objeto o promesa en Next 15)
+async function readId(ctx: any): Promise<number | null> {
+  const p = ctx?.params;
+  const obj = typeof p?.then === 'function' ? await p : p;
+  const id = obj?.id;
+  return Number.isFinite(Number(id)) ? Number(id) : null;
 }
 
-export async function PUT(req: Request, ctx: { params: { id: string } }) {
-  const id = Number(ctx.params.id);
-  if (!Number.isInteger(id)) return NextResponse.json({ ok: false, error: "ID inválido" }, { status: 400 });
-  const body = await req.json().catch(() => ({}));
-  const data:any = {};
-  if (typeof body?.name === "string" && body.name.trim()) data.name = body.name.trim();
-  if (typeof body?.slug === "string" && body.slug.trim()) data.slug = slugify(body.slug);
+export async function GET(_req: Request, ctx: any) {
+  const id = await readId(ctx);
+  if (id == null) {
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
+  }
 
-  const item = await prisma.category.update({ where: { id }, data });
+  const item = await prisma.category.findUnique({ where: { id } });
+  if (!item) {
+    return NextResponse.json({ ok: false, error: 'No encontrado' }, { status: 404 });
+  }
+
   return NextResponse.json({ ok: true, item });
 }
 
-export async function DELETE(_: Request, ctx: { params: { id: string } }) {
-  const id = Number(ctx.params.id);
-  if (!Number.isInteger(id)) return NextResponse.json({ ok: false, error: "ID inválido" }, { status: 400 });
-  try {
-    // Borra subcategorías y desasocia productos que dependan
-    await prisma.$transaction([
-      prisma.subcategory.deleteMany({ where: { categoryId: id } }),
-      prisma.product.updateMany({ where: { categoryId: id }, data: { categoryId: null } }),
-      prisma.category.delete({ where: { id } }),
-    ]);
-    return NextResponse.json({ ok: true, deleted: true });
-  } catch {
-    return NextResponse.json({ ok: false, error: "No se pudo borrar" }, { status: 409 });
+export async function PUT(req: Request, ctx: any) {
+  const id = await readId(ctx);
+  if (id == null) {
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
   }
+
+  const body = await req.json<any>().catch(() => ({} as any));
+  const data: any = {};
+  if (typeof body.name === 'string') data.name = body.name.trim();
+  if (typeof body.slug === 'string') data.slug = body.slug.trim();
+
+  const item = await prisma.category.update({ where: { id }, data });
+
+  await audit(req, 'category.update', 'category', String(id), { data });
+
+  return NextResponse.json({ ok: true, item });
+}
+
+export async function DELETE(req: Request, ctx: any) {
+  const id = await readId(ctx);
+  if (id == null) {
+    return NextResponse.json({ ok: false, error: 'ID inválido' }, { status: 400 });
+  }
+
+  await prisma.category.delete({ where: { id } });
+
+  await audit(req, 'category.delete', 'category', String(id));
+
+  return NextResponse.json({ ok: true });
 }

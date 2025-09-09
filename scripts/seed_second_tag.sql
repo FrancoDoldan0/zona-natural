@@ -1,0 +1,5 @@
+BEGIN TRANSACTION;
+INSERT OR IGNORE INTO Tag (name) VALUES ('Eco');
+INSERT OR IGNORE INTO ProductTag (productId, tagId)
+SELECT 8, t.id FROM Tag t WHERE t.name = 'Eco';
+COMMIT;

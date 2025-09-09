@@ -8,12 +8,12 @@ datasource db {
 }
 
 model AdminUser {
-  id           Int      @id @default(autoincrement())
-  email        String   @unique
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
   passwordHash String
   lastLoginAt  DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 model Category {
@@ -28,14 +28,14 @@ model Category {
 }
 
 model Subcategory {
-  id          Int       @id @default(autoincrement())
-  name        String
-  slug        String    @unique
-  categoryId  Int
-  category    Category  @relation(fields: [categoryId], references: [id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  products    Product[]
+  id         Int       @id @default(autoincrement())
+  name       String
+  slug       String    @unique
+  categoryId Int
+  category   Category  @relation(fields: [categoryId], references: [id])
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  products   Product[]
 }
 
 model Product {
@@ -55,20 +55,25 @@ model Product {
   offers        Offer[]        @relation("ProductOffers")
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+
+  @@index([status])
 }
 
 model ProductImage {
-  id         Int     @id @default(autoincrement())
-  productId  Int
-  product    Product @relation(fields: [productId], references: [id])
-  url        String
-  alt        String?
-  sortOrder  Int     @default(0) @map("order") // mapea a columna "order"
+  id        Int     @id @default(autoincrement())
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+  url       String
+  alt       String?
+  sortOrder Int     @default(0) @map("order")
+
+  @@index([productId, sortOrder])
 }
 
 model Tag {
-  id          Int          @id @default(autoincrement())
-  name        String       @unique
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
   productTags ProductTag[]
   offers      Offer[]      @relation("TagOffers")
 }
@@ -76,9 +81,11 @@ model Tag {
 model ProductTag {
   productId Int
   tagId     Int
-  product   Product @relation(fields: [productId], references: [id])
-  tag       Tag     @relation(fields: [tagId], references: [id])
-  @@id([productId, tagId])
+
+  product Product @relation(fields: [productId], references: [id])
+  tag     Tag     @relation(fields: [tagId], references: [id])
+
+  @@unique([productId, tagId])
 }
 
 enum DiscountType {
@@ -95,6 +102,8 @@ model Banner {
   sortOrder Int      @default(0) @map("order")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
 }
 
 model Offer {
@@ -108,9 +117,29 @@ model Offer {
   productId    Int?
   categoryId   Int?
   tagId        Int?
-  product      Product?     @relation("ProductOffers",  fields: [productId],  references: [id])
-  category     Category?    @relation("CategoryOffers", fields: [categoryId], references: [id])
-  tag          Tag?         @relation("TagOffers",      fields: [tagId],      references: [id])
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+
+  product  Product?  @relation("ProductOffers", fields: [productId], references: [id])
+  category Category? @relation("CategoryOffers", fields: [categoryId], references: [id])
+  tag      Tag?      @relation("TagOffers", fields: [tagId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+  @@index([categoryId])
+  @@index([tagId])
+  @@index([startAt])
+  @@index([endAt])
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  entity    String
+  entityId  String?
+  userId    String?
+  ip        String?
+  userAgent String?
+  details   String?
+  createdAt DateTime @default(now())
 }

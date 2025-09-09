@@ -1,49 +1,198 @@
-export const runtime = "nodejs";
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+export const runtime = 'edge';
 
-function toNum(v: string|null, d=1){ const n = Number(v); return Number.isFinite(n) && n>0 ? n : d; }
+import { NextRequest } from 'next/server';
+import { json } from '@/lib/json';
+import { createPrisma } from '@/lib/prisma-edge';
+import { computePricesBatch } from '@/lib/pricing';
+import type { Prisma } from '@prisma/client';
 
-export async function GET(req: Request) {
+
+const prisma = createPrisma();
+function parseBool(v?: string | null) {
+  if (!v) return false;
+  const s = v.trim().toLowerCase();
+  return s === '1' || s === 'true' || s === 'yes' || s === 'on';
+}
+
+export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const q = (url.searchParams.get("q") ?? "").trim();
-  const category = url.searchParams.get("category");
-  const subcategory = url.searchParams.get("subcategory");
-  const page = toNum(url.searchParams.get("page"), 1);
-  const perPage = Math.min(toNum(url.searchParams.get("perPage"), 12), 60);
-  const order = (url.searchParams.get("order") ?? "newest");
+  const q = (url.searchParams.get('q') || '').trim();
+  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+  const perPage = Math.min(60, Math.max(1, parseInt(url.searchParams.get('perPage') || '12', 10)));
+  const categoryId = parseInt(url.searchParams.get('categoryId') || '', 10);
+  const subcategoryId = parseInt(url.searchParams.get('subcategoryId') || '', 10);
 
-  const where:any = { status: "ACTIVE" };
-  if (q) where.OR = [
-    { name: { contains: q } },
-    { slug: { contains: q } },
-    { description: { contains: q } },
-  ];
-  if (category) where.category = { slug: category };
-  if (subcategory) where.subcategory = { slug: subcategory };
+  // --- multi-tag + modo de match (any/all) ---
+  const tagIdSingle = parseInt(url.searchParams.get('tagId') || '', 10);
+  const tagIdsCsv = (url.searchParams.get('tagIds') || '').trim();
+  const tagIdList = url.searchParams.getAll('tagId').map((s) => parseInt(s, 10));
+  const tagIds = [
+    ...tagIdList,
+    ...(tagIdsCsv ? tagIdsCsv.split(',').map((s) => parseInt(s.trim(), 10)) : []),
+    ...(Number.isFinite(tagIdSingle) ? [tagIdSingle] : []),
+  ].filter(Number.isFinite) as number[];
+  const match = (url.searchParams.get('match') || 'any').toLowerCase(); // "any" | "all"
 
-  const orderBy = order === "price_asc" ? { price: "asc" } :
-                  order === "price_desc" ? { price: "desc" } :
-                  { updatedAt: "desc" };
+  const minPrice = parseFloat(url.searchParams.get('minPrice') || '');
+  const maxPrice = parseFloat(url.searchParams.get('maxPrice') || '');
+  const minFinal = parseFloat(url.searchParams.get('minFinal') || '');
+  const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
+  const onSale = parseBool(url.searchParams.get('onSale'));
 
-  const [total, items] = await Promise.all([
+  // --- Filtros base ---
+  const where: any = { status: 'ACTIVE' };
+
+  if (q) {
+    where.OR = [
+      { name: { contains: q } },
+      { slug: { contains: q } },
+      { description: { contains: q } },
+      { sku: { contains: q } },
+    ];
+  }
+
+  if (Number.isFinite(categoryId)) where.categoryId = categoryId;
+  if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
+
+  if (tagIds.length) {
+    if (match === 'all') {
+      // Requiere TODOS los tags (intersección): AND de sub-condiciones
+      where.AND = (where.AND || []).concat(
+        tagIds.map((id) => ({ productTags: { some: { tagId: id } } })),
+      );
+    } else {
+      // default: ANY de los tags (unión)
+      where.productTags = { some: { tagId: { in: tagIds } } };
+    }
+  }
+
+  if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
+    where.price = {};
+    if (Number.isFinite(minPrice)) where.price.gte = minPrice;
+    if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
+  }
+
+  // --- Orden (tipado para Prisma) ---
+  const sortParam = (url.searchParams.get('sort') || '-id').toLowerCase();
+  let orderBy: Prisma.ProductOrderByWithRelationInput;
+  switch (sortParam) {
+    case 'price':
+    case 'price_asc':
+      orderBy = { price: 'asc' };
+      break;
+    case '-price':
+    case 'price_desc':
+      orderBy = { price: 'desc' };
+      break;
+    case 'name':
+    case 'name_asc':
+      orderBy = { name: 'asc' };
+      break;
+    case '-name':
+    case 'name_desc':
+      orderBy = { name: 'desc' };
+      break;
+    case 'id':
+    case 'id_asc':
+      orderBy = { id: 'asc' };
+      break;
+    case '-id':
+    default:
+      orderBy = { id: 'desc' };
+      break;
+  }
+
+  const skip = (page - 1) * perPage;
+
+  const [total, itemsRaw] = await Promise.all([
     prisma.product.count({ where }),
     prisma.product.findMany({
-      where, orderBy, skip: (page-1)*perPage, take: perPage,
-      select: {
-        id:true, name:true, slug:true, price:true, sku:true, description:true,
-        category: { select: { name:true, slug:true } },
-        images: { select: { url:true }, orderBy:[{sortOrder:"asc"},{id:"asc"}], take:1 }
-      }
-    })
+      where,
+      skip,
+      take: perPage,
+      orderBy,
+      include: {
+        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        productTags: { select: { tagId: true } },
+      },
+    }),
   ]);
 
-  const mapped = items.map(p => ({
-    id: p.id, name: p.name, slug: p.slug, price: p.price, sku: p.sku,
-    description: p.description,
-    category: p.category,
-    coverUrl: p.images[0]?.url ?? null
+  const bare = itemsRaw.map((p: any) => ({
+    id: p.id,
+    price: p.price,
+    categoryId: p.categoryId,
+    tags: (p.productTags || []).map((t: any) => t.tagId),
   }));
 
-  return NextResponse.json({ ok:true, total, page, perPage, items: mapped });
+  const priced = await computePricesBatch(bare);
+
+  let items = itemsRaw.map((p: any) => {
+    const pr = priced.get(p.id)!;
+    const hasDiscount =
+      pr.priceOriginal != null && pr.priceFinal != null && pr.priceFinal < pr.priceOriginal;
+    const discountPercent = hasDiscount
+      ? Math.round((1 - pr.priceFinal! / pr.priceOriginal!) * 100)
+      : 0;
+
+    return {
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      cover: p.images?.[0]?.url || null,
+      priceOriginal: pr.priceOriginal,
+      priceFinal: pr.priceFinal,
+      offer: pr.offer,
+      hasDiscount,
+      discountPercent,
+    };
+  });
+
+  // Filtros por precio FINAL y onSale (post query, dentro de la página)
+  if (onSale) items = items.filter((i) => i.hasDiscount);
+  if (Number.isFinite(minFinal))
+    items = items.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
+  if (Number.isFinite(maxFinal))
+    items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
+
+  // Orden adicional por precio FINAL (post query)
+  if (sortParam === 'final') {
+    items.sort(
+      (a: any, b: any) =>
+        (a.priceFinal ?? Number.POSITIVE_INFINITY) - (b.priceFinal ?? Number.POSITIVE_INFINITY),
+    );
+  } else if (sortParam === '-final') {
+    items.sort(
+      (a: any, b: any) =>
+        (b.priceFinal ?? Number.NEGATIVE_INFINITY) - (a.priceFinal ?? Number.NEGATIVE_INFINITY),
+    );
+  }
+
+  const filteredTotal = items.length; // items de esta página luego de post-filtros
+  const pageCount = Math.ceil((total ?? 0) / perPage);
+  const filteredPageCount = Math.ceil(filteredTotal / perPage);
+
+  return json({
+    ok: true,
+    page,
+    perPage,
+    total,
+    pageCount,
+    filteredTotal,
+    filteredPageCount,
+    appliedFilters: {
+      q,
+      categoryId: Number.isFinite(categoryId) ? categoryId : null,
+      subcategoryId: Number.isFinite(subcategoryId) ? subcategoryId : null,
+      tagIds,
+      match,
+      minPrice: Number.isFinite(minPrice) ? minPrice : null,
+      maxPrice: Number.isFinite(maxPrice) ? maxPrice : null,
+      minFinal: Number.isFinite(minFinal) ? minFinal : null,
+      maxFinal: Number.isFinite(maxFinal) ? maxFinal : null,
+      onSale,
+      sort: sortParam,
+    },
+    items,
+  });
 }

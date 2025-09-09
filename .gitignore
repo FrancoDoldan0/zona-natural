@@ -1,13 +1,46 @@
-﻿node_modules/
+﻿# dependencias
+node_modules/
+pnpm-lock.yaml
+yarn.lock
+
+# next.js
 .next/
 out/
 dist/
-coverage/
-*.log
+
+# prisma (DB local)
+.prisma/
+prisma/dev.db
+prisma/dev.db-journal
+
+# tests/cache
+playwright-report/
+test-results/
+
+# herramientas/IDE
+.wrangler/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# env/secrets
 .env
 .env.local
 .env.*.local
-# backups locales
-__backup_*/
 
-/generated/prisma
+# Si NO querés subir todo uploads, podés ignorarlo (descomenta la línea de abajo)
+# public/uploads/
+
+# backups locales corruptos
+__backup_mojibake/
+
+__backup_mojibake/
+**/__backup_mojibake/**
+*.bak
+*.old
+*.orig
+
+# backups y directorios locales
+__backup*/
+.vercel/
+.wrangler/

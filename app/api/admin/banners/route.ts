@@ -1,9 +1,11 @@
-export const runtime = "nodejs";
+export const runtime = 'edge';
 
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { z } from "zod";
+import { NextResponse } from 'next/server';
+import { createPrisma } from '@/lib/prisma-edge';
+import { z } from 'zod';
 
+
+const prisma = createPrisma();
 const schema = z.object({
   title: z.string().min(1),
   imageUrl: z.string().url(),
@@ -14,17 +16,17 @@ const schema = z.object({
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const all = searchParams.get("all") === "1";
+  const all = searchParams.get('all') === '1';
   const items = await prisma.banner.findMany({
     where: all ? {} : { active: true },
-    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
   });
   return NextResponse.json({ ok: true, items });
 }
 
 export async function POST(req: Request) {
   try {
-    const body = schema.parse(await req.json());
+    const body = schema.parse(await req.json<any>());
     const created = await prisma.banner.create({
       data: {
         title: body.title,
@@ -35,8 +37,12 @@ export async function POST(req: Request) {
       },
     });
     return NextResponse.json({ ok: true, item: created });
-  } catch (e:any) {
-    if (e?.issues) return NextResponse.json({ ok:false, error:"Datos inválidos", issues:e.issues }, { status:400 });
-    return NextResponse.json({ ok:false, error:"Error" }, { status:500 });
+  } catch (e: any) {
+    if (e?.issues)
+      return NextResponse.json(
+        { ok: false, error: 'Datos inválidos', issues: e.issues },
+        { status: 400 },
+      );
+    return NextResponse.json({ ok: false, error: 'Error' }, { status: 500 });
   }
 }

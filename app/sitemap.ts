@@ -1,27 +1,70 @@
-export const runtime = "nodejs";         // ✅ fuerza Node.js
-export const revalidate = 1800;
+export const runtime = 'edge';
 
-import type { MetadataRoute } from "next";
-import { prisma } from "@/lib/prisma";
+import type { MetadataRoute } from 'next';
+import { createPrisma } from '@/lib/prisma-edge';
+import { siteUrl } from '@/lib/site';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/,"");
+  const prisma = createPrisma();
+  const now = new Date();
 
-  const prods = await prisma.product.findMany({
-    where: { status: "ACTIVE" },
-    select: { slug: true, updatedAt: true },
-    orderBy: { updatedAt: "desc" },
-  });
+  const [products, categories, subcats, tags, totalActive] = await Promise.all([
+    prisma.product.findMany({
+      where: { status: 'ACTIVE' },
+      select: { slug: true, updatedAt: true },
+    }),
+    prisma.category.findMany({ select: { id: true, slug: true, updatedAt: true } }),
+    prisma.subcategory.findMany({ select: { id: true, slug: true, updatedAt: true } }),
+    prisma.tag.findMany({ select: { id: true, name: true } }),
+    prisma.product.count({ where: { status: 'ACTIVE' } }),
+  ]);
 
-  const staticUrls: MetadataRoute.Sitemap = [
-    { url: `${base}/`,        lastModified: new Date() },
-    { url: `${base}/catalogo`, lastModified: new Date() },
+  const perPage = 20;
+  const pageCount = Math.max(1, Math.ceil(totalActive / perPage));
+  const maxListed = Math.min(pageCount, 20); // evita sitemaps gigantes
+
+  const urls: MetadataRoute.Sitemap = [
+    { url: `${siteUrl}/`, lastModified: now, changeFrequency: 'daily', priority: 1 },
+    { url: `${siteUrl}/productos`, lastModified: now, changeFrequency: 'daily', priority: 0.8 },
+
+    // Paginación de /productos (desde página 2)
+    ...Array.from({ length: Math.max(0, maxListed - 1) }, (_, i) => ({
+      url: `${siteUrl}/productos?page=${i + 2}`,
+      lastModified: now,
+      changeFrequency: 'daily' as const,
+      priority: 0.6,
+    })),
+
+    // Listados por categoría / subcategoría (usando query params)
+    ...categories.map((c) => ({
+      url: `${siteUrl}/productos?categoryId=${c.id}`,
+      lastModified: c.updatedAt ?? now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.6,
+    })),
+    ...subcats.map((s) => ({
+      url: `${siteUrl}/productos?subcategoryId=${s.id}`,
+      lastModified: s.updatedAt ?? now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.6,
+    })),
+
+    // Listados por tags (query params)
+    ...tags.map((t) => ({
+      url: `${siteUrl}/productos?tagId=${t.id}`,
+      lastModified: now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.5,
+    })),
+
+    // Fichas de producto
+    ...products.map((p) => ({
+      url: `${siteUrl}/producto/${p.slug}`,
+      lastModified: p.updatedAt ?? now,
+      changeFrequency: 'weekly' as const,
+      priority: 0.7,
+    })),
   ];
 
-  const productUrls: MetadataRoute.Sitemap = prods.map(p => ({
-    url: `${base}/producto/${encodeURIComponent(p.slug)}`,
-    lastModified: p.updatedAt ?? new Date(),
-  }));
-
-  return [...staticUrls, ...productUrls];
+  return urls;
 }

@@ -1,0 +1,67 @@
+import { NextRequest, NextResponse } from "next/server";
+import { jwtVerify } from "jose";
+import { ensureCsrfCookie, isStateChanging, checkCsrf } from "@/lib/csrf";
+
+const secret = new TextEncoder().encode(process.env.JWT_SECRET || "dev-secret-change-me");
+const isDev = process.env.NODE_ENV !== "production";
+
+function setSecurityHeaders(res: NextResponse) {
+  const csp = [
+    "default-src 'self'",
+    "img-src 'self' data: https:",
+    `connect-src 'self' ${isDev ? "ws: http:" : ""}`,
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "upgrade-insecure-requests",
+  ].join("; ");
+  res.headers.set("Content-Security-Policy", csp);
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  res.headers.set("X-Frame-Options", "DENY");
+  res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  res.headers.set("Cross-Origin-Resource-Policy", "same-origin");
+  if (!isDev) res.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+}
+
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  // Prepara respuesta y setea headers
+  let res = NextResponse.next();
+
+  // Asegura cookie 'csrf' (double-submit)
+  ensureCsrfCookie(req, (name, value, opts) => {
+    res.cookies.set({ name, value, httpOnly: !!opts.httpOnly, sameSite: "lax", path: "/" });
+  });
+
+  // Proteger páginas /admin/** (redirige a login)
+  if (pathname.startsWith("/admin") && !pathname.startsWith("/admin/login")) {
+    const token = req.cookies.get("session")?.value;
+    try { if (!token) throw new Error("no token"); await jwtVerify(token, secret); }
+    catch {
+      const r = NextResponse.redirect(new URL("/admin/login", req.url));
+      setSecurityHeaders(r); return r;
+    }
+  }
+
+  // Proteger APIs /api/admin/**
+  if (pathname.startsWith("/api/admin")) {
+    const token = req.cookies.get("session")?.value;
+    try { if (!token) throw new Error("no token"); await jwtVerify(token, secret); }
+    catch {
+      return NextResponse.json({ ok:false, error:"unauthorized" }, { status: 401 });
+    }
+    // CSRF para métodos que cambian estado
+    if (isStateChanging(req.method) && !checkCsrf(req)) {
+      return NextResponse.json({ ok:false, error:"invalid_csrf" }, { status: 403 });
+    }
+  }
+
+  setSecurityHeaders(res);
+  return res;
+}
+
+export const config = { matcher: ["/:path*"] };

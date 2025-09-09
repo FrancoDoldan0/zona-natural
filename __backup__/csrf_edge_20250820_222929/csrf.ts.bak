@@ -1,0 +1,25 @@
+import { randomBytes } from "crypto";
+
+export function ensureCsrfCookie(req: Request, setCookie: (name:string, value:string, opts: any)=>void){
+  const cookie = req.headers.get("cookie") || "";
+  const m = /(?:^|;\s*)csrf=([^;]+)/.exec(cookie);
+  const val = m?.[1];
+  if(!val){
+    const token = randomBytes(16).toString("hex");
+    setCookie("csrf", token, { httpOnly:false, sameSite:"lax", path:"/" });
+    return token;
+  }
+  return decodeURIComponent(val);
+}
+
+export function isStateChanging(method: string){
+  return ["POST","PUT","PATCH","DELETE"].includes(method.toUpperCase());
+}
+
+export function checkCsrf(req: Request){
+  const cookie = req.headers.get("cookie") || "";
+  const m = /(?:^|;\s*)csrf=([^;]+)/.exec(cookie);
+  const cookieVal = m?.[1] ? decodeURIComponent(m[1]) : "";
+  const hdr = req.headers.get("x-csrf-token") || "";
+  return !!cookieVal && cookieVal === hdr;
+}

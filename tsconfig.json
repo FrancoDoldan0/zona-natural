@@ -38,6 +38,13 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "__backup__",
+    "__backup*",
+    "**/__backup__/**",
+    "**/__backup*/**",
+    "**/*.bak",
+    ".wrangler/**",
+    ".vercel/**"
   ]
 }

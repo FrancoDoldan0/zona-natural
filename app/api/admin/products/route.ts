@@ -1,66 +1,110 @@
-export const runtime = "nodejs";
+export const runtime = 'edge';
+import { NextRequest, NextResponse } from 'next/server';
+import { createPrisma } from '@/lib/prisma-edge';
+import { z } from 'zod';
+import { slugify } from '@/lib/slug';
+import { audit } from '@/lib/audit';
 
-import { NextResponse } from "next/server";
-import { prisma } from "../../../../lib/prisma";
 
-function slugify(input: string) {
-  return input
-    .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "");
-}
+const prisma = createPrisma();
+const CreateSchema = z.object({
+  name: z.string().min(1),
+  slug: z.string().min(1).optional(),
+  description: z.string().max(5000).optional().nullable(),
+  price: z.coerce.number().optional().nullable(),
+  sku: z.string().max(120).optional().nullable(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT']).optional(),
+  categoryId: z.coerce.number().optional().nullable(),
+  subcategoryId: z.coerce.number().optional().nullable(),
+});
 
-export async function GET(req: Request) {
+// GET /api/admin/products
+export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const q = url.searchParams.get("q") ?? "";
-  const status = url.searchParams.get("status") ?? "";
-  const cid = url.searchParams.get("categoryId");
-  const sid = url.searchParams.get("subcategoryId");
-  const take = Math.min(parseInt(url.searchParams.get("take") || "50", 10), 200);
-  const skip = parseInt(url.searchParams.get("skip") || "0", 10);
+  const q = (url.searchParams.get('q') || '').trim();
+  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+  const perPage = Math.min(60, Math.max(1, parseInt(url.searchParams.get('perPage') || '12', 10)));
 
-  const where:any = {};
-  if (q) where.OR = [
-    { name: { contains: q, mode: "insensitive" } },
-    { slug: { contains: q, mode: "insensitive" } },
-    { sku:  { contains: q, mode: "insensitive" } },
-  ];
-  if (status) where.status = status;
-  if (cid && Number.isInteger(Number(cid))) where.categoryId = Number(cid);
-  if (sid && Number.isInteger(Number(sid))) where.subcategoryId = Number(sid);
+  const status = url.searchParams.get('status') || '';
+  const categoryId = parseInt(url.searchParams.get('categoryId') || '', 10);
+  const subcategoryId = parseInt(url.searchParams.get('subcategoryId') || '', 10);
+  const minPrice = parseFloat(url.searchParams.get('minPrice') || '');
+  const maxPrice = parseFloat(url.searchParams.get('maxPrice') || '');
 
-  const [items, total] = await Promise.all([
-    prisma.product.findMany({
-      where, orderBy: { id: "desc" }, take, skip,
-      include: { category: true, subcategory: true }
-    }),
+  const where: any = {};
+  if (q) {
+    where.OR = [
+      { name: { contains: q } },
+      { slug: { contains: q } },
+      { description: { contains: q } },
+      { sku: { contains: q } },
+    ];
+  }
+  if (status === 'ACTIVE' || status === 'INACTIVE' || status === 'DRAFT') where.status = status;
+  if (Number.isFinite(categoryId)) where.categoryId = categoryId;
+  if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
+  if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
+    where.price = {};
+    if (Number.isFinite(minPrice)) where.price.gte = minPrice;
+    if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
+  }
+
+  const skip = (page - 1) * perPage;
+  const [total, items] = await Promise.all([
     prisma.product.count({ where }),
+    prisma.product.findMany({
+      where,
+      skip,
+      take: perPage,
+      orderBy: { id: 'desc' },
+      include: {
+        category: true,
+        subcategory: true,
+        images: { orderBy: { sortOrder: 'asc' } },
+      },
+    }),
   ]);
-  return NextResponse.json({ ok: true, items, total });
+
+  return NextResponse.json({ ok: true, page, perPage, total, items });
 }
 
-export async function POST(req: Request) {
+// POST /api/admin/products
+export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const name: string | undefined = body?.name;
-    if (!name || !name.trim()) return NextResponse.json({ ok: false, error: "Nombre requerido" }, { status: 400 });
-
-    const slug: string = body?.slug?.trim() ? slugify(body.slug) : slugify(name);
-    const data:any = {
-      name: name.trim(),
-      slug,
-      description: typeof body?.description === "string" ? body.description : null,
-      price: (body?.price != null && !Number.isNaN(Number(body.price))) ? Number(body.price) : null,
-      sku: typeof body?.sku === "string" ? body.sku : null,
-      status: typeof body?.status === "string" ? body.status : "ACTIVE",
-    };
-    if (body?.categoryId != null) data.categoryId = Number.isInteger(Number(body.categoryId)) ? Number(body.categoryId) : null;
-    if (body?.subcategoryId != null) data.subcategoryId = Number.isInteger(Number(body.subcategoryId)) ? Number(body.subcategoryId) : null;
-
-    const item = await prisma.product.create({ data });
-    return NextResponse.json({ ok: true, item });
-  } catch {
-    return NextResponse.json({ ok: false, error: "Bad request" }, { status: 400 });
+    const json = await req.json<any>();
+    const parsed = CreateSchema.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { ok: false, error: 'validation_failed', detail: parsed.error.format() },
+        { status: 400 },
+      );
+    }
+    const b = parsed.data;
+    const newSlug = b.slug?.trim() || slugify(b.name);
+    const created = await prisma.product.create({
+      data: {
+        name: b.name,
+        slug: newSlug,
+        description: b.description ?? null,
+        price: b.price ?? null,
+        sku: b.sku || '' || null,
+        status: b.status || 'ACTIVE',
+        categoryId: b.categoryId ?? null,
+        subcategoryId: b.subcategoryId ?? null,
+      },
+    });
+    await audit(req, 'CREATE', 'Product', created.id, { name: b.name, slug: newSlug });
+    return NextResponse.json({ ok: true, item: created }, { status: 201 });
+  } catch (e: any) {
+    if (e?.code === 'P2002') {
+      return NextResponse.json(
+        { ok: false, error: 'unique_constraint', field: 'slug' },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json(
+      { ok: false, error: 'create_failed', detail: e?.message ?? String(e) },
+      { status: 500 },
+    );
   }
 }

@@ -1,22 +1,28 @@
+// wrangler.jsonc
 {
   "name": "zona-natural",
-  "compatibility_date": "2025-08-18",
+  "compatibility_date": "2024-11-14",
   "compatibility_flags": ["nodejs_compat"],
-  "pages_build_output_dir": ".vercel/output/static",
+
+  // Importante: para Pages + next-on-pages, desplegamos .vercel/output completo
+  "pages_build_output_dir": ".vercel/output",
+
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "zona-natural-db",
-      "database_id": "REEMPLAZA_CON_TU_ID" // ejemplo: "9d1050f7-9988-49c7-be50-96102caa8923"
+      "database_id": "REEMPLAZA_CON_TU_ID"
     }
   ],
   "r2_buckets": [
     {
-      "binding": "R2",
-      "bucket_name": "zona-natural"
+      // Debe coincidir con lo que usa tu código (env.R2_BUCKET)
+      "binding": "R2_BUCKET",
+      "bucket_name": "zona-natural-uploads"
     }
   ],
   "vars": {
-    "SITE_NAME": "ZONA NATURAL"
+    // Poné tu dominio público/endpoint CDN para servir imágenes
+    "PUBLIC_R2_BASE_URL": "https://TU-DOMINIO-O-CDN/zone"
   }
 }

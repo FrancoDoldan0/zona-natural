@@ -1,84 +1,117 @@
-type Cat = { id:number; name:string; slug:string; subcats:{ id:number; name:string; slug:string }[] };
-type Item = {
-  id:number; name:string; slug:string; price:number|null; sku:string|null;
-  description:string|null; category?: { name:string; slug:string }|null;
-  coverUrl:string|null;
+// app/(public)/catalogo/page.tsx
+export const runtime = 'edge';
+export const revalidate = 30;
+
+type Cat = {
+  id: number;
+  name: string;
+  slug: string;
+  subcats?: { id: number; name: string; slug: string }[];
 };
 
-function qs(obj:Record<string,any>){
-  const u = new URLSearchParams();
-  for(const k in obj){ if(obj[k]!=null && obj[k]!=="") u.set(k,String(obj[k])); }
-  const s = u.toString(); return s?`?${s}`:"";
+type Item = {
+  id: number;
+  name: string;
+  slug: string;
+  price: number | null;
+  priceOriginal: number | null;
+  priceFinal: number | null;
+  appliedOffer?: {
+    id: number;
+    title: string;
+    discountType: 'PERCENT' | 'AMOUNT';
+    discountVal: number;
+  } | null;
+  images?: { url: string; alt: string | null }[];
+};
+
+function fmt(n: number | null) {
+  if (n == null) return '-';
+  return '$ ' + n.toFixed(2).replace('.', ',');
 }
 
-async function fetchJSON<T>(url: string, revalidate=60): Promise<T>{
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000").replace(/\/+$/,"");
-  const r = await fetch(base + url, { next:{ revalidate } });
-  return r.json();
-}
-
-export default async function Page({ searchParams }:{ searchParams:Record<string,string|undefined> }){
-  const q = searchParams.q ?? "";
-  const category = searchParams.category ?? "";
-  const subcategory = searchParams.subcategory ?? "";
-  const order = searchParams.order ?? "newest";
-  const page = Number(searchParams.page ?? "1");
-
+async function getData(params: URLSearchParams) {
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
   const [catsRes, listRes] = await Promise.all([
-    fetchJSON<{ok:boolean; items:Cat[]}>("/api/public/categories"),
-    fetchJSON<{ok:boolean; items:Item[]; total:number; page:number; perPage:number}>(`/api/public/catalogo${qs({ q, category, subcategory, order, page })}`, 0)
+    fetch(`${base}/api/public/categories`, { next: { revalidate: 60 } }),
+    fetch(`${base}/api/public/catalogo?${params.toString()}`, { next: { revalidate: 30 } }),
   ]);
-  const cats = (catsRes.items ?? []);
-  const list = (listRes.items ?? []);
-  const total = listRes.total ?? 0;
-  const perPage = listRes.perPage ?? 12;
+
+  const catsJson = await catsRes.json<{ items?: Cat[] }>();
+  const listJson = await listRes.json<{ items?: Item[]; page?: number; perPage?: number; total?: number }>();
+  return { cats: (catsJson.items ?? []) as Cat[], data: listJson };
+}
+
+export default async function Page({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = (await searchParams) ?? {};
+  const qs = new URLSearchParams();
+
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) {
+      for (const one of v) if (one != null) qs.append(k, one);
+    } else {
+      qs.set(k, v);
+    }
+  }
+
+  const { cats, data } = await getData(qs);
+  const items: Item[] = data.items ?? [];
+  const page = data.page ?? 1;
+  const perPage = data.perPage ?? 12;
+  const total = data.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / perPage));
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Catálogo</h1>
 
-      {/* Filtros mínimos */}
-      <form className="flex flex-wrap gap-2">
-        <input name="q" defaultValue={q} placeholder="Buscar…" className="border rounded p-2" />
-        <select name="order" defaultValue={order} className="border rounded p-2">
-          <option value="newest">Novedades</option>
-          <option value="price_asc">Precio ↑</option>
-          <option value="price_desc">Precio ↓</option>
-        </select>
-        <select name="category" defaultValue={category} className="border rounded p-2">
-          <option value="">Todas las categorías</option>
-          {cats.map(c=><option key={c.id} value={c.slug}>{c.name}</option>)}
-        </select>
-        <select name="subcategory" defaultValue={subcategory} className="border rounded p-2">
-          <option value="">Todas las subcategorías</option>
-          {cats.flatMap(c=>c.subcats||[]).map(s=><option key={s.id} value={s.slug}>{s.name}</option>)}
-        </select>
-        <button className="border rounded px-3">Filtrar</button>
-      </form>
-
-      {/* Grid de productos */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {list.map(p=>(
-          <a key={p.id} href={`/producto/${p.slug}`} className="border rounded overflow-hidden hover:shadow">
-            <div className="bg-black/5 aspect-[4/3] flex items-center justify-center">
-              {p.coverUrl
-                ? <img src={p.coverUrl} alt={p.name} className="w-full h-full object-cover" />
-                : <span className="text-sm opacity-60">Sin imagen</span>}
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        {items.map((p) => (
+          <a key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
+            <div className="aspect-[4/3] bg-black/5 mb-2 overflow-hidden">
+              <img
+                src={p.images?.[0]?.url || '/placeholder.png'}
+                alt={p.images?.[0]?.alt || p.name}
+                className="w-full h-full object-cover"
+              />
             </div>
-            <div className="p-2">
-              <div className="font-medium truncate">{p.name}</div>
-              {p.price!=null && <div className="text-sm opacity-80">${p.price}</div>}
-            </div>
+            <div className="font-medium">{p.name}</div>
+            {p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal ? (
+              <div className="text-sm">
+                <span className="text-green-600 font-semibold mr-2">{fmt(p.priceFinal)}</span>
+                <span className="line-through opacity-60">{fmt(p.priceOriginal)}</span>
+                {p.appliedOffer && (
+                  <div className="text-xs opacity-80">Oferta: {p.appliedOffer.title}</div>
+                )}
+              </div>
+            ) : (
+              <div className="text-sm">{fmt(p.price)}</div>
+            )}
           </a>
         ))}
+        {!items.length && <p className="opacity-70 col-span-full">No hay resultados.</p>}
       </div>
 
-      {/* Paginación básica */}
-      {total>perPage && (
-        <nav className="flex gap-2">
-          {Array.from({length: Math.ceil(total/perPage)}, (_,_i)=>_i+1).map(n=>{
-            const href = qs({ q, category, subcategory, order, page:n });
-            return <a key={n} href={`/catalogo${href}`} className={"border rounded px-3 "+(n===page?"bg-gray-200":"")}>{n}</a>;
+      {pages > 1 && (
+        <nav className="flex gap-2 items-center">
+          {Array.from({ length: pages }).map((_, i) => {
+            const n = i + 1;
+            const url = new URLSearchParams(qs);
+            url.set('page', String(n));
+            return (
+              <a
+                key={n}
+                href={`/catalogo?${url.toString()}`}
+                className={'border rounded px-3 ' + (n === page ? 'bg-gray-200' : '')}
+              >
+                {n}
+              </a>
+            );
           })}
         </nav>
       )}

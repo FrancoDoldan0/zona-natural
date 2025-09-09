@@ -1,15 +1,15 @@
-export const runtime = 'edge';
-import "./globals.css";
-export const metadata = {
-  title: "Zona Natural",
-  description: "Catálogo simple (MVP)",
+// app/layout.tsx
+import './globals.css';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Zona Natural',
 };
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body>
-        {children}
-      </body>
+      <body className="min-h-dvh bg-slate-50 text-slate-900">{children}</body>
     </html>
   );
 }

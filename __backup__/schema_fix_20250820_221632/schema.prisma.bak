@@ -1,0 +1,127 @@
+﻿generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Category {
+  id        Int           @id @default(autoincrement())
+  name      String
+  slug      String        @unique
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  subcats   Subcategory[]
+  products  Product[]
+  offers    Offer[]       @relation("CategoryOffers")
+}
+
+model Subcategory {
+  id          Int       @id @default(autoincrement())
+  name        String
+  slug        String    @unique
+  categoryId  Int
+  category    Category  @relation(fields: [categoryId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+}
+
+model Product {
+  id            Int            @id @default(autoincrement())
+  name          String
+  slug          String         @unique
+  description   String?
+  price         Float?
+  sku           String?
+  status        String         @default("ACTIVE")
+  categoryId    Int?
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  subcategoryId Int?
+  subcategory   Subcategory?   @relation(fields: [subcategoryId], references: [id])
+  images        ProductImage[]
+  productTags   ProductTag[]
+  offers        Offer[]        @relation("ProductOffers")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model ProductImage {
+  id         Int     @id @default(autoincrement())
+  productId  Int
+  product    Product @relation(fields: [productId], references: [id])
+  url        String
+  alt        String?
+  sortOrder  Int     @default(0) @map("order") // mapea a columna "order"
+}
+
+model Tag {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  productTags ProductTag[]
+  offers      Offer[]      @relation("TagOffers")
+}
+
+model ProductTag {
+  productId Int
+  tagId     Int
+  product   Product @relation(fields: [productId], references: [id])
+  tag       Tag     @relation(fields: [tagId], references: [id])
+  @@id([productId, tagId])
+}
+
+enum DiscountType {
+  PERCENT
+  AMOUNT
+}
+
+model Banner {
+  id        Int      @id @default(autoincrement())
+  title     String
+  imageUrl  String
+  link      String?
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0) @map("order")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Offer {
+  id           Int          @id @default(autoincrement())
+  title        String
+  description  String?
+  discountType DiscountType
+  discountVal  Float
+  startAt      DateTime?
+  endAt        DateTime?
+  productId    Int?
+  categoryId   Int?
+  tagId        Int?
+  product      Product?     @relation("ProductOffers",  fields: [productId],  references: [id])
+  category     Category?    @relation("CategoryOffers", fields: [categoryId], references: [id])
+  tag          Tag?         @relation("TagOffers",      fields: [tagId],      references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}  
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  entity    String
+  entityId  String?
+  userId    String?
+  ip        String?
+  userAgent String?
+  details   String?
+  createdAt DateTime @default(now())
+}

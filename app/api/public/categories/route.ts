@@ -1,14 +1,20 @@
-export const runtime = "nodejs";
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { json } from '@/lib/json';
+
+const prisma = createPrisma();
+export const runtime = 'edge';
+
+import { createPrisma } from '@/lib/prisma-edge';
 
 export async function GET() {
-  const items = await prisma.category.findMany({
-    orderBy: { name: "asc" },
-    select: {
-      id:true, name:true, slug:true,
-      subcats: { orderBy:{ name:"asc" }, select:{ id:true, name:true, slug:true } }
-    }
+  const cats = await prisma.category.findMany({
+    orderBy: { name: 'asc' },
+    include: { subcats: { orderBy: { name: 'asc' } } },
   });
-  return NextResponse.json({ ok:true, items });
+  const items = cats.map((c) => ({
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    subcats: (c.subcats || []).map((s) => ({ id: s.id, name: s.name, slug: s.slug })),
+  }));
+  return json({ ok: true, items });
 }

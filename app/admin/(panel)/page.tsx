@@ -1,15 +1,17 @@
-export const runtime = "edge";
+// app/admin/(panel)/page.tsx
+import Link from 'next/link';
 
-export default function AdminIndex() {
+export default function AdminPanelPage() {
   return (
-    <main className="max-w-4xl mx-auto p-6 space-y-3">
-      <h1 className="text-2xl font-semibold mb-4">Panel</h1>
-      <ul className="list-disc list-inside space-y-2">
-        <li><a className="underline" href="/admin/categorias">Categorías</a></li>
-        <li><a className="underline" href="/admin/subcategorias">Subcategorías</a></li>
-        <li><a className="underline" href="/admin/productos">Productos</a></li>
-        <li><a className="underline opacity-60" href="/admin/banners">Banners (próx.)</a></li>
-        <li><a className="underline opacity-60" href="/admin/ofertas">Ofertas (próx.)</a></li>
+    <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+      <h1 className="text-2xl font-semibold">Panel de administración</h1>
+
+      <ul className="list-disc pl-5 space-y-2">
+        <li>
+          <Link href="/admin/productos" className="text-blue-600 hover:underline">
+            Gestionar productos
+          </Link>
+        </li>
       </ul>
     </main>
   );

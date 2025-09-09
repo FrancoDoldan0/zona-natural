@@ -1,0 +1,5 @@
+{
+  "cf:build": "next-on-pages",
+  "cf:preview": "wrangler pages dev .vercel/output/static",
+  "cf:deploy": "wrangler pages deploy .vercel/output/static"
+}
