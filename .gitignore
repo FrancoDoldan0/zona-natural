@@ -44,3 +44,4 @@ __backup_mojibake/
 __backup*/
 .vercel/
 .wrangler/
+tsconfig.tsbuildinfo
