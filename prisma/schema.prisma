@@ -3,8 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // En runtime (Edge) usás Accelerate con prisma://
+  url       = env("DATABASE_URL")
+  // Para comandos de CLI (db pull/migrate) usá la directa postgresql://
+  directUrl = env("DIRECT_URL")
 }
 
 model AdminUser {

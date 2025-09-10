@@ -45,3 +45,29 @@ __backup*/
 .vercel/
 .wrangler/
 tsconfig.tsbuildinfo
+
+# env y credenciales
+.env
+.dev.vars
+
+# builds/artifacts
+.next/
+.vercel/
+wrangler.toml
+tsconfig.tsbuildinfo
+
+# node
+node_modules/
+npm-debug.log*
+
+# env y credenciales (no subir)
+.env
+.env.*
+!.env.example
+.dev.vars
+wrangler.toml.local
+
+# SQL locales de trabajo (no confundir con prisma/migrations/**/migration.sql)
+#/full_ddl.sql y /migration.sql solo si están en la raíz
+/full_ddl.sql
+/migration.sql
