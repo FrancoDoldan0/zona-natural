@@ -4,7 +4,7 @@ export const runtime = 'edge';
 import { NextResponse, NextRequest } from 'next/server';
 import { compareSync } from 'bcryptjs';
 // ⬇️ AJUSTA este import según tu helper real:
-import prisma from '@/lib/prisma-edge'; 
+import { prisma } from '@/lib/prisma-edge'; 
 import { signSession, SESSION_COOKIE_NAME, sessionCookieOptions } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
