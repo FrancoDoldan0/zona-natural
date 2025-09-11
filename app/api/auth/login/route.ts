@@ -1,51 +1,57 @@
 // app/api/auth/login/route.ts
 export const runtime = 'edge';
 
-import { NextResponse, NextRequest } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
 import { compareSync } from 'bcryptjs';
-// ⬇️ AJUSTA este import según tu helper real:
-import { prisma } from '@/lib/prisma-edge'; 
-import { signSession, SESSION_COOKIE_NAME, sessionCookieOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma-edge';
+import {
+  signSession,
+  SESSION_COOKIE_NAME,
+  sessionCookieOptions,
+} from '@/lib/auth';
+
+type LoginBody = {
+  email?: string;
+  password?: string;
+};
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const email = (body?.email || '').toString().trim().toLowerCase();
-    const password = (body?.password || '').toString();
+    const { email = '', password = '' } =
+      (await req.json().catch(() => ({}))) as Partial<LoginBody>;
 
-    if (!email || !password) {
+    const emailNorm = email.trim().toLowerCase();
+
+    if (!emailNorm || !password) {
       return NextResponse.json(
-        { ok: false, error: 'email_or_password_missing' },
-        { status: 400 }
+        { ok: false, error: 'EMAIL_OR_PASSWORD_MISSING' },
+        { status: 400 },
       );
     }
 
-    // Busca admin por email
+    // Ajustá el modelo si tu esquema usa otro nombre/campos
     const user = await prisma.adminUser.findUnique({
-      where: { email },
+      where: { email: emailNorm },
       select: { id: true, email: true, passwordHash: true },
     });
 
-    if (!user?.passwordHash || !compareSync(password, user.passwordHash)) {
-      return NextResponse.json({ ok: false, error: 'invalid_credentials' }, { status: 401 });
+    if (!user || !user.passwordHash || !compareSync(password, user.passwordHash)) {
+      return NextResponse.json(
+        { ok: false, error: 'INVALID_CREDENTIALS' },
+        { status: 401 },
+      );
     }
 
-    // Crea JWT (7 días por defecto; podés cambiarlo)
-    const token = await signSession(
-      { uid: user.id, email: user.email, role: 'admin' },
-      7
-    );
-
+    // Generar sesión y setear cookie
+    const token = await signSession({ sub: user.id, email: user.email, role: 'admin' }, 7);
     const res = NextResponse.json({ ok: true });
-    res.cookies.set(
-      SESSION_COOKIE_NAME,
-      token,
-      sessionCookieOptions(7) // httpOnly, secure(prod), sameSite=lax, path=/, maxAge
-    );
 
+    // Misma configuración que usamos en logout (httpOnly/secure/sameSite/Path)
+    res.cookies.set(SESSION_COOKIE_NAME, token, sessionCookieOptions(7));
     return res;
   } catch (err) {
-    console.error('login error', err);
-    return NextResponse.json({ ok: false, error: 'unexpected_error' }, { status: 500 });
+    console.error('LOGIN_ERROR', err);
+    return NextResponse.json({ ok: false, error: 'INTERNAL_ERROR' }, { status: 500 });
   }
 }
