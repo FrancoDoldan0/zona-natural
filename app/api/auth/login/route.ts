@@ -1,48 +1,51 @@
+// app/api/auth/login/route.ts
 export const runtime = 'edge';
 
-import { NextResponse } from 'next/server';
-import { createPrisma } from '@/lib/prisma-edge';
-import bcrypt from 'bcryptjs';
-import { SignJWT } from 'jose';
+import { NextResponse, NextRequest } from 'next/server';
+import { compareSync } from 'bcryptjs';
+// ⬇️ AJUSTA este import según tu helper real:
+import prisma from '@/lib/prisma-edge'; 
+import { signSession, SESSION_COOKIE_NAME, sessionCookieOptions } from '@/lib/auth';
 
-
-
-import { getEnv } from '@/lib/cf-env';
-const prisma = createPrisma();
-const secret = new TextEncoder().encode(getEnv().JWT_SECRET || 'dev-secret-change-me');
-
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { email, password } = await req.json<any>();
+    const body = await req.json().catch(() => ({}));
+    const email = (body?.email || '').toString().trim().toLowerCase();
+    const password = (body?.password || '').toString();
+
     if (!email || !password) {
-      return NextResponse.json({ ok: false, error: 'Missing email or password' }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: 'email_or_password_missing' },
+        { status: 400 }
+      );
     }
-    const user = await prisma.adminUser.findUnique({ where: { email } });
-    if (!user)
-      return NextResponse.json({ ok: false, error: 'Invalid credentials' }, { status: 401 });
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid)
-      return NextResponse.json({ ok: false, error: 'Invalid credentials' }, { status: 401 });
+    // Busca admin por email
+    const user = await prisma.adminUser.findUnique({
+      where: { email },
+      select: { id: true, email: true, passwordHash: true },
+    });
 
-    const token = await new SignJWT({ sub: String(user.id), email: user.email, role: 'admin' })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setIssuedAt()
-      .setExpirationTime('7d')
-      .sign(secret);
+    if (!user?.passwordHash || !compareSync(password, user.passwordHash)) {
+      return NextResponse.json({ ok: false, error: 'invalid_credentials' }, { status: 401 });
+    }
+
+    // Crea JWT (7 días por defecto; podés cambiarlo)
+    const token = await signSession(
+      { uid: user.id, email: user.email, role: 'admin' },
+      7
+    );
 
     const res = NextResponse.json({ ok: true });
-    res.cookies.set({
-      name: 'session',
-      value: token,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7,
-    });
+    res.cookies.set(
+      SESSION_COOKIE_NAME,
+      token,
+      sessionCookieOptions(7) // httpOnly, secure(prod), sameSite=lax, path=/, maxAge
+    );
+
     return res;
-  } catch {
-    return NextResponse.json({ ok: false, error: 'Bad request' }, { status: 400 });
+  } catch (err) {
+    console.error('login error', err);
+    return NextResponse.json({ ok: false, error: 'unexpected_error' }, { status: 500 });
   }
 }
