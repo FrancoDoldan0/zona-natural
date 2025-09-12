@@ -1,6 +1,7 @@
 // app/api/admin/products/[id]/images/route.ts
 export const runtime = 'edge';
 
+import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { publicR2Url, r2List, r2Delete } from '@/lib/storage';
 import { prisma } from '@/lib/prisma-edge';
@@ -11,18 +12,16 @@ import { prisma } from '@/lib/prisma-edge';
  * {
  *   ok: true,
  *   items: [{ id?, key, url, alt?, isCover?, sortOrder?, size?, width?, height?, createdAt? }],
- *   // alias para compatibilidad con código viejo:
- *   images: [...]
+ *   images: [...] // alias para compatibilidad
  * }
  */
-export async function GET(_req: Request, { params }: { params: { id?: string } }) {
-  const idNum = Number(params?.id || 0);
+export async function GET(_req: NextRequest, context: { params: { id: string } }) {
+  const idNum = Number(context.params.id);
   if (!idNum) {
     return NextResponse.json({ ok: false, error: 'missing product id' }, { status: 400 });
   }
 
   try {
-    // 1) Intentar desde DB (si usás ProductImage)
     let items:
       | Array<{
           id?: number;
@@ -38,32 +37,34 @@ export async function GET(_req: Request, { params }: { params: { id?: string } }
         }>
       | null = null;
 
+    // 1) Intentar leer desde DB (si existe ProductImage)
     try {
-      const rows = await prisma.productImage.findMany({
-        where: { productId: idNum },
-        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-      });
+      const rows =
+        (await (prisma as any).productImage?.findMany({
+          where: { productId: idNum },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        })) ?? [];
 
       if (rows.length > 0) {
-        items = rows.map((r) => ({
+        items = rows.map((r: any) => ({
           id: r.id,
           key: r.key,
           url: publicR2Url(r.key),
           alt: r.alt,
           isCover: r.isCover,
           sortOrder: r.sortOrder,
-          size: (r as any).size ?? null,
-          width: (r as any).width ?? null,
-          height: (r as any).height ?? null,
+          size: r.size ?? null,
+          width: r.width ?? null,
+          height: r.height ?? null,
           createdAt: r.createdAt,
         }));
       }
     } catch {
-      // Si la tabla no existe o falla Prisma en Edge, seguimos con fallback.
+      // Si la tabla no existe o Prisma falla en Edge, seguimos al fallback
       items = null;
     }
 
-    // 2) Fallback a listar directo en R2 si no hay filas en DB
+    // 2) Fallback a listar directo en R2
     if (!items) {
       const prefix = `products/${idNum}/`;
       const list = await r2List(prefix);
@@ -71,29 +72,29 @@ export async function GET(_req: Request, { params }: { params: { id?: string } }
         key: o.key,
         url: publicR2Url(o.key),
         size: o.size,
-        // valores razonables para UI si no hay DB:
+        // Defaults razonables para la UI cuando no hay DB
         isCover: i === 0,
         sortOrder: i + 1,
       }));
     }
 
     const res = NextResponse.json({ ok: true, items, images: items });
-    // Evitar cache en el borde
     res.headers.set('Cache-Control', 'no-store');
     return res;
-  } catch (err) {
+  } catch {
     return NextResponse.json({ ok: false, error: 'internal_error' }, { status: 500 });
   }
 }
 
 /**
  * DELETE /api/admin/products/:id/images
- * Body JSON:
- *   - imageId?: number  (recomendado)
- *   - key?: string      (alternativa; se valida que pertenezca a products/:id/)
+ * Body:
+ *   { imageId?: number, key?: string }
+ * - Si viene imageId: se borra en DB (si existe) y se obtiene el key.
+ * - Si no hay DB o no hay imageId, se acepta `key` (validado por prefijo).
  */
-export async function DELETE(req: Request, { params }: { params: { id?: string } }) {
-  const idNum = Number(params?.id || 0);
+export async function DELETE(req: NextRequest, context: { params: { id: string } }) {
+  const idNum = Number(context.params.id);
   if (!idNum) {
     return NextResponse.json({ ok: false, error: 'missing product id' }, { status: 400 });
   }
@@ -113,56 +114,54 @@ export async function DELETE(req: Request, { params }: { params: { id?: string }
   try {
     let keyToDelete: string | null = null;
 
-    // 1) Si viene imageId, intentamos borrar registro y obtener key desde DB
+    // 1) Si llega imageId, usar DB para obtener key y borrar registro
     if (imageId) {
       try {
-        const img = await prisma.productImage.findFirst({
+        const img = await (prisma as any).productImage?.findFirst({
           where: { id: imageId, productId: idNum },
           select: { key: true },
         });
 
-        if (img?.key) {
-          keyToDelete = img.key;
-        }
+        if (img?.key) keyToDelete = img.key;
 
-        await prisma.productImage.deleteMany({
+        await (prisma as any).productImage?.deleteMany({
           where: { id: imageId, productId: idNum },
         });
       } catch {
-        // Si la tabla no existe o falla Prisma, seguimos con lo que tengamos.
+        // Si no hay tabla o falla Prisma, seguimos
       }
     }
 
-    // 2) Si no obtuvimos key desde DB y vino por body, lo usamos (validado)
+    // 2) Si no obtuvimos key desde DB y vino `key`, validarlo y usarlo
     if (!keyToDelete && key) {
       const expectedPrefix = `products/${idNum}/`;
       if (!key.startsWith(expectedPrefix)) {
         return NextResponse.json({ ok: false, error: 'invalid key' }, { status: 400 });
       }
 
-      // Borrar potencial registro en DB si existiera
+      // Borrar posible registro en DB si existiera
       try {
-        await prisma.productImage.deleteMany({
+        await (prisma as any).productImage?.deleteMany({
           where: { key, productId: idNum },
         });
       } catch {
-        // Ignorar errores de DB en este punto
+        // Ignorar errores de DB aquí
       }
 
       keyToDelete = key;
     }
 
-    // 3) Borrar en R2 (si tenemos key)
+    // 3) Borrar en R2
     if (keyToDelete) {
       try {
         await r2Delete(keyToDelete);
       } catch {
-        // Si falla borrar en R2, devolvemos ok igualmente (para no trabar la UI).
+        // No bloquear por error de R2
       }
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err) {
+  } catch {
     return NextResponse.json({ ok: false, error: 'internal_error' }, { status: 500 });
   }
 }
