@@ -1,7 +1,6 @@
 // app/api/admin/products/[id]/images/route.ts
 export const runtime = 'edge';
 
-import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { publicR2Url, r2List, r2Delete } from '@/lib/storage';
 import { prisma } from '@/lib/prisma-edge';
@@ -15,8 +14,9 @@ import { prisma } from '@/lib/prisma-edge';
  *   images: [...] // alias para compatibilidad
  * }
  */
-export async function GET(_req: NextRequest, context: { params: { id: string } }) {
-  const idNum = Number(context.params.id);
+export async function GET(_req: Request, ctx: any) {
+  const idStr = ctx?.params?.id;
+  const idNum = Number(idStr);
   if (!idNum) {
     return NextResponse.json({ ok: false, error: 'missing product id' }, { status: 400 });
   }
@@ -40,7 +40,7 @@ export async function GET(_req: NextRequest, context: { params: { id: string } }
     // 1) Intentar leer desde DB (si existe ProductImage)
     try {
       const rows =
-        (await (prisma as any).productImage?.findMany({
+        (await (prisma as any)?.productImage?.findMany({
           where: { productId: idNum },
           orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         })) ?? [];
@@ -71,8 +71,7 @@ export async function GET(_req: NextRequest, context: { params: { id: string } }
       items = list.map((o, i) => ({
         key: o.key,
         url: publicR2Url(o.key),
-        size: o.size,
-        // Defaults razonables para la UI cuando no hay DB
+        size: o.size ?? null,
         isCover: i === 0,
         sortOrder: i + 1,
       }));
@@ -93,11 +92,12 @@ export async function GET(_req: NextRequest, context: { params: { id: string } }
  * - Si viene imageId: se borra en DB (si existe) y se obtiene el key.
  * - Si no hay DB o no hay imageId, se acepta `key` (validado por prefijo).
  */
-export async function DELETE(req: NextRequest, context: { params: { id: string } }) {
-  const idNum = Number(context.params.id);
+export async function DELETE(req: Request, ctx: any) {
+  const idStr = ctx?.params?.id;
+  const idNum = Number(idStr);
   if (!idNum) {
     return NextResponse.json({ ok: false, error: 'missing product id' }, { status: 400 });
-  }
+    }
 
   const body = (await req.json().catch(() => ({}))) as {
     imageId?: number;
@@ -117,14 +117,14 @@ export async function DELETE(req: NextRequest, context: { params: { id: string }
     // 1) Si llega imageId, usar DB para obtener key y borrar registro
     if (imageId) {
       try {
-        const img = await (prisma as any).productImage?.findFirst({
+        const img = await (prisma as any)?.productImage?.findFirst({
           where: { id: imageId, productId: idNum },
           select: { key: true },
         });
 
         if (img?.key) keyToDelete = img.key;
 
-        await (prisma as any).productImage?.deleteMany({
+        await (prisma as any)?.productImage?.deleteMany({
           where: { id: imageId, productId: idNum },
         });
       } catch {
@@ -141,7 +141,7 @@ export async function DELETE(req: NextRequest, context: { params: { id: string }
 
       // Borrar posible registro en DB si existiera
       try {
-        await (prisma as any).productImage?.deleteMany({
+        await (prisma as any)?.productImage?.deleteMany({
           where: { key, productId: idNum },
         });
       } catch {
