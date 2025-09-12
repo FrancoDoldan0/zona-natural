@@ -5,76 +5,52 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
-type Section = {
-  title: string;
-  href: string;
-  desc?: string;
-  emoji: string;
-};
-
-const SECTIONS: Section[] = [
-  { title: 'Productos',      href: '/admin/productos',      desc: 'Crear, editar y eliminar', emoji: '📦' },
-  { title: 'Categorías',     href: '/admin/categorias',     desc: 'Organiza el catálogo',     emoji: '🗂️' },
-  { title: 'Subcategorías',  href: '/admin/subcategorias',  desc: 'Refina la estructura',     emoji: '🧭' },
-  { title: 'Banners',        href: '/admin/banners',        desc: 'Home & carruseles',        emoji: '🖼️' },
-  { title: 'Ofertas',        href: '/admin/ofertas',        desc: 'Promos y descuentos',      emoji: '🏷️' },
-  { title: 'Uploads',        href: '/admin/uploads',        desc: 'Imágenes del catálogo',    emoji: '⬆️' },
-];
-
 export default async function AdminHome() {
-  // Guardia extra por si alguien entra directo sin cookie (el layout ya protege, esto es “cinturón y tirantes”).
+  // En Edge/Next 15 cookies() es async
+  const store = await cookies();
+
+  // Doble cinturón: si alguien llega aquí sin cookie, redirigimos al login
   const token =
-    cookies().get('admin_token')?.value ??
-    cookies().get('__session')?.value ??
-    cookies().get('token')?.value ??
+    store.get('admin_token')?.value ??
+    store.get('__session')?.value ??
+    store.get('token')?.value ??
     null;
 
   if (!token) {
     redirect('/admin/login?next=/admin');
   }
 
-  return (
-    <main className="mx-auto max-w-5xl p-6">
-      <header className="mb-8 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Panel de administración</h1>
-        <nav className="flex items-center gap-2 text-sm">
-          <Link
-            href="/"
-            className="rounded-lg border px-3 py-1.5 hover:bg-gray-50 transition"
-          >
-            ← Ver sitio
-          </Link>
-          {/* GET /api/auth/logout ya borra cookie y redirige al login */}
-          <Link
-            href="/api/auth/logout"
-            className="rounded-lg border px-3 py-1.5 text-red-600 hover:bg-red-50 transition"
-          >
-            Cerrar sesión
-          </Link>
-        </nav>
-      </header>
+  const items = [
+    { href: '/admin/productos', title: 'Productos', desc: 'Crear, editar, filtrar' },
+    { href: '/admin/ofertas', title: 'Ofertas', desc: 'Promos por % o $' },
+    { href: '/admin/categorias', title: 'Categorías', desc: 'Gestionar categorías' },
+    { href: '/admin/subcategorias', title: 'Subcategorías', desc: 'Gestionar subcategorías' },
+    { href: '/admin/banners', title: 'Banners', desc: 'Carrusel / landing' },
+    { href: '/admin/uploads', title: 'Uploads', desc: 'Archivos e imágenes' },
+  ];
 
-      <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {SECTIONS.map((s) => (
+  return (
+    <main className="max-w-6xl mx-auto p-6">
+      <h1 className="text-2xl font-semibold mb-2">Panel de administración</h1>
+      <p className="text-sm text-gray-600 mb-6">
+        Accesos rápidos a las secciones del panel.
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {items.map((it) => (
           <Link
-            key={s.href}
-            href={s.href}
-            className="group rounded-2xl border p-5 transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-black/10"
+            key={it.href}
+            href={it.href}
+            className="block rounded-xl border border-gray-200 p-5 hover:shadow-md transition"
           >
-            <div className="text-3xl">{s.emoji}</div>
-            <h2 className="mt-3 text-lg font-medium">{s.title}</h2>
-            {s.desc ? (
-              <p className="mt-1 text-sm text-gray-500">{s.desc}</p>
-            ) : null}
-            <div className="mt-4 text-sm text-blue-600 opacity-0 transition group-hover:opacity-100">
-              Ir a {s.title} →
-            </div>
+            <div className="text-lg font-medium">{it.title}</div>
+            <div className="text-sm text-gray-600 mt-1">{it.desc}</div>
           </Link>
         ))}
-      </section>
+      </div>
 
-      <p className="mt-8 text-xs text-gray-400">
-        Nota: protegido por middleware y runtime Edge.
+      <p className="text-xs text-gray-400 mt-6">
+        Nota: la protección real de rutas la cubren el <code>middleware</code> y el <code>layout</code> de /admin.
       </p>
     </main>
   );
