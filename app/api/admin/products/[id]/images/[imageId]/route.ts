@@ -2,124 +2,154 @@
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
-import { createPrisma } from '@/lib/prisma-edge';
-import { audit } from '@/lib/audit';
-import { deleteUpload } from '@/lib/storage';
+import { prisma } from '@/lib/prisma-edge';
+import { r2Delete, publicR2Url } from '@/lib/storage';
 
+/**
+ * PATCH /api/admin/products/:id/images/:imageId
+ * Body: { alt?: string, isCover?: boolean }
+ * - Si isCover === true => pone esta imagen como portada (apaga las demás).
+ * - alt se puede setear a string (vacío = '') o null si querés limpiar (enviar alt: null).
+ */
+export async function PATCH(req: Request, ctx: { params: { id: string; imageId: string } }) {
+  const productId = Number(ctx?.params?.id);
+  const imageId = Number(ctx?.params?.imageId);
 
+  if (!productId || !imageId) {
+    return NextResponse.json({ ok: false, error: 'missing params' }, { status: 400 });
+  }
 
-import { getEnv } from '@/lib/cf-env';
-const prisma = createPrisma();
-// -------- utils --------
-async function readParams(ctx: any): Promise<{ productId: number | null; imageId: number | null }> {
-  const p = ctx?.params;
-  const obj = typeof p?.then === 'function' ? await p : p;
-  const productId = Number(obj?.id);
-  const imageId = Number(obj?.imageId);
-  return {
-    productId: Number.isFinite(productId) ? productId : null,
-    imageId: Number.isFinite(imageId) ? imageId : null,
+  const body = (await req.json().catch(() => ({}))) as {
+    alt?: string | null;
+    isCover?: boolean;
   };
-}
 
-function strOrNull(v: unknown) {
-  if (typeof v !== 'string') return null;
-  const t = v.trim();
-  return t === '' ? null : t;
-}
-function numOrNull(v: unknown) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  if (!('alt' in body) && typeof body.isCover === 'undefined') {
+    return NextResponse.json({ ok: false, error: 'nothing_to_update' }, { status: 400 });
+  }
+
+  try {
+    // Marcar como portada
+    if (body.isCover === true) {
+      try {
+        await (prisma as any).$transaction([
+          (prisma as any).productImage.updateMany({
+            where: { productId },
+            data: { isCover: false },
+          }),
+          (prisma as any).productImage.updateMany({
+            where: { id: imageId, productId },
+            data: { isCover: true },
+          }),
+        ]);
+      } catch {
+        return NextResponse.json(
+          { ok: false, error: 'db_unavailable_for_isCover' },
+          { status: 501 }
+        );
+      }
+    } else if (body.isCover === false) {
+      try {
+        await (prisma as any).productImage.updateMany({
+          where: { id: imageId, productId },
+          data: { isCover: false },
+        });
+      } catch {
+        // no crítico
+      }
+    }
+
+    // Actualizar alt si vino en el body (incluye null o '')
+    if ('alt' in body) {
+      try {
+        await (prisma as any).productImage.updateMany({
+          where: { id: imageId, productId },
+          data: { alt: body.alt as any },
+        });
+      } catch {
+        return NextResponse.json(
+          { ok: false, error: 'db_unavailable_for_alt' },
+          { status: 501 }
+        );
+      }
+    }
+
+    // Intentar devolver el registro actualizado (si hay DB)
+    try {
+      const row = await (prisma as any).productImage.findFirst({
+        where: { id: imageId, productId },
+      });
+
+      if (row) {
+        return NextResponse.json({
+          ok: true,
+          item: {
+            id: row.id,
+            key: row.key,
+            url: publicR2Url(row.key),
+            alt: row.alt,
+            isCover: row.isCover,
+            sortOrder: row.sortOrder,
+            size: row.size ?? null,
+            width: row.width ?? null,
+            height: row.height ?? null,
+            createdAt: row.createdAt,
+          },
+        });
+      }
+    } catch {
+      // si no podemos leer, igual devolvemos ok:true
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ ok: false, error: 'internal_error' }, { status: 500 });
+  }
 }
 
 /**
- * Intenta derivar una clave de R2 a partir de la URL pública.
- * Si configuraste PUBLIC_R2_BASE_URL, y la URL empieza con ese prefijo,
- * devuelve la parte restante como "key". Si no puede, retorna null (no borra).
+ * DELETE /api/admin/products/:id/images/:imageId
+ * - Borra el registro en DB y el objeto en R2.
+ * - Requiere DB para resolver el key desde imageId.
  */
-function keyFromPublicUrl(u: string | null | undefined, publicBase?: string | null): string | null {
-  if (!u) return null;
-  if (publicBase && u.startsWith(publicBase)) {
-    const rest = u.slice(publicBase.length).replace(/^\/+/, '');
-    return rest || null;
-  }
-  // fallback opcional: si guardaste rutas como "/uploads/products/...."
-  const m = u.match(/\/uploads\/products\/(.+)$/);
-  return m ? m[1] : null;
-}
+export async function DELETE(_req: Request, ctx: { params: { id: string; imageId: string } }) {
+  const productId = Number(ctx?.params?.id);
+  const imageId = Number(ctx?.params?.imageId);
 
-// -------- handlers --------
-export async function GET(_req: Request, ctx: any) {
-  const { productId, imageId } = await readParams(ctx);
-  if (productId == null || imageId == null) {
-    return NextResponse.json({ ok: false, error: 'Parámetros inválidos' }, { status: 400 });
+  if (!productId || !imageId) {
+    return NextResponse.json({ ok: false, error: 'missing params' }, { status: 400 });
   }
 
-  const img = await prisma.productImage.findUnique({ where: { id: imageId } });
-  if (!img || img.productId !== productId) {
-    return NextResponse.json({ ok: false, error: 'No encontrado' }, { status: 404 });
+  try {
+    let key: string | null = null;
+
+    try {
+      const img = await (prisma as any).productImage.findFirst({
+        where: { id: imageId, productId },
+        select: { key: true },
+      });
+      key = img?.key ?? null;
+
+      await (prisma as any).productImage.deleteMany({
+        where: { id: imageId, productId },
+      });
+    } catch {
+      return NextResponse.json(
+        { ok: false, error: 'db_unavailable_for_delete' },
+        { status: 501 }
+      );
+    }
+
+    if (key) {
+      try {
+        await r2Delete(key);
+      } catch {
+        // si R2 falla no bloqueamos
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ ok: false, error: 'internal_error' }, { status: 500 });
   }
-
-  return NextResponse.json({ ok: true, item: img });
-}
-
-export async function PUT(req: Request, ctx: any) {
-  const { productId, imageId } = await readParams(ctx);
-  if (productId == null || imageId == null) {
-    return NextResponse.json({ ok: false, error: 'Parámetros inválidos' }, { status: 400 });
-  }
-
-  const current = await prisma.productImage.findUnique({ where: { id: imageId } });
-  if (!current || current.productId !== productId) {
-    return NextResponse.json({ ok: false, error: 'No encontrado' }, { status: 404 });
-  }
-
-  const body = await req.json<any>().catch(() => ({} as any));
-
-  const data: any = {};
-  if ('alt' in body) data.alt = strOrNull(body.alt);
-  if ('sortOrder' in body) {
-    const so = numOrNull(body.sortOrder);
-    if (so !== null) data.sortOrder = so;
-  }
-  // Si querés permitir cambiar la URL (no común):
-  if ('url' in body && typeof body.url === 'string' && body.url.trim() !== '') {
-    data.url = body.url.trim();
-  }
-
-  const updated = await prisma.productImage.update({ where: { id: imageId }, data });
-
-  await audit(req, 'product_image.update', 'product', String(productId), {
-    imageId,
-    changed: Object.keys(data),
-  });
-
-  return NextResponse.json({ ok: true, item: updated });
-}
-
-export async function DELETE(req: Request, ctx: any) {
-  const { productId, imageId } = await readParams(ctx);
-  if (productId == null || imageId == null) {
-    return NextResponse.json({ ok: false, error: 'Parámetros inválidos' }, { status: 400 });
-  }
-
-  const img = await prisma.productImage.findUnique({ where: { id: imageId } });
-  if (!img || img.productId !== productId) {
-    return NextResponse.json({ ok: false, error: 'No encontrado' }, { status: 404 });
-  }
-
-  // Borra el registro en DB
-  await prisma.productImage.delete({ where: { id: imageId } });
-
-  // Intentar borrar el objeto en R2 si la URL coincide con tu base pública
-  const publicBase = getEnv().PUBLIC_R2_BASE_URL || undefined;
-  const key = keyFromPublicUrl(img.url, publicBase);
-  if (key) {
-    // deleteUpload ya maneja el caso de que no exista binding en dev
-    await deleteUpload(key).catch(() => {});
-  }
-
-  await audit(req, 'product_image.delete', 'product', String(productId), { imageId, key });
-
-  return NextResponse.json({ ok: true });
 }
