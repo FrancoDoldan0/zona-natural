@@ -16,19 +16,11 @@ function getToken(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const token = getToken(req);
-  if (!token) {
-    return NextResponse.json({ ok: false, user: null });
-  }
+  if (!token) return NextResponse.json({ ok: false, user: null });
 
   const payload = await verifySession(token);
-  if (!payload) {
-    return NextResponse.json({ ok: false, user: null });
-  }
+  if (!payload) return NextResponse.json({ ok: false, user: null });
 
-  // Lo mínimo para el panel
   const { sub, email, role } = payload as any;
-  return NextResponse.json({
-    ok: true,
-    user: { id: sub, email, role: role ?? 'admin' },
-  });
+  return NextResponse.json({ ok: true, user: { id: sub, email, role: role ?? 'admin' } });
 }
