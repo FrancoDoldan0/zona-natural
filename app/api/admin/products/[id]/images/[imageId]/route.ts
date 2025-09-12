@@ -5,15 +5,23 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma-edge';
 import { r2Delete, publicR2Url } from '@/lib/storage';
 
+function extractIds(req: Request) {
+  const { pathname } = new URL(req.url);
+  // Coincide con .../products/:id/images/:imageId en cualquier prefijo
+  const m = pathname.match(/\/products\/([^/]+)\/images\/([^/]+)/);
+  const productId = Number(m?.[1]);
+  const imageId = Number(m?.[2]);
+  return { productId, imageId };
+}
+
 /**
  * PATCH /api/admin/products/:id/images/:imageId
- * Body: { alt?: string, isCover?: boolean }
- * - Si isCover === true => pone esta imagen como portada (apaga las demás).
- * - alt se puede setear a string (vacío = '') o null si querés limpiar (enviar alt: null).
+ * Body: { alt?: string | null, isCover?: boolean }
+ * - isCover === true => marca esta imagen como portada (apaga las demás).
+ * - alt se puede setear a string ('' para vacío) o null para limpiar.
  */
-export async function PATCH(req: Request, ctx: any) {
-  const productId = Number(ctx?.params?.id);
-  const imageId = Number(ctx?.params?.imageId);
+export async function PATCH(req: Request) {
+  const { productId, imageId } = extractIds(req);
 
   if (!productId || !imageId) {
     return NextResponse.json({ ok: false, error: 'missing params' }, { status: 400 });
@@ -29,7 +37,7 @@ export async function PATCH(req: Request, ctx: any) {
   }
 
   try {
-    // Marcar como portada
+    // Marcar como portada si corresponde
     if (body.isCover === true) {
       try {
         await (prisma as any).$transaction([
@@ -59,7 +67,7 @@ export async function PATCH(req: Request, ctx: any) {
       }
     }
 
-    // Actualizar alt si vino en el body (incluye null o '')
+    // Actualizar alt si vino en el body
     if ('alt' in body) {
       try {
         await (prisma as any).productImage.updateMany({
@@ -109,12 +117,10 @@ export async function PATCH(req: Request, ctx: any) {
 
 /**
  * DELETE /api/admin/products/:id/images/:imageId
- * - Borra el registro en DB y el objeto en R2.
- * - Requiere DB para resolver el key desde imageId.
+ * - Borra el registro en DB y el objeto en R2 (si hay key).
  */
-export async function DELETE(_req: Request, ctx: any) {
-  const productId = Number(ctx?.params?.id);
-  const imageId = Number(ctx?.params?.imageId);
+export async function DELETE(req: Request) {
+  const { productId, imageId } = extractIds(req);
 
   if (!productId || !imageId) {
     return NextResponse.json({ ok: false, error: 'missing params' }, { status: 400 });
@@ -144,7 +150,7 @@ export async function DELETE(_req: Request, ctx: any) {
       try {
         await r2Delete(key);
       } catch {
-        // si R2 falla no bloqueamos
+        // si R2 falla no bloqueamos el borrado
       }
     }
 
