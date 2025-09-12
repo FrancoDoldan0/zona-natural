@@ -11,7 +11,7 @@ import { r2Delete, publicR2Url } from '@/lib/storage';
  * - Si isCover === true => pone esta imagen como portada (apaga las demás).
  * - alt se puede setear a string (vacío = '') o null si querés limpiar (enviar alt: null).
  */
-export async function PATCH(req: Request, ctx: { params: { id: string; imageId: string } }) {
+export async function PATCH(req: Request, ctx: any) {
   const productId = Number(ctx?.params?.id);
   const imageId = Number(ctx?.params?.imageId);
 
@@ -112,7 +112,7 @@ export async function PATCH(req: Request, ctx: { params: { id: string; imageId: 
  * - Borra el registro en DB y el objeto en R2.
  * - Requiere DB para resolver el key desde imageId.
  */
-export async function DELETE(_req: Request, ctx: { params: { id: string; imageId: string } }) {
+export async function DELETE(_req: Request, ctx: any) {
   const productId = Number(ctx?.params?.id);
   const imageId = Number(ctx?.params?.imageId);
 
