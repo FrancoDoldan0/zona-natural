@@ -4,16 +4,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
-type Img = { id: number; url: string; alt?: string | null; sortOrder?: number | null };
+type Img = {
+  id: number;
+  url: string;
+  alt?: string | null;
+  sortOrder?: number | null;
+  isCover?: boolean | null;
+};
 type Product = { id: number; name: string; slug: string; images?: Img[] };
 
 const PLACEHOLDER = '/placeholder.jpg';
 
-/** Llama primero a /products y, si no existe, a /productos */
+/** Llama primero a /products y, si no existe, a /productos. Siempre con credenciales. */
 async function callApi(pathProducts: string, pathProductos: string, init?: RequestInit) {
-  let r = await fetch(pathProducts, init);
+  const opts: RequestInit = { credentials: 'include', ...init };
+  let r = await fetch(pathProducts, opts);
   if (r.ok || r.status !== 404) return r;
-  return fetch(pathProductos, init);
+  return fetch(pathProductos, opts);
 }
 
 export default function AdminProductImagesPage() {
@@ -41,7 +48,9 @@ export default function AdminProductImagesPage() {
       const data = await res.json<any>();
       const p: Product = data.item ?? data?.data ?? data;
       setProduct(p);
-      const imgs = (p.images ?? []).slice().sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      const imgs = (p.images ?? [])
+        .slice()
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
       setItems(imgs);
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -55,7 +64,7 @@ export default function AdminProductImagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // ---------- Upload (soporta múltiples: 1 POST por archivo con campo "file") ----------
+  // ---------- Upload (legacy: FormData a /imagenes) ----------
   const doUpload = useCallback(
     async (files: FileList) => {
       if (!files?.length) return;
@@ -63,18 +72,16 @@ export default function AdminProductImagesPage() {
       setError('');
       try {
         const altCommon = uploadAltRef.current?.value?.trim();
-        // subimos uno por uno usando "file"
         for (let i = 0; i < files.length; i++) {
           const fd = new FormData();
-          fd.append('file', files[i]); // <- TU BACKEND espera "file"
+          fd.append('file', files[i]); // backend espera "file"
           if (altCommon) fd.append('alt', altCommon);
-          // por si tu backend lo usa:
           fd.append('sortOrder', String((items?.length ?? 0) + i + 1));
 
-          let r = await callApi(
+          const r = await callApi(
             `/api/admin/products/${id}/images`,
             `/api/admin/productos/${id}/imagenes`,
-            { method: 'POST', body: fd },
+            { method: 'POST', body: fd }
           );
           if (!r.ok) {
             const t = await r.text();
@@ -90,7 +97,7 @@ export default function AdminProductImagesPage() {
         setSaving(false);
       }
     },
-    [id, items],
+    [id, items]
   );
 
   const onDropFiles = useCallback(
@@ -99,7 +106,7 @@ export default function AdminProductImagesPage() {
       const files = ev.dataTransfer.files;
       if (files && files.length) doUpload(files);
     },
-    [doUpload],
+    [doUpload]
   );
 
   // ---------- Delete ----------
@@ -108,17 +115,17 @@ export default function AdminProductImagesPage() {
     setSaving(true);
     setError('');
     try {
-      // intentamos estilo REST /:id y caemos a ?imageId=
+      // Intentamos REST estilo /:imageId y caemos a ?imageId=
       let r = await callApi(
         `/api/admin/products/${id}/images/${imgId}`,
         `/api/admin/productos/${id}/imagenes/${imgId}`,
-        { method: 'DELETE' },
+        { method: 'DELETE' }
       );
       if (r.status === 404) {
         r = await callApi(
           `/api/admin/products/${id}/images?imageId=${imgId}`,
           `/api/admin/productos/${id}/imagenes?imageId=${imgId}`,
-          { method: 'DELETE' },
+          { method: 'DELETE' }
         );
       }
       if (!r.ok) throw new Error(`DELETE: ${r.status}`);
@@ -135,18 +142,20 @@ export default function AdminProductImagesPage() {
     setSaving(true);
     setError('');
     try {
-      // 1) endpoint masivo
       const ids = newItems.map((x) => x.id);
+
+      // 1) Endpoint masivo (nuevo): POST { desiredIds }
       let r = await callApi(
         `/api/admin/products/${id}/images/reorder`,
         `/api/admin/productos/${id}/imagenes/reorder`,
         {
-          method: 'PUT',
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids }),
-        },
+          body: JSON.stringify({ desiredIds: ids }),
+        }
       );
-      // 2) fallback: actualizar uno por uno si el masivo no existe
+
+      // 2) Fallback: actualizar uno por uno si el masivo no existe
       if (r.status === 404) {
         for (let i = 0; i < newItems.length; i++) {
           const imgId = newItems[i].id;
@@ -154,17 +163,18 @@ export default function AdminProductImagesPage() {
             `/api/admin/products/${id}/images/${imgId}`,
             `/api/admin/productos/${id}/imagenes/${imgId}`,
             {
-              method: 'PUT',
+              method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sortOrder: i + 1 }),
-            },
+              body: JSON.stringify({ sortOrder: i }),
+            }
           );
-          if (!r.ok) throw new Error(`PUT sortOrder(${imgId}): ${r.status}`);
+          if (!r.ok) throw new Error(`PATCH sortOrder(${imgId}): ${r.status}`);
         }
       } else if (!r.ok) {
         const t = await r.text();
         throw new Error(`Reorder: ${r.status} ${t}`);
       }
+
       setItems(newItems);
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -189,13 +199,37 @@ export default function AdminProductImagesPage() {
     persistOrder(next);
   }
 
-  // “Hacer portada”: llevar al índice 0 y persistir
-  function makeCover(ix: number) {
+  // “Hacer portada”: vía API (PATCH isCover) y refrescamos
+  async function makeCover(ix: number) {
     if (ix === 0) return;
-    const next = items.slice();
-    const [m] = next.splice(ix, 1);
-    next.unshift(m);
-    persistOrder(next);
+    const img = items[ix];
+    setSaving(true);
+    setError('');
+    try {
+      let r = await callApi(
+        `/api/admin/products/${id}/images/${img.id}`,
+        `/api/admin/productos/${id}/imagenes/${img.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isCover: true }),
+        }
+      );
+      // Fallback: si no existe PATCH isCover, reordenamos local→persist
+      if (r.status === 404) {
+        const next = items.slice();
+        const [m] = next.splice(ix, 1);
+        next.unshift(m);
+        await persistOrder(next);
+        return;
+      }
+      if (!r.ok) throw new Error(`PATCH isCover: ${r.status}`);
+      await load();
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    } finally {
+      setSaving(false);
+    }
   }
 
   // ---------- ALT ----------
@@ -207,12 +241,12 @@ export default function AdminProductImagesPage() {
         `/api/admin/products/${id}/images/${imgId}`,
         `/api/admin/productos/${id}/imagenes/${imgId}`,
         {
-          method: 'PUT',
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ alt }),
-        },
+        }
       );
-      if (!r.ok) throw new Error(`PUT alt: ${r.status}`);
+      if (!r.ok) throw new Error(`PATCH alt: ${r.status}`);
       setItems((prev) => prev.map((x) => (x.id === imgId ? { ...x, alt } : x)));
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -350,9 +384,7 @@ export default function AdminProductImagesPage() {
             >
               <div className="aspect-[4/3] bg-gray-100">
                 <img
-                  src={
-                    im.url?.startsWith('http') || im.url?.startsWith('/') ? im.url : `/${im.url}`
-                  }
+                  src={im.url?.startsWith('http') || im.url?.startsWith('/') ? im.url : `/${im.url}`}
                   alt={im.alt ?? ''}
                   className="w-full h-full object-cover block"
                   onError={(e) => {
