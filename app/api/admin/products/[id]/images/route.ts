@@ -193,8 +193,12 @@ export async function POST(req: Request, ctx: any) {
       },
       { status: 201 },
     );
-  } catch {
-    return NextResponse.json({ ok: false, error: 'internal_error' }, { status: 500 });
+  } catch (e: any) {
+    // <- cambiado: devolvemos detalle para diagnosticar (p.ej. binding de R2 faltante)
+    return NextResponse.json(
+      { ok: false, error: 'internal_error', detail: e?.message ?? String(e) },
+      { status: 500 },
+    );
   }
 }
 
