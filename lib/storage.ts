@@ -1,14 +1,31 @@
 // lib/storage.ts
 import { getRequestContext } from '@cloudflare/next-on-pages';
 
-function getEnv() {
+type EnvAny = Record<string, any>;
+
+function getEnv(): EnvAny {
   const { env } = getRequestContext();
-  return env as unknown as { R2: R2Bucket; PUBLIC_R2_BASE_URL?: string };
+  return env as EnvAny;
+}
+
+function getR2(): R2Bucket {
+  const env = getEnv();
+  // Soportar varios nombres de binding
+  const r2: R2Bucket | undefined =
+    env.R2 || env.R2_BUCKET || env.r2 || env.bucket;
+
+  if (!r2 || typeof (r2 as any).put !== 'function') {
+    throw new Error(
+      'R2 binding missing: creá un binding en Pages y llamalo "R2" (o usa "R2_BUCKET").'
+    );
+  }
+  return r2;
 }
 
 export function publicR2Url(key: string): string {
-  const base = getEnv().PUBLIC_R2_BASE_URL;
-  return base ? `${base.replace(/\/$/, '')}/${key}` : key; // fallback simple
+  const env = getEnv();
+  const base: string | undefined = env.PUBLIC_R2_BASE_URL;
+  return base ? `${base.replace(/\/$/, '')}/${key}` : key;
 }
 
 export async function r2Put(
@@ -16,30 +33,27 @@ export async function r2Put(
   value: ReadableStream | ArrayBuffer | Blob,
   contentType?: string
 ) {
-  const { R2 } = getEnv();
-  await R2.put(key, value as any, { httpMetadata: { contentType } });
+  const R2 = getR2();
+  await R2.put(
+    key,
+    value as any,
+    contentType ? { httpMetadata: { contentType } } : undefined
+  );
   return publicR2Url(key);
 }
 
 export async function r2Delete(key: string) {
-  const { R2 } = getEnv();
+  const R2 = getR2();
   await R2.delete(key);
 }
 
 export async function r2List(prefix: string, limit = 1000) {
-  const { R2 } = getEnv();
+  const R2 = getR2();
   const res = await R2.list({ prefix, limit });
-  return res.objects.map(o => ({ key: o.key, size: o.size, uploaded: o.uploaded, etag: o.etag }));
-}
-
-/**
- * Borra un objeto del bucket R2.
- * No falla si no existe o si no hay binding en dev.
- */
-export async function deleteUpload(key: string): Promise<void> {
-  const env = (typeof getRequestContext === 'function' ? getRequestContext().env : undefined) as
-    | { R2_BUCKET?: { delete: (k: string) => Promise<any> } }
-    | undefined;
-
-  await env?.R2_BUCKET?.delete(key).catch(() => {});
+  return res.objects.map((o) => ({
+    key: o.key,
+    size: o.size,
+    uploaded: o.uploaded,
+    etag: o.etag,
+  }));
 }
