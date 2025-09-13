@@ -51,7 +51,8 @@ export async function GET(_req: Request, ctx: any) {
     return NextResponse.json({ ok: false, error: 'missing product id' }, { status: 400 });
   }
 
-  const item = await prisma.product.findUnique({
+  // TS a veces no reconoce las relaciones en Edge; casteamos a any
+  const itemRaw = await prisma.product.findUnique({
     where: { id: idNum },
     include: {
       category: true,
@@ -60,13 +61,14 @@ export async function GET(_req: Request, ctx: any) {
     },
   });
 
-  if (!item) {
+  if (!itemRaw) {
     return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
   }
 
+  const item: any = itemRaw;
   const normalized = {
     ...item,
-    images: (item.images ?? []).map(normalizeImage),
+    images: Array.isArray(item.images) ? item.images.map(normalizeImage) : [],
   };
 
   const res = NextResponse.json({ ok: true, item: normalized });
