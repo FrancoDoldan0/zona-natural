@@ -43,11 +43,7 @@ function normalizeDbImage(r: any) {
   };
 }
 
-/**
- * GET /api/admin/products/:id/images
- * Respuesta:
- * { ok: true, items: [{ id?, key, url, alt?, isCover?, sortOrder?, size?, width?, height?, createdAt? }], images: [...] }
- */
+/* ---------- GET: listar imágenes ---------- */
 export async function GET(_req: Request, ctx: any) {
   const { productId } = await readParams(ctx);
   if (productId == null) {
@@ -70,22 +66,19 @@ export async function GET(_req: Request, ctx: any) {
         }>
       | null = null;
 
-    // 1) Intentar leer desde DB
+    // 1) DB
     try {
       const rows =
         (await (prisma as any)?.productImage?.findMany({
           where: { productId },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
         })) ?? [];
-
-      if (rows.length > 0) {
-        items = rows.map(normalizeDbImage);
-      }
+      if (rows.length > 0) items = rows.map(normalizeDbImage);
     } catch {
-      items = null; // fallback a R2
+      items = null;
     }
 
-    // 2) Fallback: listar directo en R2
+    // 2) Fallback a R2
     if (!items) {
       const prefix = `products/${productId}/`;
       const list = await r2List(prefix);
@@ -94,23 +87,22 @@ export async function GET(_req: Request, ctx: any) {
         url: publicR2Url(o.key),
         size: o.size ?? null,
         isCover: i === 0,
-        sortOrder: i, // 0-based (coherente con /reorder)
+        sortOrder: i, // 0-based
       }));
     }
 
     const res = NextResponse.json({ ok: true, items, images: items });
     res.headers.set('Cache-Control', 'no-store');
     return res;
-  } catch {
-    return NextResponse.json({ ok: false, error: 'internal_error' }, { status: 500 });
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: `internal_error: ${e?.message ?? String(e)}` },
+      { status: 500 },
+    );
   }
 }
 
-/**
- * POST /api/admin/products/:id/images
- * multipart/form-data: file, alt? (y opcional sortOrder)
- * - Sube a R2 y crea registro en DB (key, alt, sortOrder, isCover si es la primera).
- */
+/* ---------- POST: subir una imagen ---------- */
 export async function POST(req: Request, ctx: any) {
   const { productId } = await readParams(ctx);
   if (productId == null) {
@@ -122,16 +114,15 @@ export async function POST(req: Request, ctx: any) {
     form = await req.formData();
   } catch {
     return NextResponse.json(
-      { ok: false, error: 'Se esperaba multipart/form-data' },
+      { ok: false, error: 'bad_request: expected multipart/form-data' },
       { status: 400 },
     );
   }
 
   const file = form.get('file') as File | null;
   const alt = (String(form.get('alt') ?? '').trim() || null) as string | null;
-
   if (!file || typeof (file as any).arrayBuffer !== 'function') {
-    return NextResponse.json({ ok: false, error: 'Campo "file" requerido' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'bad_request: field "file" required' }, { status: 400 });
   }
 
   try {
@@ -145,15 +136,24 @@ export async function POST(req: Request, ctx: any) {
     }
     const isFirst = sortOrder === 0;
 
-    // armar key y subir a R2
+    // key y subida a R2
     const safeName = sanitizeName((file as any).name || 'upload');
     const key = `products/${productId}/${Date.now()}-${Math.random()
       .toString(36)
       .slice(2, 8)}-${safeName}`;
     const contentType = (file as any).type || undefined;
-    await r2Put(key, file, contentType);
 
-    // crear registro en DB (guardamos key)
+    try {
+      await r2Put(key, file, contentType);
+    } catch (e: any) {
+      // Si el binding R2 no existe o falla la subida, lo verás acá
+      return NextResponse.json(
+        { ok: false, error: `r2_put_failed: ${e?.message ?? String(e)}` },
+        { status: 500 },
+      );
+    }
+
+    // crear en DB (best effort)
     let created: any = {
       id: undefined,
       key,
@@ -175,7 +175,7 @@ export async function POST(req: Request, ctx: any) {
         select: { id: true, key: true, alt: true, sortOrder: true, isCover: true, createdAt: true },
       });
     } catch {
-      // Si no hay tabla o falla Prisma en Edge, devolvemos al menos la info del upload
+      // ignoramos si no hay tabla en edge
     }
 
     await audit(req, 'product_images.create', 'product', String(productId), {
@@ -184,39 +184,25 @@ export async function POST(req: Request, ctx: any) {
     }).catch(() => {});
 
     return NextResponse.json(
-      {
-        ok: true,
-        item: {
-          ...created,
-          url: publicR2Url(key),
-        },
-      },
+      { ok: true, item: { ...created, url: publicR2Url(key) } },
       { status: 201 },
     );
   } catch (e: any) {
-    // <- cambiado: devolvemos detalle para diagnosticar (p.ej. binding de R2 faltante)
     return NextResponse.json(
-      { ok: false, error: 'internal_error', detail: e?.message ?? String(e) },
+      { ok: false, error: `internal_error: ${e?.message ?? String(e)}` },
       { status: 500 },
     );
   }
 }
 
-/**
- * DELETE /api/admin/products/:id/images
- * Acepta:
- *  - Body JSON: { imageId?: number, key?: string }
- *  - o Query string: ?imageId=123 o ?key=products/ID/archivo.jpg
- * - Si viene imageId: borra en DB (si existe) y toma el key.
- * - Si no, acepta key (validado por prefijo) y borra en R2 (+ limpia DB si aplica).
- */
+/* ---------- DELETE: borrar imagen ---------- */
 export async function DELETE(req: Request, ctx: any) {
   const { productId } = await readParams(ctx);
   if (productId == null) {
     return NextResponse.json({ ok: false, error: 'missing product id' }, { status: 400 });
   }
 
-  // leer query y body (ambos soportados)
+  // Soportamos query (?imageId / ?key) y body
   const url = new URL(req.url);
   const qsImageId = url.searchParams.get('imageId');
   const qsKey = url.searchParams.get('key');
@@ -233,7 +219,6 @@ export async function DELETE(req: Request, ctx: any) {
   try {
     let keyToDelete: string | null = null;
 
-    // 1) Si llega imageId, usar DB para obtener key y borrar registro
     if (imageId) {
       try {
         const img = await (prisma as any)?.productImage?.findFirst({
@@ -245,12 +230,9 @@ export async function DELETE(req: Request, ctx: any) {
         await (prisma as any)?.productImage?.deleteMany({
           where: { id: imageId, productId },
         });
-      } catch {
-        /* ignore DB errors */
-      }
+      } catch {}
     }
 
-    // 2) Si no obtuvimos key y vino `key`, validarlo y usarlo
     if (!keyToDelete && key) {
       const expectedPrefix = `products/${productId}/`;
       if (!key.startsWith(expectedPrefix)) {
@@ -258,19 +240,14 @@ export async function DELETE(req: Request, ctx: any) {
       }
       try {
         await (prisma as any)?.productImage?.deleteMany({ where: { key, productId } });
-      } catch {
-        /* ignore DB errors */
-      }
+      } catch {}
       keyToDelete = key;
     }
 
-    // 3) Borrar en R2
     if (keyToDelete) {
       try {
         await r2Delete(keyToDelete);
-      } catch {
-        /* ignore R2 errors */
-      }
+      } catch {}
     }
 
     await audit(req, 'product_images.delete', 'product', String(productId), {
@@ -279,7 +256,10 @@ export async function DELETE(req: Request, ctx: any) {
     }).catch(() => {});
 
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ ok: false, error: 'internal_error' }, { status: 500 });
+  } catch (e: any) {
+    return NextResponse.json(
+      { ok: false, error: `internal_error: ${e?.message ?? String(e)}` },
+      { status: 500 },
+    );
   }
 }
