@@ -1,23 +1,8 @@
-name = "zona-natural"
+name = "zonanatural"
 compatibility_date = "2025-09-01"
-
-# El build de next-on-pages deja el worker en esta carpeta:
 pages_build_output_dir = ".vercel/output/static"
 
-# --- R2 bindings globales (por si Cloudflare ignora el entorno explícito) ---
-[[r2_buckets]]
-binding = "R2"
-bucket_name = "zona-natural-uploads"
-
-[[r2_buckets]]
-binding = "R2_BUCKET"
-bucket_name = "zona-natural-uploads"
-
-[vars]
-# Útil para dev/local y como fallback si el entorno no define su valor.
-PUBLIC_R2_BASE_URL = "https://pub-ffefaa8c3c934bee9f27fc3e90740645.r2.dev"
-
-# --- Entorno PREVIEW (hash.pages.dev) ---
+# --- PREVIEW ---
 [env.preview]
 
   [env.preview.vars]
@@ -31,7 +16,7 @@ PUBLIC_R2_BASE_URL = "https://pub-ffefaa8c3c934bee9f27fc3e90740645.r2.dev"
   binding = "R2_BUCKET"
   bucket_name = "zona-natural-uploads"
 
-# --- Entorno PRODUCCIÓN (tu dominio principal) ---
+# --- PRODUCCIÓN ---
 [env.production]
 
   [env.production.vars]
