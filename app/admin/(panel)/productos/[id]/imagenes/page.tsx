@@ -1,3 +1,4 @@
+// app/admin/(panel)/productos/[id]/imagenes/page.tsx
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -5,13 +6,16 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
 type Img = {
-  id: number;
+  id?: number | null;        // puede no venir si listamos directo de R2
+  key?: string;              // siempre viene en /images
   url: string;
   alt?: string | null;
   sortOrder?: number | null;
   isCover?: boolean | null;
+  size?: number | null;
+  createdAt?: string | null;
 };
-type Product = { id: number; name: string; slug: string; images?: Img[] };
+type Product = { id: number; name: string; slug: string };
 
 const PLACEHOLDER = '/placeholder.jpg';
 
@@ -25,11 +29,15 @@ async function callApi(pathProducts: string, pathProductos: string, init?: Reque
 
 export default function AdminProductImagesPage() {
   const { id } = useParams<{ id: string }>();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [product, setProduct] = useState<Product | null>(null);
   const [items, setItems] = useState<Img[]>([]);
   const [error, setError] = useState('');
+
+  // si alguna imagen tiene id => hay tabla; si ninguna tiene id => sólo R2 (sin DB)
+  const canEditOrderAlt = useMemo(() => items.some((x) => x.id != null), [items]);
 
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const uploadAltRef = useRef<HTMLInputElement>(null);
@@ -37,34 +45,56 @@ export default function AdminProductImagesPage() {
 
   const title = useMemo(() => (product ? `Imágenes — ${product.name}` : 'Imágenes'), [product]);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await callApi(`/api/admin/products/${id}`, `/api/admin/productos/${id}`, {
-        cache: 'no-store',
-      });
-      if (!res.ok) throw new Error(`GET product ${id}: ${res.status}`);
-      const data = await res.json<any>();
-      const p: Product = data.item ?? data?.data ?? data;
-      setProduct(p);
-      const imgs = (p.images ?? [])
-        .slice()
-        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-      setItems(imgs);
+      // 1) Producto (para título y links)
+      {
+        const r = await callApi(`/api/admin/products/${id}`, `/api/admin/productos/${id}`, {
+          cache: 'no-store',
+        });
+        if (!r.ok) throw new Error(`GET product ${id}: ${r.status}`);
+        const data = await r.json<any>();
+        const p = (data.item ?? data?.data ?? data) as Product;
+        setProduct(p);
+      }
+
+      // 2) Imágenes (siempre desde el endpoint nuevo con fallback a R2)
+      {
+        const r = await callApi(
+          `/api/admin/products/${id}/images`,
+          `/api/admin/productos/${id}/imagenes`,
+          { cache: 'no-store' }
+        );
+        if (!r.ok) throw new Error(`GET images ${id}: ${r.status}`);
+        const data = await r.json<any>();
+        const imgs: Img[] = (data.items ?? data.images ?? []).slice();
+
+        // normalizar orden: por sortOrder luego por createdAt
+        imgs.sort((a, b) => {
+          const sa = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+          const sb = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+          if (sa !== sb) return sa - sb;
+          const ca = a.createdAt ? Date.parse(a.createdAt) : 0;
+          const cb = b.createdAt ? Date.parse(b.createdAt) : 0;
+          return ca - cb;
+        });
+
+        setItems(imgs);
+      }
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
       setLoading(false);
     }
-  }
+  }, [id]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [load]);
 
-  // ---------- Upload (legacy: FormData a /imagenes) ----------
+  // ---------- Upload ----------
   const doUpload = useCallback(
     async (files: FileList) => {
       if (!files?.length) return;
@@ -76,7 +106,8 @@ export default function AdminProductImagesPage() {
           const fd = new FormData();
           fd.append('file', files[i]); // backend espera "file"
           if (altCommon) fd.append('alt', altCommon);
-          fd.append('sortOrder', String((items?.length ?? 0) + i + 1));
+          // dejamos que el server calcule sortOrder al final; igualmente mandamos sugerencia
+          fd.append('sortOrder', String((items?.length ?? 0) + i));
 
           const r = await callApi(
             `/api/admin/products/${id}/images`,
@@ -97,7 +128,7 @@ export default function AdminProductImagesPage() {
         setSaving(false);
       }
     },
-    [id, items]
+    [id, items, load]
   );
 
   const onDropFiles = useCallback(
@@ -110,26 +141,42 @@ export default function AdminProductImagesPage() {
   );
 
   // ---------- Delete ----------
-  async function onDelete(imgId: number) {
+  async function onDelete(img: Img) {
     if (!confirm('¿Eliminar esta imagen?')) return;
     setSaving(true);
     setError('');
     try {
-      // Intentamos REST estilo /:imageId y caemos a ?imageId=
-      let r = await callApi(
-        `/api/admin/products/${id}/images/${imgId}`,
-        `/api/admin/productos/${id}/imagenes/${imgId}`,
-        { method: 'DELETE' }
-      );
-      if (r.status === 404) {
+      let r: Response | null = null;
+
+      // Preferimos borrar por imageId si existe, sino por key
+      if (img.id != null) {
+        // Intentamos REST estilo /:imageId y caemos a ?imageId=
         r = await callApi(
-          `/api/admin/products/${id}/images?imageId=${imgId}`,
-          `/api/admin/productos/${id}/imagenes?imageId=${imgId}`,
+          `/api/admin/products/${id}/images/${img.id}`,
+          `/api/admin/productos/${id}/imagenes/${img.id}`,
           { method: 'DELETE' }
         );
+        if (r.status === 404) {
+          r = await callApi(
+            `/api/admin/products/${id}/images?imageId=${img.id}`,
+            `/api/admin/productos/${id}/imagenes?imageId=${img.id}`,
+            { method: 'DELETE' }
+          );
+        }
+      } else if (img.key) {
+        r = await callApi(
+          `/api/admin/products/${id}/images?key=${encodeURIComponent(img.key)}`,
+          `/api/admin/productos/${id}/imagenes?key=${encodeURIComponent(img.key)}`,
+          { method: 'DELETE' }
+        );
+      } else {
+        throw new Error('No hay id ni key para borrar la imagen.');
       }
-      if (!r.ok) throw new Error(`DELETE: ${r.status}`);
-      setItems((prev) => prev.filter((x) => x.id !== imgId));
+
+      if (!r!.ok) throw new Error(`DELETE: ${r!.status}`);
+      setItems((prev) =>
+        prev.filter((x) => (img.id != null ? x.id !== img.id : x.key !== img.key))
+      );
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -139,10 +186,14 @@ export default function AdminProductImagesPage() {
 
   // ---------- Reordenar ----------
   async function persistOrder(newItems: Img[]) {
+    if (!canEditOrderAlt) {
+      setError('No se puede reordenar sin IDs de imágenes (modo sólo R2).');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
-      const ids = newItems.map((x) => x.id);
+      const ids = newItems.map((x) => x.id!).filter((x) => x != null);
 
       // 1) Endpoint masivo (nuevo): POST { desiredIds }
       let r = await callApi(
@@ -158,7 +209,7 @@ export default function AdminProductImagesPage() {
       // 2) Fallback: actualizar uno por uno si el masivo no existe
       if (r.status === 404) {
         for (let i = 0; i < newItems.length; i++) {
-          const imgId = newItems[i].id;
+          const imgId = newItems[i].id!;
           r = await callApi(
             `/api/admin/products/${id}/images/${imgId}`,
             `/api/admin/productos/${id}/imagenes/${imgId}`,
@@ -184,12 +235,15 @@ export default function AdminProductImagesPage() {
   }
 
   function onDragStart(i: number) {
+    if (!canEditOrderAlt) return;
     dragSrcIndex.current = i;
   }
   function onDragOver(e: React.DragEvent<HTMLDivElement>) {
+    if (!canEditOrderAlt) return;
     e.preventDefault();
   }
   function onDrop(i: number) {
+    if (!canEditOrderAlt) return;
     const from = dragSrcIndex.current;
     dragSrcIndex.current = null;
     if (from == null || from === i) return;
@@ -199,8 +253,12 @@ export default function AdminProductImagesPage() {
     persistOrder(next);
   }
 
-  // “Hacer portada”: vía API (PATCH isCover) y refrescamos
+  // “Hacer portada”: usa PATCH isCover (o reordenamiento como fallback)
   async function makeCover(ix: number) {
+    if (!canEditOrderAlt) {
+      setError('No se puede marcar portada sin IDs (modo sólo R2).');
+      return;
+    }
     if (ix === 0) return;
     const img = items[ix];
     setSaving(true);
@@ -233,13 +291,17 @@ export default function AdminProductImagesPage() {
   }
 
   // ---------- ALT ----------
-  async function saveAlt(imgId: number, alt: string) {
+  async function saveAlt(img: Img, alt: string) {
+    if (!canEditOrderAlt || img.id == null) {
+      setError('No se puede actualizar ALT sin IDs (modo sólo R2).');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
       const r = await callApi(
-        `/api/admin/products/${id}/images/${imgId}`,
-        `/api/admin/productos/${id}/imagenes/${imgId}`,
+        `/api/admin/products/${id}/images/${img.id}`,
+        `/api/admin/productos/${id}/imagenes/${img.id}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -247,7 +309,7 @@ export default function AdminProductImagesPage() {
         }
       );
       if (!r.ok) throw new Error(`PATCH alt: ${r.status}`);
-      setItems((prev) => prev.map((x) => (x.id === imgId ? { ...x, alt } : x)));
+      setItems((prev) => prev.map((x) => (x.id === img.id ? { ...x, alt } : x)));
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -267,6 +329,12 @@ export default function AdminProductImagesPage() {
               ? `${items.length} imagen${items.length === 1 ? '' : 'es'} en total`
               : 'Gestioná las imágenes del producto'}
           </p>
+          {!canEditOrderAlt && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 mt-2 inline-block">
+              Mostrando desde R2 (sin registros en DB): podés subir y borrar, pero no reordenar, marcar
+              portada ni editar ALT.
+            </p>
+          )}
         </div>
 
         {product && (
@@ -331,7 +399,8 @@ export default function AdminProductImagesPage() {
         </div>
 
         <p className="text-xs mt-3 text-gray-500">
-          Tip: Podés editar el ALT de cada imagen, reordenar con drag & drop y marcar portada.
+          Tip: Podés editar el ALT de cada imagen, reordenar con drag &amp; drop y marcar portada (si hay
+          registros en DB).
         </p>
       </div>
 
@@ -374,13 +443,15 @@ export default function AdminProductImagesPage() {
         >
           {items.map((im, i) => (
             <div
-              key={im.id}
-              className="relative rounded-2xl border bg-white shadow-sm hover:shadow-md transition overflow-hidden group"
-              draggable
+              key={im.id ?? im.key ?? `${im.url}-${i}`}
+              className={`relative rounded-2xl border bg-white shadow-sm transition overflow-hidden group ${
+                canEditOrderAlt ? 'hover:shadow-md' : ''
+              }`}
+              draggable={canEditOrderAlt}
               onDragStart={() => onDragStart(i)}
               onDragOver={onDragOver}
               onDrop={() => onDrop(i)}
-              title="Arrastrá para reordenar"
+              title={canEditOrderAlt ? 'Arrastrá para reordenar' : 'Reordenar deshabilitado'}
             >
               <div className="aspect-[4/3] bg-gray-100">
                 <img
@@ -402,14 +473,14 @@ export default function AdminProductImagesPage() {
                   <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow">
                     Portada
                   </span>
-                ) : (
+                ) : canEditOrderAlt ? (
                   <button
                     className="px-2 py-0.5 rounded-full bg-gray-900/80 text-white opacity-0 group-hover:opacity-100 transition shadow"
                     onClick={() => makeCover(i)}
                   >
                     Hacer portada
                   </button>
-                )}
+                ) : null}
               </div>
 
               <div className="p-3 space-y-3">
@@ -417,7 +488,7 @@ export default function AdminProductImagesPage() {
                   <span className="text-xs rounded-full bg-gray-100 px-2 py-0.5">#{i + 1}</span>
                   <button
                     className="ml-auto inline-flex items-center gap-1 rounded-full bg-red-50 text-red-700 px-2.5 py-1 text-xs hover:bg-red-100 transition"
-                    onClick={() => onDelete(im.id)}
+                    onClick={() => onDelete(im)}
                   >
                     Eliminar
                   </button>
@@ -429,11 +500,13 @@ export default function AdminProductImagesPage() {
                   </label>
                   <input
                     defaultValue={im.alt ?? ''}
-                    placeholder="Descripción accesible"
-                    className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                    placeholder={canEditOrderAlt ? 'Descripción accesible' : 'No disponible en modo R2'}
+                    className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:bg-gray-50"
+                    disabled={!canEditOrderAlt || im.id == null}
                     onBlur={(e) => {
                       const v = e.currentTarget.value.trim();
-                      if (v !== (im.alt ?? '')) saveAlt(im.id, v);
+                      if (!canEditOrderAlt || im.id == null) return;
+                      if (v !== (im.alt ?? '')) saveAlt(im, v);
                     }}
                   />
                 </div>
