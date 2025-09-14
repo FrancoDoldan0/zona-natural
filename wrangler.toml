@@ -1,9 +1,11 @@
 name = "zonanatural"
 compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]          # <<<<<< clave
 pages_build_output_dir = ".vercel/output/static"
 
 # --- PREVIEW ---
 [env.preview]
+compatibility_flags = ["nodejs_compat"]          # redundante pero seguro
 
   [env.preview.vars]
   PUBLIC_R2_BASE_URL = "https://pub-ffefaa8c3c934bee9f27fc3e90740645.r2.dev"
@@ -18,6 +20,7 @@ pages_build_output_dir = ".vercel/output/static"
 
 # --- PRODUCCIÓN ---
 [env.production]
+compatibility_flags = ["nodejs_compat"]          # redundante pero seguro
 
   [env.production.vars]
   PUBLIC_R2_BASE_URL = "https://pub-ffefaa8c3c934bee9f27fc3e90740645.r2.dev"
