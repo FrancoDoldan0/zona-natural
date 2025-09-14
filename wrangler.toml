@@ -2,13 +2,43 @@ name = "zona-natural"
 compatibility_date = "2025-09-01"
 pages_build_output_dir = ".vercel/output/pages"
 
-# ---------- Bindings ----------
-# R2 para las imágenes (crearemos el bucket en el dashboard más adelante)
+# --- R2 bindings globales (por si se usa sin entorno explícito) ---
 [[r2_buckets]]
-binding = "R2"                # Así lo referiremos en el código (getRequestContext().env.R2)
+binding = "R2"
 bucket_name = "zona-natural-uploads"
 
-# (Opcional) KV para rate-limit; lo activaremos en un paso posterior
-# [[kv_namespaces]]
-# binding = "KV"
-# id = "RELLENAR_EN_DASHBOARD"
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "zona-natural-uploads"
+
+[vars]
+# opcional (para wrangler dev/local)
+PUBLIC_R2_BASE_URL = "https://pub-ffefaa8c3c934bee9f27fc3e90740645.r2.dev"
+
+# --- Entorno PREVIEW (hash.pages.dev) ---
+[env.preview]
+
+  [env.preview.vars]
+  PUBLIC_R2_BASE_URL = "https://pub-ffefaa8c3c934bee9f27fc3e90740645.r2.dev"
+
+  [[env.preview.r2_buckets]]
+  binding = "R2"
+  bucket_name = "zona-natural-uploads"
+
+  [[env.preview.r2_buckets]]
+  binding = "R2_BUCKET"
+  bucket_name = "zona-natural-uploads"
+
+# --- Entorno PRODUCCIÓN (tu dominio principal) ---
+[env.production]
+
+  [env.production.vars]
+  PUBLIC_R2_BASE_URL = "https://pub-ffefaa8c3c934bee9f27fc3e90740645.r2.dev"
+
+  [[env.production.r2_buckets]]
+  binding = "R2"
+  bucket_name = "zona-natural-uploads"
+
+  [[env.production.r2_buckets]]
+  binding = "R2_BUCKET"
+  bucket_name = "zona-natural-uploads"
