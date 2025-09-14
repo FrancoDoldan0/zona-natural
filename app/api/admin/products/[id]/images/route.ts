@@ -20,30 +20,9 @@ function sanitizeName(name: string): string {
   return (name || 'upload').replace(/[^\w.\-]+/g, '_');
 }
 
-function normalizeDbImage(r: any) {
-  const keyOrUrl: string | undefined = r?.key ?? r?.url ?? undefined;
-  let url = '';
-  if (typeof keyOrUrl === 'string') {
-    url =
-      keyOrUrl.startsWith('http') || keyOrUrl.startsWith('/')
-        ? keyOrUrl
-        : publicR2Url(keyOrUrl);
-  }
-  return {
-    id: r?.id,
-    key: r?.key,
-    url,
-    alt: r?.alt ?? null,
-    isCover: !!r?.isCover,
-    sortOrder: r?.sortOrder ?? null,
-    size: r?.size ?? null,
-    width: r?.width ?? null,
-    height: r?.height ?? null,
-    createdAt: r?.createdAt ?? null,
-  };
-}
-
-/* ---------- GET: listar imágenes ---------- */
+/* ============================================================
+   GET: SIEMPRE listar desde R2 y fusionar con DB si existe
+   ============================================================ */
 export async function GET(_req: Request, ctx: any) {
   const { productId } = await readParams(ctx);
   if (productId == null) {
@@ -51,58 +30,94 @@ export async function GET(_req: Request, ctx: any) {
   }
 
   try {
-    let items:
-      | Array<{
-          id?: number;
-          key?: string;
-          url: string;
-          alt?: string | null;
-          isCover?: boolean;
-          sortOrder?: number | null;
-          size?: number | null;
-          width?: number | null;
-          height?: number | null;
-          createdAt?: string | Date | null;
-        }>
-      | null = null;
+    const prefix = `products/${productId}/`;
 
-    // 1) DB
+    // 1) R2 es la fuente de verdad
+    const r2Objs = await r2List(prefix); // [{ key, size, uploaded, etag }]
+    const r2Map = new Map(r2Objs.map(o => [o.key, o] as const));
+
+    // 2) Traer metadata desde DB (si la tabla existe)
+    let rows: any[] = [];
     try {
-      const rows =
+      rows =
         (await (prisma as any)?.productImage?.findMany({
           where: { productId },
+          select: {
+            id: true,
+            key: true,
+            alt: true,
+            isCover: true,
+            sortOrder: true,
+            size: true,
+            width: true,
+            height: true,
+            createdAt: true,
+          },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
         })) ?? [];
-      if (rows.length > 0) items = rows.map(normalizeDbImage);
     } catch {
-      items = null;
+      rows = [];
     }
 
-    // 2) Fallback a R2
-    if (!items) {
-      const prefix = `products/${productId}/`;
-      const list = await r2List(prefix);
-      items = list.map((o, i) => ({
+    // 3) Fusionar por key (R2 + DB)
+    const items = r2Objs.map((o, i) => {
+      const row = rows.find(r => r.key === o.key);
+      return {
+        id: row?.id,
         key: o.key,
         url: publicR2Url(o.key),
-        size: o.size ?? null,
-        isCover: i === 0,
-        sortOrder: i, // 0-based
-      }));
+        alt: row?.alt ?? null,
+        isCover: row?.isCover ?? (i === 0),
+        sortOrder: Number.isFinite(row?.sortOrder) ? row!.sortOrder : i, // fallback estable
+        size: o.size ?? row?.size ?? null,
+        width: row?.width ?? null,
+        height: row?.height ?? null,
+        createdAt: row?.createdAt ?? o.uploaded ?? null,
+      };
+    });
+
+    // 4) (Opcional) incluir filas de DB que no están en R2
+    for (const r of rows) {
+      if (r?.key && !r2Map.has(r.key)) {
+        items.push({
+          id: r.id,
+          key: r.key,
+          url: publicR2Url(r.key),
+          alt: r.alt ?? null,
+          isCover: !!r.isCover,
+          sortOrder: Number.isFinite(r.sortOrder) ? r.sortOrder : null,
+          size: r.size ?? null,
+          width: r.width ?? null,
+          height: r.height ?? null,
+          createdAt: r.createdAt ?? null,
+        });
+      }
     }
+
+    // 5) Orden final por sortOrder (asc) y fallback a createdAt
+    items.sort((a: any, b: any) => {
+      const soA = Number.isFinite(a.sortOrder) ? a.sortOrder : 999999;
+      const soB = Number.isFinite(b.sortOrder) ? b.sortOrder : 999999;
+      if (soA !== soB) return soA - soB;
+      const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tA - tB;
+    });
 
     const res = NextResponse.json({ ok: true, items, images: items });
     res.headers.set('Cache-Control', 'no-store');
     return res;
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: `internal_error: ${e?.message ?? String(e)}` },
+      { ok: false, error: 'internal_error', detail: e?.message ?? String(e) },
       { status: 500 },
     );
   }
 }
 
-/* ---------- POST: subir una imagen ---------- */
+/* ============================================================
+   POST: subir a R2 y (best-effort) crear registro en DB
+   ============================================================ */
 export async function POST(req: Request, ctx: any) {
   const { productId } = await readParams(ctx);
   if (productId == null) {
@@ -121,22 +136,24 @@ export async function POST(req: Request, ctx: any) {
 
   const file = form.get('file') as File | null;
   const alt = (String(form.get('alt') ?? '').trim() || null) as string | null;
+
   if (!file || typeof (file as any).arrayBuffer !== 'function') {
     return NextResponse.json({ ok: false, error: 'bad_request: field "file" required' }, { status: 400 });
   }
 
   try {
-    // sortOrder al final (0-based) si no viene
+    // sortOrder: si no viene, lo dejamos al final (0-based). Si DB falla, no pasa nada.
     let sortOrder = Number(form.get('sortOrder'));
     if (!Number.isFinite(sortOrder)) {
-      sortOrder =
-        ((await (prisma as any)?.productImage
-          ?.count({ where: { productId } })
-          .catch(() => 0)) ?? 0);
+      try {
+        sortOrder = (await (prisma as any)?.productImage?.count({ where: { productId } })) ?? 0;
+      } catch {
+        sortOrder = 0;
+      }
     }
     const isFirst = sortOrder === 0;
 
-    // key y subida a R2
+    // Subida a R2
     const safeName = sanitizeName((file as any).name || 'upload');
     const key = `products/${productId}/${Date.now()}-${Math.random()
       .toString(36)
@@ -146,14 +163,13 @@ export async function POST(req: Request, ctx: any) {
     try {
       await r2Put(key, file, contentType);
     } catch (e: any) {
-      // Si el binding R2 no existe o falla la subida, lo verás acá
       return NextResponse.json(
-        { ok: false, error: `r2_put_failed: ${e?.message ?? String(e)}` },
+        { ok: false, error: 'r2_put_failed', detail: e?.message ?? String(e) },
         { status: 500 },
       );
     }
 
-    // crear en DB (best effort)
+    // Crear en DB (best effort)
     let created: any = {
       id: undefined,
       key,
@@ -175,7 +191,7 @@ export async function POST(req: Request, ctx: any) {
         select: { id: true, key: true, alt: true, sortOrder: true, isCover: true, createdAt: true },
       });
     } catch {
-      // ignoramos si no hay tabla en edge
+      // Si Prisma falla en Edge, seguimos igual: la imagen ya está en R2
     }
 
     await audit(req, 'product_images.create', 'product', String(productId), {
@@ -189,20 +205,21 @@ export async function POST(req: Request, ctx: any) {
     );
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: `internal_error: ${e?.message ?? String(e)}` },
+      { ok: false, error: 'internal_error', detail: e?.message ?? String(e) },
       { status: 500 },
     );
   }
 }
 
-/* ---------- DELETE: borrar imagen ---------- */
+/* ============================================================
+   DELETE: soporta body JSON { imageId?, key? } o query ?imageId / ?key
+   ============================================================ */
 export async function DELETE(req: Request, ctx: any) {
   const { productId } = await readParams(ctx);
   if (productId == null) {
     return NextResponse.json({ ok: false, error: 'missing product id' }, { status: 400 });
   }
 
-  // Soportamos query (?imageId / ?key) y body
   const url = new URL(req.url);
   const qsImageId = url.searchParams.get('imageId');
   const qsKey = url.searchParams.get('key');
@@ -219,6 +236,7 @@ export async function DELETE(req: Request, ctx: any) {
   try {
     let keyToDelete: string | null = null;
 
+    // Si llega imageId, buscamos el key y borramos el registro
     if (imageId) {
       try {
         const img = await (prisma as any)?.productImage?.findFirst({
@@ -227,12 +245,11 @@ export async function DELETE(req: Request, ctx: any) {
         });
         if (img?.key) keyToDelete = img.key;
 
-        await (prisma as any)?.productImage?.deleteMany({
-          where: { id: imageId, productId },
-        });
+        await (prisma as any)?.productImage?.deleteMany({ where: { id: imageId, productId } });
       } catch {}
     }
 
+    // Si no tenemos key y vino key directo, validamos prefijo y lo usamos
     if (!keyToDelete && key) {
       const expectedPrefix = `products/${productId}/`;
       if (!key.startsWith(expectedPrefix)) {
@@ -244,6 +261,7 @@ export async function DELETE(req: Request, ctx: any) {
       keyToDelete = key;
     }
 
+    // Borrar en R2
     if (keyToDelete) {
       try {
         await r2Delete(keyToDelete);
@@ -258,7 +276,7 @@ export async function DELETE(req: Request, ctx: any) {
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: `internal_error: ${e?.message ?? String(e)}` },
+      { ok: false, error: 'internal_error', detail: e?.message ?? String(e) },
       { status: 500 },
     );
   }
