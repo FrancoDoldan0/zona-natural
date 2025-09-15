@@ -4,9 +4,10 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { createPrisma } from '@/lib/prisma-edge';
 import { computePricesBatch } from '@/lib/pricing';
-
+import { publicR2Url } from '@/lib/storage';
 
 const prisma = createPrisma();
+
 // Next 15: no tipar el 2º argumento; usar destructuring con `any`
 export async function GET(_req: Request, { params }: any) {
   const slug = String(params?.slug ?? '').trim();
@@ -19,7 +20,8 @@ export async function GET(_req: Request, { params }: any) {
     include: {
       images: {
         orderBy: { sortOrder: 'asc' },
-        select: { url: true, alt: true, sortOrder: true },
+        // ⚠️ En el schema nuevo no existe `url`, usamos `key`
+        select: { id: true, key: true, alt: true, sortOrder: true, isCover: true, size: true },
       },
       category: { select: { id: true, name: true, slug: true } },
       productTags: { select: { tagId: true } },
@@ -29,6 +31,17 @@ export async function GET(_req: Request, { params }: any) {
   if (!p) {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
+
+  // Mapear imágenes al shape público con `url`
+  const images =
+    (p.images ?? []).map((img) => ({
+      id: img.id,
+      url: publicR2Url(img.key),
+      alt: img.alt ?? null,
+      sortOrder: img.sortOrder ?? 0,
+      isCover: !!img.isCover,
+      size: img.size ?? null,
+    })) ?? [];
 
   // Precios y oferta (mismo helper que catálogo)
   const bare = [
@@ -52,8 +65,8 @@ export async function GET(_req: Request, { params }: any) {
     description: p.description,
     price: p.price,
     sku: p.sku,
-    coverUrl: p.images?.[0]?.url ?? null,
-    images: p.images ?? [],
+    coverUrl: images[0]?.url ?? null,
+    images,
     category: p.category
       ? { id: p.category.id, name: p.category.name, slug: p.category.slug }
       : null,
