@@ -32,6 +32,7 @@ async function callApi(pathEn: string, pathEs: string, init?: RequestInit) {
     ...init,
     cache: 'no-store',
     headers: {
+      Accept: 'application/json',
       ...(init?.headers || {}),
       ...(init?.method && init.method.toUpperCase() !== 'GET'
         ? { 'Content-Type': 'application/json' }
@@ -40,9 +41,23 @@ async function callApi(pathEn: string, pathEs: string, init?: RequestInit) {
   };
   const resEn = await fetch(pathEn, baseInit);
   if (resEn.ok) return resEn;
-  // si 404 u otro error, intentamos español
+  // Si 404/302/401 u otro error, intentar español
   const resEs = await fetch(pathEs, baseInit);
   return resEs;
+}
+
+/** Lee la respuesta de forma segura. Si no es JSON, devuelve el texto */
+async function readJsonSafe(res: Response): Promise<{ json: any | null; text: string }> {
+  const ct = res.headers.get('content-type') || '';
+  const body = await res.text(); // leemos una sola vez
+  if (ct.includes('application/json')) {
+    try {
+      return { json: JSON.parse(body), text: body };
+    } catch {
+      // cae abajo con el texto crudo
+    }
+  }
+  return { json: null, text: body };
 }
 
 export default function ProductosPage() {
@@ -77,12 +92,12 @@ export default function ProductosPage() {
 
   async function loadCats() {
     const res = await fetch('/api/admin/categories?take=999', { cache: 'no-store' });
-    const data = await res.json<any>();
+    const data = await res.json<any>().catch(() => ({}));
     if (data.ok) setCats(data.items);
   }
   async function loadSubs() {
     const res = await fetch('/api/admin/subcategories?take=999', { cache: 'no-store' });
-    const data = await res.json<any>();
+    const data = await res.json<any>().catch(() => ({}));
     if (data.ok) setSubs(data.items);
   }
 
@@ -100,20 +115,23 @@ export default function ProductosPage() {
       const urlEn = `/api/admin/products?${u.toString()}`;
       const urlEs = `/api/admin/productos?${u.toString()}`;
       const res = await callApi(urlEn, urlEs);
-      const data: ApiListResponse = await res.json();
+      const { json, text } = await readJsonSafe(res);
 
-      if (!res.ok || !('ok' in data) || data.ok !== true) {
-        throw new Error((data as any)?.error || `Error ${res.status}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`);
+      }
+      if (!json?.ok) {
+        throw new Error(json?.error || 'API error');
       }
 
       const list =
-        (data as any).items ??
-        (data as any).data ??
-        (data as any).rows ??
+        (json as any).items ??
+        (json as any).data ??
+        (json as any).rows ??
         ([] as Product[]);
 
       const count =
-        typeof (data as any).total === 'number' ? (data as any).total : list.length;
+        typeof (json as any).total === 'number' ? (json as any).total : list.length;
 
       setItems(list);
       setTotal(count);
@@ -134,7 +152,7 @@ export default function ProductosPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [limit, offset]); // filtros q/fCat/fSub se disparan manualmente con "Filtrar"
+  }, [limit, offset]);
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -151,8 +169,14 @@ export default function ProductosPage() {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      const data = await res.json<any>();
-      if (!res.ok || data?.ok !== true) throw new Error(data?.error || 'Error');
+      const { json, text } = await readJsonSafe(res);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`);
+      }
+      if (!json?.ok) {
+        throw new Error(json?.error || 'API error al crear');
+      }
 
       // limpiar
       setName('');
@@ -163,7 +187,7 @@ export default function ProductosPage() {
       setSId('');
       setStatus('ACTIVE');
 
-      // volver a la primera página y recargar
+      // recargar
       setOffset(0);
       await load();
     } catch (e: any) {
@@ -179,8 +203,13 @@ export default function ProductosPage() {
         `/api/admin/productos/${id}`,
         { method: 'DELETE' },
       );
-      const data = await res.json<any>();
-      if (!res.ok || data?.ok !== true) throw new Error(data?.error || 'No se pudo borrar');
+      const { json, text } = await readJsonSafe(res);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`);
+      }
+      if (!json?.ok) {
+        throw new Error(json?.error || 'No se pudo borrar');
+      }
       setItems((prev) => prev.filter((x) => x.id !== id));
       setTotal((t) => Math.max(0, t - 1));
     } catch (e: any) {
