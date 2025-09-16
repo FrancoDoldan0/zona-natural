@@ -13,17 +13,45 @@ type Product = {
   description: string | null;
   price: number | null;
   sku: string | null;
-  status: 'ACTIVE' | 'DRAFT' | string;
+  status: 'ACTIVE' | 'DRAFT' | 'ARCHIVED' | string;
   categoryId: number | null;
   subcategoryId: number | null;
   category?: { id: number; name: string } | null;
   subcategory?: { id: number; name: string } | null;
 };
 
+type ApiListOk = { ok: true; items: Product[]; total?: number };
+type ApiErr = { ok: false; error: string };
+type ApiListResponse = ApiListOk | ApiErr;
+
+const DEFAULT_LIMIT = 20;
+
+/** Fallback: primero prueba /products y si no, /productos */
+async function callApi(pathEn: string, pathEs: string, init?: RequestInit) {
+  const baseInit: RequestInit = {
+    ...init,
+    cache: 'no-store',
+    headers: {
+      ...(init?.headers || {}),
+      ...(init?.method && init.method.toUpperCase() !== 'GET'
+        ? { 'Content-Type': 'application/json' }
+        : {}),
+    },
+  };
+  const resEn = await fetch(pathEn, baseInit);
+  if (resEn.ok) return resEn;
+  // si 404 u otro error, intentamos español
+  const resEs = await fetch(pathEs, baseInit);
+  return resEs;
+}
+
 export default function ProductosPage() {
   const [cats, setCats] = useState<Category[]>([]);
   const [subs, setSubs] = useState<Subcategory[]>([]);
   const [items, setItems] = useState<Product[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
   // filtros
   const [q, setQ] = useState('');
@@ -34,12 +62,16 @@ export default function ProductosPage() {
     [subs, fCat],
   );
 
+  // paginación (limit/offset)
+  const [limit, setLimit] = useState(DEFAULT_LIMIT);
+  const [offset, setOffset] = useState(0);
+
   // form crear
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState<string>('');
   const [sku, setSku] = useState('');
-  const [status, setStatus] = useState<'ACTIVE' | 'DRAFT'>('ACTIVE');
+  const [status, setStatus] = useState<'ACTIVE' | 'DRAFT' | 'ARCHIVED'>('ACTIVE');
   const [cId, setCId] = useState<number | ''>('');
   const [sId, setSId] = useState<number | ''>('');
 
@@ -53,57 +85,111 @@ export default function ProductosPage() {
     const data = await res.json<any>();
     if (data.ok) setSubs(data.items);
   }
+
   async function load() {
-    const u = new URLSearchParams();
-    if (q) u.set('q', q);
-    if (fCat !== '') u.set('categoryId', String(fCat));
-    if (fSub !== '') u.set('subcategoryId', String(fSub));
-    const res = await fetch(`/api/admin/products?${u.toString()}`, { cache: 'no-store' });
-    const data = await res.json<any>();
-    if (data.ok) setItems(data.items);
+    try {
+      setLoading(true);
+      setErr(null);
+      const u = new URLSearchParams();
+      u.set('limit', String(limit));
+      u.set('offset', String(offset));
+      if (q.trim()) u.set('q', q.trim());
+      if (fCat !== '') u.set('categoryId', String(fCat));
+      if (fSub !== '') u.set('subcategoryId', String(fSub));
+
+      const urlEn = `/api/admin/products?${u.toString()}`;
+      const urlEs = `/api/admin/productos?${u.toString()}`;
+      const res = await callApi(urlEn, urlEs);
+      const data: ApiListResponse = await res.json();
+
+      if (!res.ok || !('ok' in data) || data.ok !== true) {
+        throw new Error((data as any)?.error || `Error ${res.status}`);
+      }
+
+      const list =
+        (data as any).items ??
+        (data as any).data ??
+        (data as any).rows ??
+        ([] as Product[]);
+
+      const count =
+        typeof (data as any).total === 'number' ? (data as any).total : list.length;
+
+      setItems(list);
+      setTotal(count);
+    } catch (e: any) {
+      setErr(e?.message || 'Error al cargar productos');
+      setItems([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     loadCats();
     loadSubs();
-    load();
   }, []);
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [limit, offset]); // filtros q/fCat/fSub se disparan manualmente con "Filtrar"
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
-    const body: any = { name: name.trim(), status };
-    if (description.trim() !== '') body.description = description.trim();
-    if (price.trim() !== '') body.price = Number(price);
-    if (sku.trim() !== '') body.sku = sku.trim();
-    if (cId !== '') body.categoryId = Number(cId);
-    if (sId !== '') body.subcategoryId = Number(sId);
+    try {
+      setErr(null);
+      const body: any = { name: name.trim(), status };
+      if (description.trim() !== '') body.description = description.trim();
+      if (price.trim() !== '') body.price = Number(price.replace(',', '.'));
+      if (sku.trim() !== '') body.sku = sku.trim();
+      if (cId !== '') body.categoryId = Number(cId);
+      if (sId !== '') body.subcategoryId = Number(sId);
 
-    const res = await fetch('/api/admin/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json<any>();
-    if (data.ok) {
+      const res = await callApi('/api/admin/products', '/api/admin/productos', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      const data = await res.json<any>();
+      if (!res.ok || data?.ok !== true) throw new Error(data?.error || 'Error');
+
+      // limpiar
       setName('');
       setDescription('');
       setPrice('');
       setSku('');
       setCId('');
       setSId('');
+      setStatus('ACTIVE');
+
+      // volver a la primera página y recargar
+      setOffset(0);
       await load();
-    } else {
-      alert(data.error || 'Error');
+    } catch (e: any) {
+      setErr(e?.message || 'Error al crear producto');
     }
   }
 
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar producto?')) return;
-    const res = await fetch(`/api/admin/products/${id}`, { method: 'DELETE' });
-    const data = await res.json<any>();
-    if (data.ok) setItems((prev) => prev.filter((x) => x.id !== id));
-    else alert(data.error || 'No se pudo borrar');
+    try {
+      const res = await callApi(
+        `/api/admin/products/${id}`,
+        `/api/admin/productos/${id}`,
+        { method: 'DELETE' },
+      );
+      const data = await res.json<any>();
+      if (!res.ok || data?.ok !== true) throw new Error(data?.error || 'No se pudo borrar');
+      setItems((prev) => prev.filter((x) => x.id !== id));
+      setTotal((t) => Math.max(0, t - 1));
+    } catch (e: any) {
+      alert(e?.message || 'No se pudo borrar');
+    }
   }
+
+  const page = Math.floor(offset / limit) + 1;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
@@ -139,6 +225,7 @@ export default function ProductosPage() {
           >
             <option value="ACTIVE">ACTIVE</option>
             <option value="DRAFT">DRAFT</option>
+            <option value="ARCHIVED">ARCHIVED</option>
           </select>
           <select
             className="border rounded p-2"
@@ -190,7 +277,7 @@ export default function ProductosPage() {
           placeholder="Buscar por nombre/slug/SKU…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && load()}
+          onKeyDown={(e) => e.key === 'Enter' && (setOffset(0), load())}
         />
         <select
           className="border rounded p-2"
@@ -220,7 +307,13 @@ export default function ProductosPage() {
             </option>
           ))}
         </select>
-        <button className="border rounded px-3" onClick={load}>
+        <button
+          className="border rounded px-3"
+          onClick={() => {
+            setOffset(0);
+            load();
+          }}
+        >
           Filtrar
         </button>
       </div>
@@ -243,35 +336,41 @@ export default function ProductosPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((p) => (
-              <tr key={p.id}>
-                <td className="p-2 border">{p.id}</td>
-                <td className="p-2 border">{p.name}</td>
-                <td className="p-2 border">{p.slug}</td>
-                <td className="p-2 border">
-                  {typeof p.price === 'number'
-                    ? `$${p.price.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-                    : '-'}
-                </td>
-                <td className="p-2 border">{p.sku ?? '-'}</td>
-                <td className="p-2 border">{p.status}</td>
-                <td className="p-2 border">{p.category?.name ?? '-'}</td>
-                <td className="p-2 border">{p.subcategory?.name ?? '-'}</td>
-                <td className="p-2 border max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">
-                  {p.description ?? '-'}
-                </td>
-                <td className="p-2 border space-x-2">
-                  {/* NUEVO: botón Editar */}
-                  <Link href={`/admin/productos/${p.id}`} className="text-blue-600 underline">
-                    Editar
-                  </Link>
-                  <button className="text-red-600" onClick={() => onDelete(p.id)}>
-                    Eliminar
-                  </button>
+            {loading ? (
+              <tr>
+                <td className="p-3 text-sm opacity-70" colSpan={10}>
+                  Cargando…
                 </td>
               </tr>
-            ))}
-            {!items.length && (
+            ) : items.length ? (
+              items.map((p) => (
+                <tr key={p.id}>
+                  <td className="p-2 border">{p.id}</td>
+                  <td className="p-2 border">{p.name}</td>
+                  <td className="p-2 border">{p.slug}</td>
+                  <td className="p-2 border">
+                    {typeof p.price === 'number'
+                      ? `$${p.price.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                      : '-'}
+                  </td>
+                  <td className="p-2 border">{p.sku ?? '-'}</td>
+                  <td className="p-2 border">{p.status}</td>
+                  <td className="p-2 border">{p.category?.name ?? '-'}</td>
+                  <td className="p-2 border">{p.subcategory?.name ?? '-'}</td>
+                  <td className="p-2 border max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                    {p.description ?? '-'}
+                  </td>
+                  <td className="p-2 border space-x-2">
+                    <Link href={`/admin/productos/${p.id}`} className="text-blue-600 underline">
+                      Editar
+                    </Link>
+                    <button className="text-red-600" onClick={() => onDelete(p.id)}>
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
               <tr>
                 <td className="p-3 text-sm opacity-70" colSpan={10}>
                   Sin productos
@@ -281,6 +380,46 @@ export default function ProductosPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Paginación */}
+      <div className="flex items-center justify-between border rounded p-2">
+        <div className="text-sm opacity-80">
+          {total > 0 ? `Mostrando ${items.length} de ${total} (p. ${page}/${Math.max(1, Math.ceil(total / limit))})` : '—'}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            className="border rounded px-3 py-1 disabled:opacity-40"
+            disabled={loading || offset <= 0}
+            onClick={() => setOffset(Math.max(0, offset - limit))}
+          >
+            ← Anterior
+          </button>
+          <select
+            className="border rounded px-2 py-1"
+            value={limit}
+            onChange={(e) => {
+              const v = Math.max(1, parseInt(e.target.value, 10) || DEFAULT_LIMIT);
+              setLimit(v);
+              setOffset(0);
+            }}
+          >
+            {[10, 20, 50, 100].map((n) => (
+              <option key={n} value={n}>
+                {n} / pág.
+              </option>
+            ))}
+          </select>
+          <button
+            className="border rounded px-3 py-1 disabled:opacity-40"
+            disabled={loading || offset + limit >= total}
+            onClick={() => setOffset(offset + limit)}
+          >
+            Siguiente →
+          </button>
+        </div>
+      </div>
+
+      {err && <p className="text-sm text-red-600">Error: {err}</p>}
     </main>
   );
 }

@@ -1,3 +1,4 @@
+// app/api/admin/products/route.ts
 export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
 import { createPrisma } from '@/lib/prisma-edge';
@@ -5,42 +6,60 @@ import { z } from 'zod';
 import { slugify } from '@/lib/slug';
 import { audit } from '@/lib/audit';
 
-
 const prisma = createPrisma();
+
 const CreateSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(1).optional(),
   description: z.string().max(5000).optional().nullable(),
   price: z.coerce.number().optional().nullable(),
   sku: z.string().max(120).optional().nullable(),
-  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT']).optional(),
+  status: z.enum(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE']).optional(),
   categoryId: z.coerce.number().optional().nullable(),
   subcategoryId: z.coerce.number().optional().nullable(),
 });
 
+const STATUS_VALUES = new Set(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE'] as const);
+
 // GET /api/admin/products
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const q = (url.searchParams.get('q') || '').trim();
-  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-  const perPage = Math.min(60, Math.max(1, parseInt(url.searchParams.get('perPage') || '12', 10)));
 
-  const status = url.searchParams.get('status') || '';
-  const categoryId = parseInt(url.searchParams.get('categoryId') || '', 10);
-  const subcategoryId = parseInt(url.searchParams.get('subcategoryId') || '', 10);
-  const minPrice = parseFloat(url.searchParams.get('minPrice') || '');
-  const maxPrice = parseFloat(url.searchParams.get('maxPrice') || '');
+  const q = (url.searchParams.get('q') || '').trim();
+
+  // Soporta limit/offset y también page/perPage como fallback
+  const limitRaw = url.searchParams.get('limit');
+  const offsetRaw = url.searchParams.get('offset');
+  const pageRaw = url.searchParams.get('page');
+  const perPageRaw = url.searchParams.get('perPage');
+
+  let take =
+    Math.min(100, Math.max(1, parseInt(limitRaw ?? '', 10))) ||
+    Math.min(60, Math.max(1, parseInt(perPageRaw ?? '', 10) || 12));
+  let skip = parseInt(offsetRaw ?? '', 10);
+  if (!Number.isFinite(skip)) {
+    const page = Math.max(1, parseInt(pageRaw || '1', 10));
+    const perPage = Math.min(60, Math.max(1, parseInt(perPageRaw || '12', 10)));
+    take = perPage;
+    skip = (page - 1) * perPage;
+  }
+
+  const status = (url.searchParams.get('status') || '').toUpperCase();
+  const categoryId = Number(url.searchParams.get('categoryId'));
+  const subcategoryId = Number(url.searchParams.get('subcategoryId'));
+  const minPrice = Number(url.searchParams.get('minPrice'));
+  const maxPrice = Number(url.searchParams.get('maxPrice'));
 
   const where: any = {};
   if (q) {
     where.OR = [
-      { name: { contains: q } },
-      { slug: { contains: q } },
-      { description: { contains: q } },
-      { sku: { contains: q } },
+      { name: { contains: q, mode: 'insensitive' } },
+      { slug: { contains: q, mode: 'insensitive' } },
+      { description: { contains: q, mode: 'insensitive' } },
+      { sku: { contains: q, mode: 'insensitive' } },
     ];
   }
-  if (status === 'ACTIVE' || status === 'INACTIVE' || status === 'DRAFT') where.status = status;
+  if (STATUS_VALUES.has(status as any)) where.status = status as any;
   if (Number.isFinite(categoryId)) where.categoryId = categoryId;
   if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
   if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
@@ -49,23 +68,30 @@ export async function GET(req: NextRequest) {
     if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
   }
 
-  const skip = (page - 1) * perPage;
   const [total, items] = await Promise.all([
     prisma.product.count({ where }),
     prisma.product.findMany({
       where,
       skip,
-      take: perPage,
+      take,
       orderBy: { id: 'desc' },
-      include: {
-        category: true,
-        subcategory: true,
-        images: { orderBy: { sortOrder: 'asc' } },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        sku: true,
+        status: true,
+        categoryId: true,
+        subcategoryId: true,
+        category: { select: { id: true, name: true } },
+        subcategory: { select: { id: true, name: true } },
       },
     }),
   ]);
 
-  return NextResponse.json({ ok: true, page, perPage, total, items });
+  return NextResponse.json({ ok: true, items, total });
 }
 
 // POST /api/admin/products
@@ -80,20 +106,39 @@ export async function POST(req: NextRequest) {
       );
     }
     const b = parsed.data;
-    const newSlug = b.slug?.trim() || slugify(b.name);
+
+    const newSlug = (b.slug?.trim() || slugify(b.name)).trim();
+    const sku = (b.sku ?? '').trim();
+    const safeStatus = STATUS_VALUES.has((b.status || 'ACTIVE') as any)
+      ? (b.status as any)
+      : 'ACTIVE';
+
     const created = await prisma.product.create({
       data: {
         name: b.name,
         slug: newSlug,
         description: b.description ?? null,
         price: b.price ?? null,
-        sku: b.sku || '' || null,
-        status: b.status || 'ACTIVE',
+        sku: sku === '' ? null : sku,
+        status: safeStatus,
         categoryId: b.categoryId ?? null,
         subcategoryId: b.subcategoryId ?? null,
       },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        sku: true,
+        status: true,
+        categoryId: true,
+        subcategoryId: true,
+      },
     });
+
     await audit(req, 'CREATE', 'Product', created.id, { name: b.name, slug: newSlug });
+
     return NextResponse.json({ ok: true, item: created }, { status: 201 });
   } catch (e: any) {
     if (e?.code === 'P2002') {
