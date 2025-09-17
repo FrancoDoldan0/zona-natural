@@ -10,6 +10,7 @@ export type Product = {
   id: number;
   name: string;
   slug: string;
+
   // catálogo puede traer "cover", detalle puede traer "coverUrl" o "images"
   cover?: string | null;
   coverUrl?: string | null;
@@ -22,6 +23,9 @@ export type Product = {
 
   hasDiscount?: boolean;
   discountPercent?: number | null;
+
+  // ✅ ahora incluimos el estado (para mostrar “AGOTADO” en la card)
+  status?: 'ACTIVE' | 'AGOTADO' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | string;
 };
 
 // Evitamos headers() en Next 15: usamos BASE_URL pública
@@ -51,8 +55,9 @@ function normalizeProduct(raw: any): Product {
     price,
     priceOriginal: raw?.priceOriginal ?? null,
     priceFinal: raw?.priceFinal ?? null,
-    hasDiscount: raw?.hasDiscount ?? false,
-    discountPercent: raw?.discountPercent ?? null,
+    hasDiscount: Boolean(raw?.hasDiscount ?? false),
+    discountPercent: typeof raw?.discountPercent === 'number' ? raw.discountPercent : null,
+    status: typeof raw?.status === 'string' ? raw.status : undefined, // ✅ importante
   };
 }
 
@@ -79,7 +84,7 @@ async function getData(page = 1, perPage = 12): Promise<{
   const data = await res.json<ProductsApiResp>();
   const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
   const items: Product[] = rawItems.map(normalizeProduct);
-  const total: number = data.total ?? items.length;
+  const total: number = typeof data.total === 'number' ? data.total : items.length;
 
   return {
     items,

@@ -8,16 +8,16 @@ import { publicR2Url } from '@/lib/storage';
 
 const prisma = createPrisma();
 
-// Next 15: no tipar el 2º argumento; usar destructuring con `any`
+// Next 15: no tipar el 2º argumento; usamos `any` para evitar incompatibilidades
 export async function GET(_req: Request, { params }: any) {
   const slug = String(params?.slug ?? '').trim();
   if (!slug) {
     return NextResponse.json({ error: 'missing slug' }, { status: 400 });
   }
 
-  // ✅ Solo productos visibles públicamente: ACTIVE o AGOTADO
-  //  (usamos findFirst para poder combinar slug + status)
-  const p = await prisma.product.findFirst({
+  // Solo productos visibles públicamente: ACTIVE o AGOTADO
+  // findFirst para combinar slug + status
+  const p: any = await prisma.product.findFirst({
     where: {
       slug,
       status: { in: ['ACTIVE', 'AGOTADO'] },
@@ -39,7 +39,7 @@ export async function GET(_req: Request, { params }: any) {
 
   // Mapear imágenes al shape público con `url`
   const images =
-    (p.images ?? []).map((img) => ({
+    (p.images ?? []).map((img: any) => ({
       id: img.id,
       url: publicR2Url(img.key),
       alt: img.alt ?? null,
@@ -54,7 +54,7 @@ export async function GET(_req: Request, { params }: any) {
       id: p.id,
       price: p.price,
       categoryId: p.categoryId,
-      tags: (p.productTags || []).map((t) => t.tagId),
+      tags: (p.productTags || []).map((t: any) => t.tagId),
     },
   ];
   const priced = await computePricesBatch(bare);
@@ -70,12 +70,10 @@ export async function GET(_req: Request, { params }: any) {
     description: p.description,
     price: p.price,
     sku: p.sku,
-    status: p.status, // 👈 para poder mostrar “AGOTADO” en la UI
+    status: p.status as string, // para poder mostrar “AGOTADO” en la UI
     coverUrl: images[0]?.url ?? null,
     images,
-    category: p.category
-      ? { id: p.category.id, name: p.category.name, slug: p.category.slug }
-      : null,
+    category: p.category ? { id: p.category.id, name: p.category.name, slug: p.category.slug } : null,
 
     // datos enriquecidos para la UI
     priceOriginal: pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null),
