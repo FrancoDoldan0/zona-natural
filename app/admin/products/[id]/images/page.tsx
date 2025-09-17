@@ -8,13 +8,71 @@ type ProductImage = {
   productId: number;
   url: string;
   alt: string | null;
-  sortOrder: number;
+  sortOrder: number | null;
 };
 
 function getCsrf() {
   const m = document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : '';
 }
+
+/** Intenta varias URLs hasta obtener 2xx + JSON válido */
+async function fetchJsonTry(urls: string[], init?: RequestInit) {
+  let lastErr: any = null;
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { ...init, cache: 'no-store' });
+      const ct = r.headers.get('content-type') || '';
+      const body = await r.text();
+      const json = ct.includes('application/json')
+        ? (() => { try { return JSON.parse(body); } catch { return null; } })()
+        : null;
+
+      if (!r.ok) {
+        lastErr = new Error(
+          `${init?.method || 'GET'} ${u} → ${r.status} ${r.statusText} — ${body?.slice(0, 200) || '(sin cuerpo)'}`
+        );
+        continue;
+      }
+      return json ?? body;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error('No pude leer la API.');
+}
+
+/** URLs de imágenes */
+const urls = {
+  list: (id: number) => [
+    `/api/admin/product-images?productId=${id}`,
+    `/api/admin/products/images?productId=${id}`,
+    `/api/admin/productos/imagenes?productId=${id}`,      // español (por query)
+    `/api/admin/products/${id}/images`,                    // path EN
+    `/api/admin/productos/${id}/imagenes`,                 // path ES
+  ],
+  upload: (id: number) => [
+    `/api/admin/product-images?productId=${id}`,
+    `/api/admin/products/images?productId=${id}`,
+    `/api/admin/productos/imagenes?productId=${id}`,
+    `/api/admin/products/${id}/images`,
+    `/api/admin/productos/${id}/imagenes`,
+  ],
+  reorder: (id: number) => [
+    `/api/admin/product-images/reorder?productId=${id}`,
+    `/api/admin/products/images/reorder?productId=${id}`,
+    `/api/admin/productos/imagenes/reordenar?productId=${id}`,
+    `/api/admin/products/${id}/images/reorder`,
+    `/api/admin/productos/${id}/imagenes/reordenar`,
+  ],
+  item: (id: number, imageId: number) => [
+    `/api/admin/product-images/${imageId}?productId=${id}`,
+    `/api/admin/products/images/${imageId}?productId=${id}`,
+    `/api/admin/productos/imagenes/${imageId}?productId=${id}`,
+    `/api/admin/products/${id}/images/${imageId}`,
+    `/api/admin/productos/${id}/imagenes/${imageId}`,
+  ],
+};
 
 export default function ImagesPage() {
   const params = useParams<{ id: string }>();
@@ -37,12 +95,15 @@ export default function ImagesPage() {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`${base}/api/admin/products/${productId}/images`, {
+      const j = await fetchJsonTry(urls.list(productId).map((u) => `${base}${u}`), {
+        headers: { Accept: 'application/json' },
         credentials: 'include',
       });
-      const j = await r.json<any>();
-      if (!j.ok) throw new Error(j.error || 'load_failed');
-      setItems((j.items as ProductImage[]).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
+
+      const arr: ProductImage[] =
+        j?.items ?? j?.data ?? Array.isArray(j) ? j : [];
+
+      setItems((arr as ProductImage[]).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
       setDirty(false);
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -53,6 +114,7 @@ export default function ImagesPage() {
 
   useEffect(() => {
     if (Number.isFinite(productId)) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
 
   function onDragStart(idx: number) {
@@ -63,8 +125,7 @@ export default function ImagesPage() {
     overIndex.current = idx;
   }
   function onDrop() {
-    const from = dragIndex.current,
-      to = overIndex.current;
+    const from = dragIndex.current, to = overIndex.current;
     dragIndex.current = null;
     overIndex.current = null;
     if (from == null || to == null || from === to) return;
@@ -82,15 +143,18 @@ export default function ImagesPage() {
     setError(null);
     try {
       const order = items.map((it) => it.id);
-      const r = await fetch(`${base}/api/admin/products/${productId}/images/reorder`, {
+      const j = await fetchJsonTry(urls.reorder(productId).map((u) => `${base}${u}`), {
         method: 'PUT',
-        headers: { 'content-type': 'application/json', 'x-csrf-token': getCsrf() },
+        headers: {
+          'content-type': 'application/json',
+          'x-csrf-token': getCsrf(),
+          Accept: 'application/json',
+        },
         credentials: 'include',
         body: JSON.stringify({ order }),
       });
-      const j = await r.json<any>();
-      if (!r.ok || !j.ok) throw new Error(j.error || 'reorder_failed');
-      setItems((j.items as ProductImage[]).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
+      const arr: ProductImage[] = j?.items ?? j?.data ?? [];
+      setItems(arr.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
       setDirty(false);
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -103,14 +167,16 @@ export default function ImagesPage() {
     setSavingId(id);
     setError(null);
     try {
-      const r = await fetch(`${base}/api/admin/products/${productId}/images/${id}`, {
+      await fetchJsonTry(urls.item(productId, id).map((u) => `${base}${u}`), {
         method: 'PUT',
-        headers: { 'content-type': 'application/json', 'x-csrf-token': getCsrf() },
+        headers: {
+          'content-type': 'application/json',
+          'x-csrf-token': getCsrf(),
+          Accept: 'application/json',
+        },
         credentials: 'include',
         body: JSON.stringify({ move: dir }),
       });
-      const j = await r.json<any>();
-      if (!r.ok || !j.ok) throw new Error(j.error || `move_${dir}_failed`);
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -123,14 +189,16 @@ export default function ImagesPage() {
     setSavingId(id);
     setError(null);
     try {
-      const r = await fetch(`${base}/api/admin/products/${productId}/images/${id}`, {
+      await fetchJsonTry(urls.item(productId, id).map((u) => `${base}${u}`), {
         method: 'PUT',
-        headers: { 'content-type': 'application/json', 'x-csrf-token': getCsrf() },
+        headers: {
+          'content-type': 'application/json',
+          'x-csrf-token': getCsrf(),
+          Accept: 'application/json',
+        },
         credentials: 'include',
         body: JSON.stringify({ alt: newAlt }),
       });
-      const j = await r.json<any>();
-      if (!r.ok || !j.ok) throw new Error(j.error || 'alt_update_failed');
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -144,13 +212,11 @@ export default function ImagesPage() {
     setSavingId(id);
     setError(null);
     try {
-      const r = await fetch(`${base}/api/admin/products/${productId}/images/${id}`, {
+      await fetchJsonTry(urls.item(productId, id).map((u) => `${base}${u}`), {
         method: 'DELETE',
-        headers: { 'x-csrf-token': getCsrf() },
+        headers: { 'x-csrf-token': getCsrf(), Accept: 'application/json' },
         credentials: 'include',
       });
-      const j = await r.json<any>();
-      if (!r.ok || !j.ok) throw new Error(j.error || 'delete_failed');
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -168,18 +234,18 @@ export default function ImagesPage() {
       const fd = new FormData();
       fd.set('file', file, file.name);
       if (alt.trim()) fd.set('alt', alt.trim());
-      const r = await fetch(`${base}/api/admin/products/${productId}/images`, {
+
+      await fetchJsonTry(urls.upload(productId).map((u) => `${base}${u}`), {
         method: 'POST',
-        headers: { 'x-csrf-token': getCsrf() },
+        headers: { 'x-csrf-token': getCsrf(), Accept: 'application/json' },
         credentials: 'include',
         body: fd,
       });
-      const j = await r.json<any>();
-      if (!r.ok || !j.ok) throw new Error(j.error || 'upload_failed');
+
       setFile(null);
       setAlt('');
-      (document.getElementById('fileInput') as HTMLInputElement | null)?.value &&
-        ((document.getElementById('fileInput') as HTMLInputElement).value = '');
+      const input = document.getElementById('fileInput') as HTMLInputElement | null;
+      if (input) input.value = '';
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -250,7 +316,7 @@ export default function ImagesPage() {
 
               <div className="flex-1">
                 <div className="text-xs text-gray-500">
-                  id={it.id} • sortOrder={it.sortOrder}
+                  id={it.id} • sortOrder={it.sortOrder ?? '-'}
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   <input
