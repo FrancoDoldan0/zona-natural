@@ -1,7 +1,7 @@
 // app/api/admin/products/[id]/route.ts
 export const runtime = 'edge';
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createPrisma } from '@/lib/prisma-edge';
 import { z } from 'zod';
 import { slugify } from '@/lib/slug';
@@ -13,7 +13,7 @@ const STATUS_VALUES = new Set(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED'] as con
 
 const UpdateSchema = z.object({
   name: z.string().min(1).optional(),
-  // slug vacío ("") => se recalcula; si no se envía, no se toca
+  // slug vacío ("") => recalcular; si no se envía, no se toca
   slug: z.string().optional(),
   description: z.string().max(5000).optional().nullable(),
   price: z.coerce.number().optional().nullable(),
@@ -23,21 +23,19 @@ const UpdateSchema = z.object({
   subcategoryId: z.coerce.number().optional().nullable(),
 });
 
-/** Helper: obtiene el id numérico desde la URL */
-function getIdFromUrl(req: Request): number | null {
+function getIdFromUrl(req: NextRequest): number | null {
   const { pathname } = new URL(req.url);
-  const segs = pathname.split('/').filter(Boolean);
-  const idStr = segs[segs.length - 1] || '';
-  const id = Number(idStr);
+  // /api/admin/products/123
+  const m = pathname.match(/\/api\/admin\/products\/(\d+)(?:\/)?$/);
+  if (!m) return null;
+  const id = Number(m[1]);
   return Number.isFinite(id) && id > 0 ? id : null;
 }
 
-// GET /api/admin/products/:id
-export async function GET(req: Request) {
+// GET /api/admin/products/:id  -> { ok, item }
+export async function GET(req: NextRequest) {
   const id = getIdFromUrl(req);
-  if (!id) {
-    return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
-  }
+  if (!id) return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
 
   const item = await prisma.product.findUnique({
     where: { id },
@@ -53,24 +51,17 @@ export async function GET(req: Request) {
       subcategoryId: true,
       category: { select: { id: true, name: true } },
       subcategory: { select: { id: true, name: true } },
-      // ⬇️ devolvemos todas las columnas de images y solo ordenamos
-      images: { orderBy: { sortOrder: 'asc' } },
     },
   });
 
-  if (!item) {
-    return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
-  }
-
+  if (!item) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
   return NextResponse.json({ ok: true, item });
 }
 
-// PUT /api/admin/products/:id
-export async function PUT(req: Request) {
+// PUT /api/admin/products/:id  -> { ok, item }
+export async function PUT(req: NextRequest) {
   const id = getIdFromUrl(req);
-  if (!id) {
-    return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
-  }
+  if (!id) return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
 
   try {
     const json = await req.json().catch(() => ({}));
@@ -84,21 +75,17 @@ export async function PUT(req: Request) {
     const b = parsed.data;
 
     const data: any = {};
-
     if ('name' in b) data.name = b.name;
     if ('description' in b) data.description = b.description ?? null;
     if ('price' in b) data.price = b.price ?? null;
     if ('sku' in b) data.sku = (b.sku ?? '') === '' ? null : b.sku;
     if ('categoryId' in b) data.categoryId = b.categoryId ?? null;
     if ('subcategoryId' in b) data.subcategoryId = b.subcategoryId ?? null;
-
     if ('status' in b && typeof b.status === 'string' && STATUS_VALUES.has(b.status as any)) {
       data.status = b.status;
     }
 
-    // Manejo de slug:
-    // - Si viene string vacío => recalcular con (b.name || nombre actual)
-    // - Si viene string no vacío => usarlo tal cual (trim)
+    // slug: si viene "", recalcular; si viene string no vacío, setear; si no viene, no tocar
     if ('slug' in b && typeof b.slug === 'string') {
       const s = b.slug.trim();
       if (s === '') {
@@ -127,11 +114,9 @@ export async function PUT(req: Request) {
     });
 
     await audit(req, 'UPDATE', 'Product', id, data);
-
     return NextResponse.json({ ok: true, item });
   } catch (e: any) {
     if (e?.code === 'P2002') {
-      // p.ej. unique(slug)
       return NextResponse.json(
         { ok: false, error: 'unique_constraint', field: 'slug' },
         { status: 409 },
