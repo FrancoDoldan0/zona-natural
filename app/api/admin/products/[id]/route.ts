@@ -1,7 +1,7 @@
 // app/api/admin/products/[id]/route.ts
 export const runtime = 'edge';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createPrisma } from '@/lib/prisma-edge';
 import { z } from 'zod';
 import { slugify } from '@/lib/slug';
@@ -23,10 +23,19 @@ const UpdateSchema = z.object({
   subcategoryId: z.coerce.number().optional().nullable(),
 });
 
+/** Helper: obtiene el id numérico desde la URL */
+function getIdFromUrl(req: Request): number | null {
+  const { pathname } = new URL(req.url);
+  const segs = pathname.split('/').filter(Boolean);
+  const idStr = segs[segs.length - 1] || '';
+  const id = Number(idStr);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
 // GET /api/admin/products/:id
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const id = Number(params.id);
-  if (!Number.isFinite(id) || id <= 0) {
+export async function GET(req: Request) {
+  const id = getIdFromUrl(req);
+  if (!id) {
     return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
   }
 
@@ -56,9 +65,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 // PUT /api/admin/products/:id
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = Number(params.id);
-  if (!Number.isFinite(id) || id <= 0) {
+export async function PUT(req: Request) {
+  const id = getIdFromUrl(req);
+  if (!id) {
     return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
   }
 
@@ -87,15 +96,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
 
     // Manejo de slug:
-    // - Si viene string vacío => recalcular slug con (b.name || nombre actual)
-    // - Si viene string no vacío => asignar tal cual (trim)
+    // - Si viene string vacío => recalcular con (b.name || nombre actual)
+    // - Si viene string no vacío => usarlo tal cual (trim)
     if ('slug' in b && typeof b.slug === 'string') {
       const s = b.slug.trim();
       if (s === '') {
-        const current = await prisma.product.findUnique({
-          where: { id },
-          select: { name: true },
-        });
+        const current = await prisma.product.findUnique({ where: { id }, select: { name: true } });
         const base = (b.name ?? current?.name ?? '').trim();
         data.slug = slugify(base || `product-${id}`);
       } else {
