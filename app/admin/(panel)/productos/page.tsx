@@ -13,7 +13,7 @@ type Product = {
   description: string | null;
   price: number | null;
   sku: string | null;
-  status: 'ACTIVE' | 'DRAFT' | 'ARCHIVED' | string;
+  status: 'ACTIVE' | 'DRAFT' | 'ARCHIVED' | 'INACTIVE' | 'AGOTADO' | string;
   categoryId: number | null;
   subcategoryId: number | null;
   category?: { id: number; name: string } | null;
@@ -86,7 +86,9 @@ export default function ProductosPage() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState<string>('');
   const [sku, setSku] = useState('');
-  const [status, setStatus] = useState<'ACTIVE' | 'DRAFT' | 'ARCHIVED'>('ACTIVE');
+  const [status, setStatus] = useState<'ACTIVE' | 'DRAFT' | 'ARCHIVED' | 'INACTIVE' | 'AGOTADO'>(
+    'ACTIVE',
+  );
   const [cId, setCId] = useState<number | ''>('');
   const [sId, setSId] = useState<number | ''>('');
 
@@ -118,20 +120,18 @@ export default function ProductosPage() {
       const { json, text } = await readJsonSafe(res);
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`);
+        throw new Error(
+          `HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`,
+        );
       }
       if (!json?.ok) {
         throw new Error(json?.error || 'API error');
       }
 
       const list =
-        (json as any).items ??
-        (json as any).data ??
-        (json as any).rows ??
-        ([] as Product[]);
+        (json as any).items ?? (json as any).data ?? (json as any).rows ?? ([] as Product[]);
 
-      const count =
-        typeof (json as any).total === 'number' ? (json as any).total : list.length;
+      const count = typeof (json as any).total === 'number' ? (json as any).total : list.length;
 
       setItems(list);
       setTotal(count);
@@ -172,7 +172,9 @@ export default function ProductosPage() {
       const { json, text } = await readJsonSafe(res);
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`);
+        throw new Error(
+          `HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`,
+        );
       }
       if (!json?.ok) {
         throw new Error(json?.error || 'API error al crear');
@@ -198,14 +200,14 @@ export default function ProductosPage() {
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar producto?')) return;
     try {
-      const res = await callApi(
-        `/api/admin/products/${id}`,
-        `/api/admin/productos/${id}`,
-        { method: 'DELETE' },
-      );
+      const res = await callApi(`/api/admin/products/${id}`, `/api/admin/productos/${id}`, {
+        method: 'DELETE',
+      });
       const { json, text } = await readJsonSafe(res);
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`);
+        throw new Error(
+          `HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`,
+        );
       }
       if (!json?.ok) {
         throw new Error(json?.error || 'No se pudo borrar');
@@ -255,6 +257,8 @@ export default function ProductosPage() {
             <option value="ACTIVE">ACTIVE</option>
             <option value="DRAFT">DRAFT</option>
             <option value="ARCHIVED">ARCHIVED</option>
+            <option value="INACTIVE">INACTIVE</option>
+            <option value="AGOTADO">AGOTADO</option>
           </select>
           <select
             className="border rounded p-2"
@@ -383,7 +387,15 @@ export default function ProductosPage() {
                       : '-'}
                   </td>
                   <td className="p-2 border">{p.sku ?? '-'}</td>
-                  <td className="p-2 border">{p.status}</td>
+                  <td className="p-2 border">
+                    {p.status === 'AGOTADO' ? (
+                      <span className="inline-block rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-xs">
+                        AGOTADO
+                      </span>
+                    ) : (
+                      p.status
+                    )}
+                  </td>
                   <td className="p-2 border">{p.category?.name ?? '-'}</td>
                   <td className="p-2 border">{p.subcategory?.name ?? '-'}</td>
                   <td className="p-2 border max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">
@@ -413,7 +425,12 @@ export default function ProductosPage() {
       {/* Paginación */}
       <div className="flex items-center justify-between border rounded p-2">
         <div className="text-sm opacity-80">
-          {total > 0 ? `Mostrando ${items.length} de ${total} (p. ${page}/${Math.max(1, Math.ceil(total / limit))})` : '—'}
+          {total > 0
+            ? `Mostrando ${items.length} de ${total} (p. ${page}/${Math.max(
+                1,
+                Math.ceil(total / limit),
+              )})`
+            : '—'}
         </div>
         <div className="flex items-center gap-2">
           <button

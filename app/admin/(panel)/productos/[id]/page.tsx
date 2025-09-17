@@ -8,6 +8,9 @@ import { useParams } from 'next/navigation';
 type Category = { id: number; name: string };
 type Subcategory = { id: number; name: string; categoryId: number };
 type ProductImage = { id: number; url: string; alt?: string | null; sortOrder?: number | null };
+
+type Status = 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | 'AGOTADO';
+
 type Product = {
   id: number;
   name: string;
@@ -15,13 +18,15 @@ type Product = {
   description: string | null;
   price: number | null;
   sku: string | null;
-  status: 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED';
+  status: Status;
   categoryId: number | null;
   subcategoryId: number | null;
   category?: { id: number; name: string } | null;
   subcategory?: { id: number; name: string } | null;
   images?: ProductImage[];
 };
+
+const STATUS_OPTS: Status[] = ['ACTIVE', 'AGOTADO', 'INACTIVE', 'DRAFT', 'ARCHIVED'];
 
 async function readJsonSafe(res: Response): Promise<{ json: any | null; text: string }> {
   const ct = res.headers.get('content-type') || '';
@@ -41,7 +46,9 @@ async function fetchTry(urls: string[], init?: RequestInit) {
       const r = await fetch(u, { ...init, cache: 'no-store' });
       const { json, text } = await readJsonSafe(r);
       if (!r.ok) {
-        lastErr = new Error(`HTTP ${r.status} ${r.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'} @ ${u}`);
+        lastErr = new Error(
+          `HTTP ${r.status} ${r.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'} @ ${u}`,
+        );
         continue;
       }
       return json ?? text;
@@ -67,7 +74,7 @@ export default function AdminProductEditPage() {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState<string>('');
   const [sku, setSku] = useState('');
-  const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+  const [status, setStatus] = useState<Status>('ACTIVE');
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [subcategoryId, setSubcategoryId] = useState<number | ''>('');
 
@@ -89,16 +96,16 @@ export default function AdminProductEditPage() {
       setCats(catsData.items ?? catsData.data ?? []);
       setSubs(subsData.items ?? subsData.data ?? []);
 
-      // 1º intento por query (?id=) — en tu preview devuelve 200
+      // 1º intento por query (?id=); fallback a /:id
       const prod = await fetchTry([
         `/api/admin/products?id=${id}`,
         `/api/admin/productos?id=${id}`,
-        // Fallback por path si hiciera falta
         `/api/admin/products/${id}`,
         `/api/admin/productos/${id}`,
       ]);
 
-      if (!prod?.ok || !prod?.item) throw new Error(prod?.error || 'Formato inesperado en detalle de producto');
+      if (!prod?.ok || !prod?.item)
+        throw new Error(prod?.error || 'Formato inesperado en detalle de producto');
 
       const p = prod.item as Product;
       setName(p?.name ?? '');
@@ -106,7 +113,7 @@ export default function AdminProductEditPage() {
       setDescription(p?.description ?? '');
       setPrice(p?.price != null ? String(p.price) : '');
       setSku(p?.sku ?? '');
-      setStatus((p?.status as any) === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+      setStatus(STATUS_OPTS.includes(p?.status as Status) ? (p.status as Status) : 'ACTIVE');
       setCategoryId(p?.categoryId ?? '');
       setSubcategoryId(p?.subcategoryId ?? '');
     } catch (e: any) {
@@ -147,11 +154,19 @@ export default function AdminProductEditPage() {
       // PUT seguro por ?id= y fallback a /:id
       await fetchTry(
         [`/api/admin/products?id=${id}`, `/api/admin/productos?id=${id}`],
-        { method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) },
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(body),
+        },
       ).catch(async () => {
         await fetchTry(
           [`/api/admin/products/${id}`, `/api/admin/productos/${id}`],
-          { method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) },
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(body),
+          },
         );
       });
 
@@ -169,8 +184,12 @@ export default function AdminProductEditPage() {
       <h1 className="text-2xl font-semibold">Editar producto #{id}</h1>
 
       <div className="flex items-center gap-3">
-        <Link href="/admin/productos" className="underline">← Volver</Link>
-        <Link href={`/admin/productos/${id}/imagenes`} className="underline">Administrar imágenes</Link>
+        <Link href="/admin/productos" className="underline">
+          ← Volver
+        </Link>
+        <Link href={`/admin/productos/${id}/imagenes`} className="underline">
+          Administrar imágenes
+        </Link>
         {!loading && slug && (
           <Link href={`/productos/${slug}`} target="_blank" className="underline">
             Ver en tienda
@@ -182,29 +201,55 @@ export default function AdminProductEditPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="space-y-1">
             <span className="text-sm opacity-70">Nombre</span>
-            <input className="border rounded p-2 w-full" value={name} onChange={(e) => setName(e.target.value)} required />
+            <input
+              className="border rounded p-2 w-full"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm opacity-70">Slug (opcional)</span>
-            <input className="border rounded p-2 w-full" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="vacío = se recalcula" />
+            <input
+              className="border rounded p-2 w-full"
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="vacío = se recalcula"
+            />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm opacity-70">Precio</span>
-            <input className="border rounded p-2 w-full" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="ej: 199.99" />
+            <input
+              className="border rounded p-2 w-full"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="ej: 199.99"
+            />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm opacity-70">SKU</span>
-            <input className="border rounded p-2 w-full" value={sku} onChange={(e) => setSku(e.target.value)} />
+            <input
+              className="border rounded p-2 w-full"
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+            />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm opacity-70">Estado</span>
-            <select className="border rounded p-2 w-full" value={status} onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}>
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="INACTIVE">INACTIVE</option>
+            <select
+              className="border rounded p-2 w-full"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as Status)}
+            >
+              {STATUS_OPTS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
             </select>
           </label>
 
@@ -233,7 +278,9 @@ export default function AdminProductEditPage() {
             <select
               className="border rounded p-2 w-full"
               value={subcategoryId}
-              onChange={(e) => setSubcategoryId(e.target.value === '' ? '' : Number(e.target.value))}
+              onChange={(e) =>
+                setSubcategoryId(e.target.value === '' ? '' : Number(e.target.value))
+              }
             >
               <option value="">—</option>
               {subOptions.map((s) => (
@@ -247,7 +294,12 @@ export default function AdminProductEditPage() {
 
         <label className="space-y-1 block">
           <span className="text-sm opacity-70">Descripción</span>
-          <textarea className="border rounded p-2 w-full" rows={5} value={description} onChange={(e) => setDescription(e.target.value)} />
+          <textarea
+            className="border rounded p-2 w-full"
+            rows={5}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
         </label>
 
         <button className="border rounded px-4 py-2" type="submit" disabled={loading}>

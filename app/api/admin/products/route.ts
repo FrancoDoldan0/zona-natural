@@ -9,13 +9,14 @@ import { audit } from '@/lib/audit';
 
 const prisma = createPrisma();
 
+// ✅ incluye AGOTADO
 const CreateSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(1).optional(),
   description: z.string().max(5000).optional().nullable(),
   price: z.coerce.number().optional().nullable(),
   sku: z.string().max(120).optional().nullable(),
-  status: z.enum(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE']).optional(),
+  status: z.enum(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE', 'AGOTADO']).optional(),
   categoryId: z.coerce.number().optional().nullable(),
   subcategoryId: z.coerce.number().optional().nullable(),
 });
@@ -27,12 +28,13 @@ const UpdateSchema = z.object({
   description: z.string().max(5000).optional().nullable(),
   price: z.coerce.number().optional().nullable(),
   sku: z.string().max(120).optional().nullable(),
-  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED', 'AGOTADO']).optional(),
   categoryId: z.coerce.number().optional().nullable(),
   subcategoryId: z.coerce.number().optional().nullable(),
 });
 
-const STATUS_VALUES = new Set(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE'] as const);
+// ✅ set de estados válidos (incluye AGOTADO)
+const STATUS_VALUES = new Set(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE', 'AGOTADO'] as const);
 
 // GET /api/admin/products
 // - Sin id: listado -> { ok, items, total }
@@ -180,7 +182,7 @@ export async function POST(req: NextRequest) {
         description: b.description ?? null,
         price: b.price ?? null,
         sku: sku === '' ? null : sku,
-        status: safeStatus,
+        status: safeStatus, // ✅ puede ser AGOTADO
         categoryId: b.categoryId ?? null,
         subcategoryId: b.subcategoryId ?? null,
       },
@@ -245,7 +247,7 @@ export async function PUT(req: NextRequest) {
     if ('categoryId' in b) data.categoryId = b.categoryId ?? null;
     if ('subcategoryId' in b) data.subcategoryId = b.subcategoryId ?? null;
     if ('status' in b && typeof b.status === 'string' && STATUS_VALUES.has(b.status as any)) {
-      data.status = b.status;
+      data.status = b.status; // ✅ admite AGOTADO
     }
 
     // Slug: vacío => recalcular con (b.name || actual)

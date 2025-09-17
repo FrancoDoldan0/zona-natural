@@ -9,7 +9,8 @@ import { audit } from '@/lib/audit';
 
 const prisma = createPrisma();
 
-const STATUS_VALUES = new Set(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED'] as const);
+// Estados permitidos (incluye AGOTADO)
+const STATUS_VALUES = new Set(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED', 'AGOTADO'] as const);
 
 const UpdateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -18,21 +19,20 @@ const UpdateSchema = z.object({
   description: z.string().max(5000).optional().nullable(),
   price: z.coerce.number().optional().nullable(),
   sku: z.string().max(120).optional().nullable(),
-  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED', 'AGOTADO']).optional(),
   categoryId: z.coerce.number().optional().nullable(),
   subcategoryId: z.coerce.number().optional().nullable(),
 });
 
 function getIdFromUrl(req: NextRequest): number | null {
   const { pathname } = new URL(req.url);
-  // /api/admin/products/123
   const m = pathname.match(/\/api\/admin\/products\/(\d+)(?:\/)?$/);
   if (!m) return null;
   const id = Number(m[1]);
   return Number.isFinite(id) && id > 0 ? id : null;
 }
 
-// GET /api/admin/products/:id  -> { ok, item }
+// GET /api/admin/products/:id -> { ok, item }
 export async function GET(req: NextRequest) {
   const id = getIdFromUrl(req);
   if (!id) return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true, item });
 }
 
-// PUT /api/admin/products/:id  -> { ok, item }
+// PUT /api/admin/products/:id -> { ok, item }
 export async function PUT(req: NextRequest) {
   const id = getIdFromUrl(req);
   if (!id) return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
@@ -85,7 +85,7 @@ export async function PUT(req: NextRequest) {
       data.status = b.status;
     }
 
-    // slug: si viene "", recalcular; si viene string no vacío, setear; si no viene, no tocar
+    // slug: "" => recalcular; string no vacío => setear; no enviado => no tocar
     if ('slug' in b && typeof b.slug === 'string') {
       const s = b.slug.trim();
       if (s === '') {
