@@ -20,15 +20,59 @@ const CreateSchema = z.object({
   subcategoryId: z.coerce.number().optional().nullable(),
 });
 
+const UpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  // slug vacío ("") => recalcular; si no se envía, no se toca
+  slug: z.string().optional(),
+  description: z.string().max(5000).optional().nullable(),
+  price: z.coerce.number().optional().nullable(),
+  sku: z.string().max(120).optional().nullable(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
+  categoryId: z.coerce.number().optional().nullable(),
+  subcategoryId: z.coerce.number().optional().nullable(),
+});
+
 const STATUS_VALUES = new Set(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE'] as const);
 
 // GET /api/admin/products
+// - Sin id: listado -> { ok, items, total }
+// - Con ?id=: detalle -> { ok, item }
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
 
+  // --------- Detalle por ?id= ----------
+  const idRaw = url.searchParams.get('id');
+  if (idRaw && idRaw.trim() !== '') {
+    const id = Number(idRaw);
+    if (!Number.isFinite(id) || id <= 0) {
+      return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
+    }
+
+    const item = await prisma.product.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        sku: true,
+        status: true,
+        categoryId: true,
+        subcategoryId: true,
+        category: { select: { id: true, name: true } },
+        subcategory: { select: { id: true, name: true } },
+      },
+    });
+
+    if (!item) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
+    return NextResponse.json({ ok: true, item });
+  }
+
+  // --------- Listado ----------
   const q = (url.searchParams.get('q') || '').trim();
 
-  // Soporta limit/offset y también page/perPage como fallback
+  // limit/offset (fallback page/perPage)
   const limitRaw = url.searchParams.get('limit');
   const offsetRaw = url.searchParams.get('offset');
   const pageRaw = url.searchParams.get('page');
@@ -38,7 +82,6 @@ export async function GET(req: NextRequest) {
     Math.min(100, Math.max(1, parseInt(limitRaw ?? '', 10))) ||
     Math.min(60, Math.max(1, parseInt(perPageRaw ?? '', 10) || 12));
   let skip = parseInt(offsetRaw ?? '', 10);
-
   if (!Number.isFinite(skip)) {
     const page = Math.max(1, parseInt(pageRaw || '1', 10));
     const perPage = Math.min(60, Math.max(1, parseInt(perPageRaw || '12', 10)));
@@ -48,14 +91,13 @@ export async function GET(req: NextRequest) {
 
   const status = (url.searchParams.get('status') || '').toUpperCase();
 
-  // ⚠️ IMPORTANTE: leer los valores RAW primero para no hacer Number(null) → 0
+  // Leer RAW para evitar Number(null)→0
   const categoryIdRaw = url.searchParams.get('categoryId');
   const subcategoryIdRaw = url.searchParams.get('subcategoryId');
   const minPriceRaw = url.searchParams.get('minPrice');
   const maxPriceRaw = url.searchParams.get('maxPrice');
 
   const where: any = {};
-
   if (q) {
     where.OR = [
       { name: { contains: q, mode: 'insensitive' } },
@@ -64,19 +106,16 @@ export async function GET(req: NextRequest) {
       { sku: { contains: q, mode: 'insensitive' } },
     ];
   }
-
   if (STATUS_VALUES.has(status as any)) where.status = status as any;
 
   if (categoryIdRaw && categoryIdRaw.trim() !== '') {
     const categoryId = Number(categoryIdRaw);
     if (Number.isFinite(categoryId)) where.categoryId = categoryId;
   }
-
   if (subcategoryIdRaw && subcategoryIdRaw.trim() !== '') {
     const subcategoryId = Number(subcategoryIdRaw);
     if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
   }
-
   if ((minPriceRaw && minPriceRaw.trim() !== '') || (maxPriceRaw && maxPriceRaw.trim() !== '')) {
     where.price = {};
     if (minPriceRaw && minPriceRaw.trim() !== '') {
@@ -170,6 +209,85 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json(
       { ok: false, error: 'create_failed', detail: e?.message ?? String(e) },
+      { status: 500 },
+    );
+  }
+}
+
+// PUT /api/admin/products?id=123
+export async function PUT(req: NextRequest) {
+  const url = new URL(req.url);
+  const idRaw = url.searchParams.get('id');
+  if (!idRaw || idRaw.trim() === '') {
+    return NextResponse.json({ ok: false, error: 'id_required' }, { status: 400 });
+  }
+  const id = Number(idRaw);
+  if (!Number.isFinite(id) || id <= 0) {
+    return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
+  }
+
+  try {
+    const json = await req.json().catch(() => ({}));
+    const parsed = UpdateSchema.safeParse(json);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { ok: false, error: 'validation_failed', detail: parsed.error.format() },
+        { status: 400 },
+      );
+    }
+    const b = parsed.data;
+
+    const data: any = {};
+    if ('name' in b) data.name = b.name;
+    if ('description' in b) data.description = b.description ?? null;
+    if ('price' in b) data.price = b.price ?? null;
+    if ('sku' in b) data.sku = (b.sku ?? '') === '' ? null : b.sku;
+    if ('categoryId' in b) data.categoryId = b.categoryId ?? null;
+    if ('subcategoryId' in b) data.subcategoryId = b.subcategoryId ?? null;
+    if ('status' in b && typeof b.status === 'string' && STATUS_VALUES.has(b.status as any)) {
+      data.status = b.status;
+    }
+
+    // Slug: vacío => recalcular con (b.name || actual)
+    if ('slug' in b && typeof b.slug === 'string') {
+      const s = b.slug.trim();
+      if (s === '') {
+        const current = await prisma.product.findUnique({ where: { id }, select: { name: true } });
+        const base = (b.name ?? current?.name ?? '').trim();
+        data.slug = slugify(base || `product-${id}`);
+      } else {
+        data.slug = s;
+      }
+    }
+
+    const item = await prisma.product.update({
+      where: { id },
+      data,
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        sku: true,
+        status: true,
+        categoryId: true,
+        subcategoryId: true,
+      },
+    });
+
+    await audit(req, 'UPDATE', 'Product', id, data);
+
+    return NextResponse.json({ ok: true, item });
+  } catch (e: any) {
+    if (e?.code === 'P2002') {
+      return NextResponse.json(
+        { ok: false, error: 'unique_constraint', field: 'slug' },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json(
+      { ok: false, error: 'update_failed', detail: e?.message ?? String(e) },
       { status: 500 },
     );
   }
