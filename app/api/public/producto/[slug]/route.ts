@@ -15,12 +15,17 @@ export async function GET(_req: Request, { params }: any) {
     return NextResponse.json({ error: 'missing slug' }, { status: 400 });
   }
 
-  const p = await prisma.product.findUnique({
-    where: { slug },
+  // ✅ Solo productos visibles públicamente: ACTIVE o AGOTADO
+  //  (usamos findFirst para poder combinar slug + status)
+  const p = await prisma.product.findFirst({
+    where: {
+      slug,
+      status: { in: ['ACTIVE', 'AGOTADO'] },
+    },
     include: {
       images: {
         orderBy: { sortOrder: 'asc' },
-        // ⚠️ En el schema nuevo no existe `url`, usamos `key`
+        // En el schema usamos `key` (no `url`)
         select: { id: true, key: true, alt: true, sortOrder: true, isCover: true, size: true },
       },
       category: { select: { id: true, name: true, slug: true } },
@@ -65,6 +70,7 @@ export async function GET(_req: Request, { params }: any) {
     description: p.description,
     price: p.price,
     sku: p.sku,
+    status: p.status, // 👈 para poder mostrar “AGOTADO” en la UI
     coverUrl: images[0]?.url ?? null,
     images,
     category: p.category

@@ -9,6 +9,8 @@ export const revalidate = 60;
 
 type ProductImage = { url: string; alt?: string | null; sortOrder?: number | null };
 type Category = { id?: number; name?: string; slug?: string };
+type Status = 'ACTIVE' | 'AGOTADO' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | string;
+
 type Product = {
   id: number;
   name: string;
@@ -19,6 +21,7 @@ type Product = {
   coverUrl?: string | null;
   images?: ProductImage[] | null;
   category?: Category | null;
+  status?: Status; // ✅ importante para UI y SEO
 };
 
 // Base pública (evitamos headers() en Next 15)
@@ -42,6 +45,19 @@ async function getProduct(slug: string): Promise<Product | null> {
   return (data?.item ?? data ?? null) as Product | null;
 }
 
+// Mapeo simple a schema.org availability
+function availabilityFromStatus(status?: Status) {
+  switch ((status || '').toUpperCase()) {
+    case 'AGOTADO':
+      return 'https://schema.org/OutOfStock';
+    case 'INACTIVE':
+    case 'ARCHIVED':
+      return 'https://schema.org/Discontinued';
+    default:
+      return 'https://schema.org/InStock';
+  }
+}
+
 export async function generateMetadata({ params }: any): Promise<Metadata> {
   const item = await getProduct(params.slug);
   if (!item) {
@@ -61,7 +77,7 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
     description,
     alternates: { canonical },
     openGraph: {
-      type: 'website', // evitar warning de Next (no usar "product")
+      type: 'website',
       url: canonical,
       title,
       description,
@@ -79,7 +95,7 @@ export default async function ProductPage({ params }: any) {
     firstImg?.startsWith('http') || firstImg?.startsWith('/') ? String(firstImg) : `/${firstImg}`;
 
   const canonicalPath = `/productos/${item.slug}`;
-  const jsonLd = {
+  const jsonLd: any = {
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: item.name,
@@ -88,16 +104,17 @@ export default async function ProductPage({ params }: any) {
     image: absUrl(firstImg),
     description: item.description || undefined,
     category: item.category?.name || undefined,
-    offers:
-      typeof item.price === 'number'
-        ? {
-            '@type': 'Offer',
-            price: item.price,
-            priceCurrency: 'ARS',
-            availability: 'https://schema.org/InStock',
-          }
-        : undefined,
   };
+  if (typeof item.price === 'number') {
+    jsonLd.offers = {
+      '@type': 'Offer',
+      price: item.price,
+      priceCurrency: 'ARS',
+      availability: availabilityFromStatus(item.status), // ✅ refleja AGOTADO
+    };
+  }
+
+  const isAgotado = (item.status || '').toUpperCase() === 'AGOTADO';
 
   return (
     <main style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
@@ -108,7 +125,25 @@ export default async function ProductPage({ params }: any) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         <div>
-          <div style={{ width: '100%', aspectRatio: '4/3', marginBottom: 12 }}>
+          <div style={{ width: '100%', aspectRatio: '4/3', marginBottom: 12, position: 'relative' }}>
+            {/* ✅ Chapita AGOTADO sobre la imagen */}
+            {isAgotado && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: 8,
+                  left: 8,
+                  background: '#dc2626',
+                  color: 'white',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                }}
+              >
+                AGOTADO
+              </span>
+            )}
             <SafeImage
               src={imgSrc}
               alt={item.name}
@@ -159,6 +194,24 @@ export default async function ProductPage({ params }: any) {
 
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>{item.name}</h1>
+
+          {/* Badge textual junto al título (útil si la imagen no carga) */}
+          {isAgotado && (
+            <div
+              style={{
+                display: 'inline-block',
+                marginBottom: 12,
+                background: '#dc2626',
+                color: 'white',
+                fontSize: 12,
+                fontWeight: 700,
+                padding: '4px 8px',
+                borderRadius: 6,
+              }}
+            >
+              AGOTADO
+            </div>
+          )}
 
           {item.category?.slug ? (
             <div style={{ marginBottom: 12, opacity: 0.8 }}>

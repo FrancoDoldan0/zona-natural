@@ -4,6 +4,10 @@
 import Link from 'next/link';
 import type { Product } from './page';
 
+// Extensión local del tipo para poder leer status si viene del API
+type WithStatus =
+  Product & { status?: 'ACTIVE' | 'AGOTADO' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | string };
+
 export default function ProductGrid({ items }: { items: Product[] }) {
   if (!items?.length) {
     return <p style={{ opacity: 0.7 }}>No hay productos para mostrar.</p>;
@@ -18,40 +22,63 @@ export default function ProductGrid({ items }: { items: Product[] }) {
       }}
     >
       {items.map((p) => {
+        const pp = p as WithStatus;
+        const isAgotado = pp.status === 'AGOTADO';
+
         // Catálogo: p.cover   | Detalle: p.coverUrl o p.images[0].url
-        const firstImage = p.cover || p.coverUrl || p.images?.[0]?.url || '/placeholder.jpg';
+        const firstImage = pp.cover || (pp as any).coverUrl || (pp as any).images?.[0]?.url || '/placeholder.jpg';
 
         // Normalizar a ruta válida
         const src =
-          firstImage?.startsWith('http') || firstImage?.startsWith('/')
-            ? (firstImage as string)
+          typeof firstImage === 'string' && (firstImage.startsWith('http') || firstImage.startsWith('/'))
+            ? firstImage
             : `/${firstImage}`;
 
         // Precio a mostrar
         const displayPrice =
-          typeof p.price === 'number'
-            ? p.price
-            : typeof p.priceFinal === 'number'
-              ? p.priceFinal
-              : typeof p.priceOriginal === 'number'
-                ? p.priceOriginal
+          typeof (pp as any).price === 'number'
+            ? (pp as any).price
+            : typeof (pp as any).priceFinal === 'number'
+              ? (pp as any).priceFinal
+              : typeof (pp as any).priceOriginal === 'number'
+                ? (pp as any).priceOriginal
                 : null;
 
         return (
           <article
-            key={p.id}
+            key={(pp as any).id ?? pp.slug}
             style={{
               border: '1px solid #2b2b2b',
               borderRadius: 8,
               padding: 12,
             }}
           >
-            <Link href={`/productos/${p.slug}`} style={{ textDecoration: 'none' }}>
-              <div style={{ width: '100%', aspectRatio: '4/3', marginBottom: 8 }}>
+            <Link href={`/productos/${pp.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+              <div style={{ width: '100%', aspectRatio: '4/3', marginBottom: 8, position: 'relative' }}>
+                {/* Chapita AGOTADO */}
+                {isAgotado && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 8,
+                      left: 8,
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      background: '#b91c1c', // rojo
+                      color: '#fff',
+                      zIndex: 2,
+                    }}
+                  >
+                    AGOTADO
+                  </div>
+                )}
+
                 {/* IMG con fallback a /placeholder.jpg (solo en cliente) */}
                 <img
                   src={src}
-                  alt={p.name || 'Producto'}
+                  alt(pp.name || 'Producto')}
                   loading="lazy"
                   style={{
                     width: '100%',
@@ -71,9 +98,9 @@ export default function ProductGrid({ items }: { items: Product[] }) {
               </div>
 
               <div style={{ color: 'inherit' }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>{pp.name}</div>
                 {typeof displayPrice === 'number' ? (
-                  <div style={{ opacity: 0.85 }}>
+                  <div style={{ opacity: isAgotado ? 0.65 : 0.85 }}>
                     ${displayPrice.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
                   </div>
                 ) : (

@@ -1,3 +1,4 @@
+// app/api/public/catalogo/route.ts
 export const runtime = 'edge';
 
 import { NextRequest } from 'next/server';
@@ -6,8 +7,8 @@ import { createPrisma } from '@/lib/prisma-edge';
 import { computePricesBatch } from '@/lib/pricing';
 import type { Prisma } from '@prisma/client';
 
-
 const prisma = createPrisma();
+
 function parseBool(v?: string | null) {
   if (!v) return false;
   const s = v.trim().toLowerCase();
@@ -16,6 +17,7 @@ function parseBool(v?: string | null) {
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
+
   const q = (url.searchParams.get('q') || '').trim();
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
   const perPage = Math.min(60, Math.max(1, parseInt(url.searchParams.get('perPage') || '12', 10)));
@@ -40,14 +42,15 @@ export async function GET(req: NextRequest) {
   const onSale = parseBool(url.searchParams.get('onSale'));
 
   // --- Filtros base ---
-  const where: any = { status: 'ACTIVE' };
+  // ✅ Mostrar también los productos AGOTADO en el catálogo público
+  const where: any = { status: { in: ['ACTIVE', 'AGOTADO'] } };
 
   if (q) {
     where.OR = [
-      { name: { contains: q } },
-      { slug: { contains: q } },
-      { description: { contains: q } },
-      { sku: { contains: q } },
+      { name: { contains: q, mode: 'insensitive' } },
+      { slug: { contains: q, mode: 'insensitive' } },
+      { description: { contains: q, mode: 'insensitive' } },
+      { sku: { contains: q, mode: 'insensitive' } },
     ];
   }
 
@@ -130,7 +133,7 @@ export async function GET(req: NextRequest) {
   let items = itemsRaw.map((p: any) => {
     const pr = priced.get(p.id)!;
     const hasDiscount =
-      pr.priceOriginal != null && pr.priceFinal != null && pr.priceFinal < pr.priceOriginal;
+      pr?.priceOriginal != null && pr?.priceFinal != null && pr.priceFinal < pr.priceOriginal;
     const discountPercent = hasDiscount
       ? Math.round((1 - pr.priceFinal! / pr.priceOriginal!) * 100)
       : 0;
@@ -139,10 +142,12 @@ export async function GET(req: NextRequest) {
       id: p.id,
       name: p.name,
       slug: p.slug,
+      // si en tu modelo tenés 'key' en vez de 'url', dejá esto como estaba
       cover: p.images?.[0]?.url || null,
-      priceOriginal: pr.priceOriginal,
-      priceFinal: pr.priceFinal,
-      offer: pr.offer,
+      status: p.status ?? null, // 👈 devolvemos el estado para poder mostrar "AGOTADO"
+      priceOriginal: pr?.priceOriginal ?? null,
+      priceFinal: pr?.priceFinal ?? null,
+      offer: pr?.offer ?? null,
       hasDiscount,
       discountPercent,
     };
