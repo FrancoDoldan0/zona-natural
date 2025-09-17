@@ -1,5 +1,6 @@
 // app/api/admin/products/route.ts
 export const runtime = 'edge';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createPrisma } from '@/lib/prisma-edge';
 import { z } from 'zod';
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
     Math.min(100, Math.max(1, parseInt(limitRaw ?? '', 10))) ||
     Math.min(60, Math.max(1, parseInt(perPageRaw ?? '', 10) || 12));
   let skip = parseInt(offsetRaw ?? '', 10);
+
   if (!Number.isFinite(skip)) {
     const page = Math.max(1, parseInt(pageRaw || '1', 10));
     const perPage = Math.min(60, Math.max(1, parseInt(perPageRaw || '12', 10)));
@@ -45,12 +47,15 @@ export async function GET(req: NextRequest) {
   }
 
   const status = (url.searchParams.get('status') || '').toUpperCase();
-  const categoryId = Number(url.searchParams.get('categoryId'));
-  const subcategoryId = Number(url.searchParams.get('subcategoryId'));
-  const minPrice = Number(url.searchParams.get('minPrice'));
-  const maxPrice = Number(url.searchParams.get('maxPrice'));
+
+  // ⚠️ IMPORTANTE: leer los valores RAW primero para no hacer Number(null) → 0
+  const categoryIdRaw = url.searchParams.get('categoryId');
+  const subcategoryIdRaw = url.searchParams.get('subcategoryId');
+  const minPriceRaw = url.searchParams.get('minPrice');
+  const maxPriceRaw = url.searchParams.get('maxPrice');
 
   const where: any = {};
+
   if (q) {
     where.OR = [
       { name: { contains: q, mode: 'insensitive' } },
@@ -59,13 +64,29 @@ export async function GET(req: NextRequest) {
       { sku: { contains: q, mode: 'insensitive' } },
     ];
   }
+
   if (STATUS_VALUES.has(status as any)) where.status = status as any;
-  if (Number.isFinite(categoryId)) where.categoryId = categoryId;
-  if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
-  if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
+
+  if (categoryIdRaw && categoryIdRaw.trim() !== '') {
+    const categoryId = Number(categoryIdRaw);
+    if (Number.isFinite(categoryId)) where.categoryId = categoryId;
+  }
+
+  if (subcategoryIdRaw && subcategoryIdRaw.trim() !== '') {
+    const subcategoryId = Number(subcategoryIdRaw);
+    if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
+  }
+
+  if ((minPriceRaw && minPriceRaw.trim() !== '') || (maxPriceRaw && maxPriceRaw.trim() !== '')) {
     where.price = {};
-    if (Number.isFinite(minPrice)) where.price.gte = minPrice;
-    if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
+    if (minPriceRaw && minPriceRaw.trim() !== '') {
+      const minPrice = Number(minPriceRaw);
+      if (Number.isFinite(minPrice)) where.price.gte = minPrice;
+    }
+    if (maxPriceRaw && maxPriceRaw.trim() !== '') {
+      const maxPrice = Number(maxPriceRaw);
+      if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
+    }
   }
 
   const [total, items] = await Promise.all([
