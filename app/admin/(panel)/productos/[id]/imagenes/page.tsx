@@ -6,8 +6,8 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
 type Img = {
-  id?: number | null;        // puede no venir si listamos directo de R2
-  key?: string;              // siempre viene en /images
+  id?: number | null;           // puede no venir si listamos directo de R2
+  key?: string;
   url: string;
   alt?: string | null;
   sortOrder?: number | null;
@@ -15,20 +15,85 @@ type Img = {
   size?: number | null;
   createdAt?: string | null;
 };
-type Product = { id: number; name: string; slug: string };
+type Product = { id: number; name: string; slug?: string | null };
 
 const PLACEHOLDER = '/placeholder.jpg';
 
-/** Llama primero a /products y, si no existe, a /productos. Siempre con credenciales. */
-async function callApi(pathProducts: string, pathProductos: string, init?: RequestInit) {
-  const opts: RequestInit = { credentials: 'include', ...init };
-  let r = await fetch(pathProducts, opts);
-  if (r.ok || r.status !== 404) return r;
-  return fetch(pathProductos, opts);
+function getCsrf() {
+  const m = document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
 }
+
+/** Intenta varias URLs hasta obtener 2xx + JSON (o texto) válido */
+async function fetchJsonTry(urls: string[], init?: RequestInit) {
+  let lastErr: any = null;
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { ...init, credentials: 'include', cache: 'no-store' });
+      const ct = r.headers.get('content-type') || '';
+      const raw = await r.text();
+      const data = ct.includes('application/json')
+        ? (() => { try { return JSON.parse(raw); } catch { return null; } })()
+        : null;
+
+      if (!r.ok) {
+        lastErr = new Error(`${init?.method || 'GET'} ${u} → ${r.status} ${r.statusText} — ${raw?.slice(0, 200) || '(sin cuerpo)'}`);
+        continue;
+      }
+      return data ?? raw;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error('No pude leer la API.');
+}
+
+/** Colección de URLs (query-first, luego path EN/ES) */
+const urls = {
+  product: (id: number) => [
+    `/api/admin/products?id=${id}`,
+    `/api/admin/productos?id=${id}`,
+    `/api/admin/products/${id}`,
+    `/api/admin/productos/${id}`,
+  ],
+  imagesList: (id: number) => [
+    `/api/admin/product-images?productId=${id}`,
+    `/api/admin/products/images?productId=${id}`,
+    `/api/admin/productos/imagenes?productId=${id}`,
+    `/api/admin/products/${id}/images`,
+    `/api/admin/productos/${id}/imagenes`,
+  ],
+  imagesUpload: (id: number) => [
+    `/api/admin/product-images?productId=${id}`,
+    `/api/admin/products/images?productId=${id}`,
+    `/api/admin/productos/imagenes?productId=${id}`,
+    `/api/admin/products/${id}/images`,
+    `/api/admin/productos/${id}/imagenes`,
+  ],
+  imagesReorder: (id: number) => [
+    `/api/admin/product-images/reorder?productId=${id}`,
+    `/api/admin/products/images/reorder?productId=${id}`,
+    `/api/admin/productos/imagenes/reorder?productId=${id}`,
+    `/api/admin/products/${id}/images/reorder`,
+    `/api/admin/productos/${id}/imagenes/reorder`,
+  ],
+  imageItem: (id: number, imageId: number) => [
+    `/api/admin/product-images/${imageId}?productId=${id}`,
+    `/api/admin/products/images/${imageId}?productId=${id}`,
+    `/api/admin/productos/imagenes/${imageId}?productId=${id}`,
+    `/api/admin/products/${id}/images/${imageId}`,
+    `/api/admin/productos/${id}/imagenes/${imageId}`,
+  ],
+  imageDeleteByKey: (id: number, key: string) => [
+    `/api/admin/product-images?productId=${id}&key=${encodeURIComponent(key)}`,
+    `/api/admin/products/images?productId=${id}&key=${encodeURIComponent(key)}`,
+    `/api/admin/productos/imagenes?productId=${id}&key=${encodeURIComponent(key)}`,
+  ],
+};
 
 export default function AdminProductImagesPage() {
   const { id } = useParams<{ id: string }>();
+  const productId = Number(id);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,32 +111,27 @@ export default function AdminProductImagesPage() {
   const title = useMemo(() => (product ? `Imágenes — ${product.name}` : 'Imágenes'), [product]);
 
   const load = useCallback(async () => {
+    if (!Number.isFinite(productId)) return;
     setLoading(true);
     setError('');
     try {
-      // 1) Producto (para título y links)
+      // 1) Producto (para título y links) — intenta ?id= antes que /:id
       {
-        const r = await callApi(`/api/admin/products/${id}`, `/api/admin/productos/${id}`, {
-          cache: 'no-store',
+        const j = await fetchJsonTry(urls.product(productId), {
+          headers: { Accept: 'application/json' },
         });
-        if (!r.ok) throw new Error(`GET product ${id}: ${r.status}`);
-        const data = await r.json<any>();
-        const p = (data.item ?? data?.data ?? data) as Product;
+        const p: Product = j?.item ?? j?.data ?? j;
         setProduct(p);
       }
 
-      // 2) Imágenes (siempre desde el endpoint nuevo con fallback a R2)
+      // 2) Imágenes (query-first)
       {
-        const r = await callApi(
-          `/api/admin/products/${id}/images`,
-          `/api/admin/productos/${id}/imagenes`,
-          { cache: 'no-store' }
-        );
-        if (!r.ok) throw new Error(`GET images ${id}: ${r.status}`);
-        const data = await r.json<any>();
-        const imgs: Img[] = (data.items ?? data.images ?? []).slice();
+        const j = await fetchJsonTry(urls.imagesList(productId), {
+          headers: { Accept: 'application/json' },
+        });
+        const imgs: Img[] = (j?.items ?? j?.images ?? j ?? []) as Img[];
 
-        // normalizar orden: por sortOrder luego por createdAt
+        // normalizar orden: sortOrder, luego createdAt
         imgs.sort((a, b) => {
           const sa = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
           const sb = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
@@ -88,7 +148,7 @@ export default function AdminProductImagesPage() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [productId]);
 
   useEffect(() => {
     load();
@@ -97,7 +157,7 @@ export default function AdminProductImagesPage() {
   // ---------- Upload ----------
   const doUpload = useCallback(
     async (files: FileList) => {
-      if (!files?.length) return;
+      if (!files?.length || !Number.isFinite(productId)) return;
       setSaving(true);
       setError('');
       try {
@@ -106,18 +166,13 @@ export default function AdminProductImagesPage() {
           const fd = new FormData();
           fd.append('file', files[i]); // backend espera "file"
           if (altCommon) fd.append('alt', altCommon);
-          // dejamos que el server calcule sortOrder al final; igualmente mandamos sugerencia
-          fd.append('sortOrder', String((items?.length ?? 0) + i));
+          fd.append('sortOrder', String((items?.length ?? 0) + i)); // sugerencia
 
-          const r = await callApi(
-            `/api/admin/products/${id}/images`,
-            `/api/admin/productos/${id}/imagenes`,
-            { method: 'POST', body: fd }
-          );
-          if (!r.ok) {
-            const t = await r.text();
-            throw new Error(`Upload: ${r.status} ${t}`);
-          }
+          await fetchJsonTry(urls.imagesUpload(productId), {
+            method: 'POST',
+            headers: { 'x-csrf-token': getCsrf(), Accept: 'application/json' },
+            body: fd,
+          });
         }
         await load();
         if (uploadInputRef.current) uploadInputRef.current.value = '';
@@ -128,7 +183,7 @@ export default function AdminProductImagesPage() {
         setSaving(false);
       }
     },
-    [id, items, load]
+    [productId, items, load]
   );
 
   const onDropFiles = useCallback(
@@ -146,34 +201,21 @@ export default function AdminProductImagesPage() {
     setSaving(true);
     setError('');
     try {
-      let r: Response | null = null;
-
-      // Preferimos borrar por imageId si existe, sino por key
       if (img.id != null) {
-        // Intentamos REST estilo /:imageId y caemos a ?imageId=
-        r = await callApi(
-          `/api/admin/products/${id}/images/${img.id}`,
-          `/api/admin/productos/${id}/imagenes/${img.id}`,
-          { method: 'DELETE' }
-        );
-        if (r.status === 404) {
-          r = await callApi(
-            `/api/admin/products/${id}/images?imageId=${img.id}`,
-            `/api/admin/productos/${id}/imagenes?imageId=${img.id}`,
-            { method: 'DELETE' }
-          );
-        }
+        // preferimos borrar por id
+        await fetchJsonTry(urls.imageItem(productId, img.id).map((u) => u), {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': getCsrf(), Accept: 'application/json' },
+        });
       } else if (img.key) {
-        r = await callApi(
-          `/api/admin/products/${id}/images?key=${encodeURIComponent(img.key)}`,
-          `/api/admin/productos/${id}/imagenes?key=${encodeURIComponent(img.key)}`,
-          { method: 'DELETE' }
-        );
+        await fetchJsonTry(urls.imageDeleteByKey(productId, img.key), {
+          method: 'DELETE',
+          headers: { 'x-csrf-token': getCsrf(), Accept: 'application/json' },
+        });
       } else {
         throw new Error('No hay id ni key para borrar la imagen.');
       }
 
-      if (!r!.ok) throw new Error(`DELETE: ${r!.status}`);
       setItems((prev) =>
         prev.filter((x) => (img.id != null ? x.id !== img.id : x.key !== img.key))
       );
@@ -195,35 +237,31 @@ export default function AdminProductImagesPage() {
     try {
       const ids = newItems.map((x) => x.id!).filter((x) => x != null);
 
-      // 1) Endpoint masivo (nuevo): POST { desiredIds }
-      let r = await callApi(
-        `/api/admin/products/${id}/images/reorder`,
-        `/api/admin/productos/${id}/imagenes/reorder`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ desiredIds: ids }),
-        }
-      );
-
-      // 2) Fallback: actualizar uno por uno si el masivo no existe
-      if (r.status === 404) {
+      // masivo
+      try {
+        await fetchJsonTry(urls.imagesReorder(productId), {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': getCsrf(),
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({ order: ids, desiredIds: ids }),
+        });
+      } catch (e) {
+        // fallback: uno por uno
         for (let i = 0; i < newItems.length; i++) {
           const imgId = newItems[i].id!;
-          r = await callApi(
-            `/api/admin/products/${id}/images/${imgId}`,
-            `/api/admin/productos/${id}/imagenes/${imgId}`,
-            {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sortOrder: i }),
-            }
-          );
-          if (!r.ok) throw new Error(`PATCH sortOrder(${imgId}): ${r.status}`);
+          await fetchJsonTry(urls.imageItem(productId, imgId), {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-csrf-token': getCsrf(),
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({ sortOrder: i }),
+          });
         }
-      } else if (!r.ok) {
-        const t = await r.text();
-        throw new Error(`Reorder: ${r.status} ${t}`);
       }
 
       setItems(newItems);
@@ -253,7 +291,7 @@ export default function AdminProductImagesPage() {
     persistOrder(next);
   }
 
-  // “Hacer portada”: usa PATCH isCover (o reordenamiento como fallback)
+  // “Hacer portada”: intenta PATCH isCover:true, si no existe reordena
   async function makeCover(ix: number) {
     if (!canEditOrderAlt) {
       setError('No se puede marcar portada sin IDs (modo sólo R2).');
@@ -264,25 +302,25 @@ export default function AdminProductImagesPage() {
     setSaving(true);
     setError('');
     try {
-      let r = await callApi(
-        `/api/admin/products/${id}/images/${img.id}`,
-        `/api/admin/productos/${id}/imagenes/${img.id}`,
-        {
+      try {
+        await fetchJsonTry(urls.imageItem(productId, img.id!), {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-csrf-token': getCsrf(),
+            Accept: 'application/json',
+          },
           body: JSON.stringify({ isCover: true }),
-        }
-      );
-      // Fallback: si no existe PATCH isCover, reordenamos local→persist
-      if (r.status === 404) {
+        });
+        await load();
+        return;
+      } catch {
+        // fallback: mover al frente y persistir orden
         const next = items.slice();
         const [m] = next.splice(ix, 1);
         next.unshift(m);
         await persistOrder(next);
-        return;
       }
-      if (!r.ok) throw new Error(`PATCH isCover: ${r.status}`);
-      await load();
     } catch (e: any) {
       setError(e?.message ?? String(e));
     } finally {
@@ -299,16 +337,15 @@ export default function AdminProductImagesPage() {
     setSaving(true);
     setError('');
     try {
-      const r = await callApi(
-        `/api/admin/products/${id}/images/${img.id}`,
-        `/api/admin/productos/${id}/imagenes/${img.id}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ alt }),
-        }
-      );
-      if (!r.ok) throw new Error(`PATCH alt: ${r.status}`);
+      await fetchJsonTry(urls.imageItem(productId, img.id), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': getCsrf(),
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ alt }),
+      });
       setItems((prev) => prev.map((x) => (x.id === img.id ? { ...x, alt } : x)));
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -345,13 +382,15 @@ export default function AdminProductImagesPage() {
             >
               <span>←</span> Volver al editor
             </Link>
-            <Link
-              className="inline-flex items-center gap-2 rounded-full bg-emerald-600 text-white px-3 py-1.5 text-sm hover:bg-emerald-700 transition"
-              target="_blank"
-              href={`/productos/${product.slug}`}
-            >
-              Ver en tienda ↗
-            </Link>
+            {product.slug && (
+              <Link
+                className="inline-flex items-center gap-2 rounded-full bg-emerald-600 text-white px-3 py-1.5 text-sm hover:bg-emerald-700 transition"
+                target="_blank"
+                href={`/productos/${product.slug}`}
+              >
+                Ver en tienda ↗
+              </Link>
+            )}
           </div>
         )}
       </div>
