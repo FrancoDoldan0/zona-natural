@@ -1,3 +1,4 @@
+// app/admin/(panel)/productos/[id]/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -14,7 +15,7 @@ type Product = {
   description: string | null;
   price: number | null;
   sku: string | null;
-  status: 'ACTIVE' | 'INACTIVE';
+  status: 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED';
   categoryId: number | null;
   subcategoryId: number | null;
   category?: { id: number; name: string } | null;
@@ -22,14 +23,33 @@ type Product = {
   images?: ProductImage[];
 };
 
-async function fetchFirstOk<T>(urls: string[], init?: RequestInit): Promise<T> {
-  for (const u of urls) {
+async function readJsonSafe(res: Response): Promise<{ json: any | null; text: string }> {
+  const ct = res.headers.get('content-type') || '';
+  const body = await res.text();
+  if (ct.includes('application/json')) {
     try {
-      const r = await fetch(u, init);
-      if (r.ok) return (await r.json<any>()) as T;
+      return { json: JSON.parse(body), text: body };
     } catch {}
   }
-  throw new Error('No pude leer la API en ninguna ruta.');
+  return { json: null, text: body };
+}
+
+async function fetchTry(urls: string[], init?: RequestInit) {
+  let lastErr: any = null;
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { ...init, cache: 'no-store' });
+      const { json, text } = await readJsonSafe(r);
+      if (!r.ok) {
+        lastErr = new Error(`HTTP ${r.status} ${r.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'} @ ${u}`);
+        continue;
+      }
+      return json ?? text;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error('No pude leer la API.');
 }
 
 export default function AdminProductEditPage() {
@@ -39,6 +59,7 @@ export default function AdminProductEditPage() {
   const [cats, setCats] = useState<Category[]>([]);
   const [subs, setSubs] = useState<Subcategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
   // campos
   const [name, setName] = useState('');
@@ -57,82 +78,88 @@ export default function AdminProductEditPage() {
 
   async function load() {
     setLoading(true);
+    setErr(null);
 
-    const [catsData, subsData] = await Promise.all([
-      fetchFirstOk<{ ok?: boolean; items?: Category[]; data?: Category[] }>([
-        '/api/admin/categories?take=999',
-        '/api/admin/categorias?take=999',
-      ]),
-      fetchFirstOk<{ ok?: boolean; items?: Subcategory[]; data?: Subcategory[] }>([
-        '/api/admin/subcategories?take=999',
-        '/api/admin/subcategorias?take=999',
-      ]),
-    ]);
+    try {
+      const [catsData, subsData] = await Promise.all([
+        fetchTry(['/api/admin/categories?take=999', '/api/admin/categorias?take=999']),
+        fetchTry(['/api/admin/subcategories?take=999', '/api/admin/subcategorias?take=999']),
+      ]);
 
-    setCats(catsData.items ?? catsData.data ?? []);
-    setSubs(subsData.items ?? subsData.data ?? []);
+      setCats(catsData.items ?? catsData.data ?? []);
+      setSubs(subsData.items ?? subsData.data ?? []);
 
-    const prod = await fetchFirstOk<{ ok?: boolean; item?: Product; id?: number }>([
-      `/api/admin/products/${id}`,
-      `/api/admin/productos/${id}`,
-    ]);
+      // 1º intento por query (?id=) — en tu preview devuelve 200
+      const prod = await fetchTry([
+        `/api/admin/products?id=${id}`,
+        `/api/admin/productos?id=${id}`,
+        // Fallback por path si hiciera falta
+        `/api/admin/products/${id}`,
+        `/api/admin/productos/${id}`,
+      ]);
 
-    const p = prod.item as Product;
-    setName(p?.name ?? '');
-    setSlug(p?.slug ?? '');
-    setDescription(p?.description ?? '');
-    setPrice(p?.price != null ? String(p.price) : '');
-    setSku(p?.sku ?? '');
-    setStatus((p?.status as any) === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
-    setCategoryId(p?.categoryId ?? '');
-    setSubcategoryId(p?.subcategoryId ?? '');
+      if (!prod?.ok || !prod?.item) throw new Error(prod?.error || 'Formato inesperado en detalle de producto');
 
-    setLoading(false);
+      const p = prod.item as Product;
+      setName(p?.name ?? '');
+      setSlug(p?.slug ?? '');
+      setDescription(p?.description ?? '');
+      setPrice(p?.price != null ? String(p.price) : '');
+      setSku(p?.sku ?? '');
+      setStatus((p?.status as any) === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE');
+      setCategoryId(p?.categoryId ?? '');
+      setSubcategoryId(p?.subcategoryId ?? '');
+    } catch (e: any) {
+      console.error(e);
+      setErr(e?.message || 'No pude cargar el producto.');
+      alert('No pude cargar el producto.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     if (!Number.isFinite(id)) {
       console.error('ID de producto inválido en la URL');
+      setErr('ID inválido');
       return;
     }
-    load().catch((e) => {
-      console.error(e);
-      alert('No pude cargar el producto.');
-    });
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
-    const body: any = {
-      name: name.trim(),
-      // Si el slug se deja vacío, la API lo recalcula con el nombre
-      ...(slug.trim() !== '' ? { slug: slug.trim() } : {}),
-      description: description.trim() || null,
-      price: price.trim() === '' ? null : Number(price),
-      sku: sku.trim() || null,
-      status,
-      categoryId: categoryId === '' ? null : Number(categoryId),
-      subcategoryId: subcategoryId === '' ? null : Number(subcategoryId),
-    };
-
-    const reqInit: RequestInit = {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    };
-
     try {
-      const r = await fetch(`/api/admin/products/${id}`, reqInit);
-      if (!r.ok) {
-        // fallback a /productos
-        const r2 = await fetch(`/api/admin/productos/${id}`, reqInit);
-        if (!r2.ok) throw new Error(await r2.text());
-      }
+      setErr(null);
+      const body: any = {
+        name: name.trim(),
+        // Si el slug se deja vacío, la API lo recalcula (mandamos slug: "")
+        ...(slug.trim() !== '' ? { slug: slug.trim() } : { slug: '' }),
+        description: description.trim() || null,
+        price: price.trim() === '' ? null : Number(price.replace(',', '.')),
+        sku: sku.trim() || null,
+        status,
+        categoryId: categoryId === '' ? null : Number(categoryId),
+        subcategoryId: subcategoryId === '' ? null : Number(subcategoryId),
+      };
+
+      // PUT seguro por ?id= y fallback a /:id
+      await fetchTry(
+        [`/api/admin/products?id=${id}`, `/api/admin/productos?id=${id}`],
+        { method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) },
+      ).catch(async () => {
+        await fetchTry(
+          [`/api/admin/products/${id}`, `/api/admin/productos/${id}`],
+          { method: 'PUT', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) },
+        );
+      });
+
       alert('Guardado ✔');
       await load();
     } catch (e: any) {
       console.error(e);
+      setErr(e?.message || 'No se pudo guardar.');
       alert('No se pudo guardar. ' + (e?.message ?? ''));
     }
   }
@@ -142,13 +169,9 @@ export default function AdminProductEditPage() {
       <h1 className="text-2xl font-semibold">Editar producto #{id}</h1>
 
       <div className="flex items-center gap-3">
-        <Link href="/admin/productos" className="underline">
-          ← Volver
-        </Link>
-        <Link href={`/admin/productos/${id}/imagenes`} className="underline">
-          Administrar imágenes
-        </Link>
-        {!loading && (
+        <Link href="/admin/productos" className="underline">← Volver</Link>
+        <Link href={`/admin/productos/${id}/imagenes`} className="underline">Administrar imágenes</Link>
+        {!loading && slug && (
           <Link href={`/productos/${slug}`} target="_blank" className="underline">
             Ver en tienda
           </Link>
@@ -159,50 +182,27 @@ export default function AdminProductEditPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="space-y-1">
             <span className="text-sm opacity-70">Nombre</span>
-            <input
-              className="border rounded p-2 w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+            <input className="border rounded p-2 w-full" value={name} onChange={(e) => setName(e.target.value)} required />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm opacity-70">Slug (opcional)</span>
-            <input
-              className="border rounded p-2 w-full"
-              value={slug}
-              onChange={(e) => setSlug(e.target.value)}
-              placeholder="vacío = se recalcula"
-            />
+            <input className="border rounded p-2 w-full" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="vacío = se recalcula" />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm opacity-70">Precio</span>
-            <input
-              className="border rounded p-2 w-full"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="ej: 199.99"
-            />
+            <input className="border rounded p-2 w-full" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="ej: 199.99" />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm opacity-70">SKU</span>
-            <input
-              className="border rounded p-2 w-full"
-              value={sku}
-              onChange={(e) => setSku(e.target.value)}
-            />
+            <input className="border rounded p-2 w-full" value={sku} onChange={(e) => setSku(e.target.value)} />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm opacity-70">Estado</span>
-            <select
-              className="border rounded p-2 w-full"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
-            >
+            <select className="border rounded p-2 w-full" value={status} onChange={(e) => setStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}>
               <option value="ACTIVE">ACTIVE</option>
               <option value="INACTIVE">INACTIVE</option>
             </select>
@@ -233,9 +233,7 @@ export default function AdminProductEditPage() {
             <select
               className="border rounded p-2 w-full"
               value={subcategoryId}
-              onChange={(e) =>
-                setSubcategoryId(e.target.value === '' ? '' : Number(e.target.value))
-              }
+              onChange={(e) => setSubcategoryId(e.target.value === '' ? '' : Number(e.target.value))}
             >
               <option value="">—</option>
               {subOptions.map((s) => (
@@ -249,18 +247,15 @@ export default function AdminProductEditPage() {
 
         <label className="space-y-1 block">
           <span className="text-sm opacity-70">Descripción</span>
-          <textarea
-            className="border rounded p-2 w-full"
-            rows={5}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
+          <textarea className="border rounded p-2 w-full" rows={5} value={description} onChange={(e) => setDescription(e.target.value)} />
         </label>
 
         <button className="border rounded px-4 py-2" type="submit" disabled={loading}>
           {loading ? 'Cargando…' : 'Guardar cambios'}
         </button>
       </form>
+
+      {err && <p className="text-sm text-red-600">Error: {err}</p>}
     </main>
   );
 }
