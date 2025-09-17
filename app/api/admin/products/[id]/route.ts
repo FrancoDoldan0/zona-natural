@@ -53,7 +53,8 @@ export async function GET(req: Request) {
       subcategoryId: true,
       category: { select: { id: true, name: true } },
       subcategory: { select: { id: true, name: true } },
-      images: { select: { id: true, url: true, alt: true, sortOrder: true }, orderBy: { sortOrder: 'asc' } },
+      // ⬇️ devolvemos todas las columnas de images y solo ordenamos
+      images: { orderBy: { sortOrder: 'asc' } },
     },
   });
 
