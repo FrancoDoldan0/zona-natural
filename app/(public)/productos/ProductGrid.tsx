@@ -26,11 +26,13 @@ export default function ProductGrid({ items }: { items: Product[] }) {
         const isAgotado = pp.status === 'AGOTADO';
 
         // Catálogo: p.cover   | Detalle: p.coverUrl o p.images[0].url
-        const firstImage = pp.cover || (pp as any).coverUrl || (pp as any).images?.[0]?.url || '/placeholder.jpg';
+        const firstImage =
+          pp.cover || (pp as any).coverUrl || (pp as any).images?.[0]?.url || '/placeholder.jpg';
 
         // Normalizar a ruta válida
         const src =
-          typeof firstImage === 'string' && (firstImage.startsWith('http') || firstImage.startsWith('/'))
+          typeof firstImage === 'string' &&
+          (firstImage.startsWith('http') || firstImage.startsWith('/'))
             ? firstImage
             : `/${firstImage}`;
 
@@ -78,7 +80,7 @@ export default function ProductGrid({ items }: { items: Product[] }) {
                 {/* IMG con fallback a /placeholder.jpg (solo en cliente) */}
                 <img
                   src={src}
-                  alt(pp.name || 'Producto')}
+                  alt={pp.name || 'Producto'}
                   loading="lazy"
                   style={{
                     width: '100%',
