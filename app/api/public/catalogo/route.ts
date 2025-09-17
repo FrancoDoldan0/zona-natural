@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server';
 import { json } from '@/lib/json';
 import { createPrisma } from '@/lib/prisma-edge';
 import { computePricesBatch } from '@/lib/pricing';
+import { publicR2Url } from '@/lib/storage';
 import type { Prisma } from '@prisma/client';
 
 const prisma = createPrisma();
@@ -41,8 +42,7 @@ export async function GET(req: NextRequest) {
   const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
   const onSale = parseBool(url.searchParams.get('onSale'));
 
-  // --- Filtros base ---
-  // ✅ Mostrar también los productos AGOTADO en el catálogo público
+  // --- Filtros base: incluir AGOTADO en público ---
   const where: any = { status: { in: ['ACTIVE', 'AGOTADO'] } };
 
   if (q) {
@@ -59,12 +59,10 @@ export async function GET(req: NextRequest) {
 
   if (tagIds.length) {
     if (match === 'all') {
-      // Requiere TODOS los tags (intersección): AND de sub-condiciones
       where.AND = (where.AND || []).concat(
-        tagIds.map((id) => ({ productTags: { some: { tagId: id } } })),
+        tagIds.map((id) => ({ productTags: { some: { tagId: id } } }))
       );
     } else {
-      // default: ANY de los tags (unión)
       where.productTags = { some: { tagId: { in: tagIds } } };
     }
   }
@@ -75,7 +73,7 @@ export async function GET(req: NextRequest) {
     if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
   }
 
-  // --- Orden (tipado para Prisma) ---
+  // --- Orden ---
   const sortParam = (url.searchParams.get('sort') || '-id').toLowerCase();
   let orderBy: Prisma.ProductOrderByWithRelationInput;
   switch (sortParam) {
@@ -115,7 +113,8 @@ export async function GET(req: NextRequest) {
       take: perPage,
       orderBy,
       include: {
-        images: { orderBy: { sortOrder: 'asc' }, take: 1 },
+        // ✅ solo necesitamos la key de la primera imagen
+        images: { orderBy: { sortOrder: 'asc' }, take: 1, select: { key: true } },
         productTags: { select: { tagId: true } },
       },
     }),
@@ -138,13 +137,16 @@ export async function GET(req: NextRequest) {
       ? Math.round((1 - pr.priceFinal! / pr.priceOriginal!) * 100)
       : 0;
 
+    // ✅ si no hay imagen, no llamamos a publicR2Url (evita 500)
+    const key: string | null = p.images?.[0]?.key ?? null;
+    const cover = key ? publicR2Url(key) : null;
+
     return {
       id: p.id,
       name: p.name,
       slug: p.slug,
-      // si en tu modelo tenés 'key' en vez de 'url', dejá esto como estaba
-      cover: p.images?.[0]?.url || null,
-      status: p.status ?? null, // 👈 devolvemos el estado para poder mostrar "AGOTADO"
+      cover,
+      status: p.status ?? null, // 👈 para mostrar "AGOTADO"
       priceOriginal: pr?.priceOriginal ?? null,
       priceFinal: pr?.priceFinal ?? null,
       offer: pr?.offer ?? null,
@@ -153,27 +155,25 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  // Filtros por precio FINAL y onSale (post query, dentro de la página)
+  // Filtros por precio FINAL y onSale (post query)
   if (onSale) items = items.filter((i) => i.hasDiscount);
-  if (Number.isFinite(minFinal))
-    items = items.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
-  if (Number.isFinite(maxFinal))
-    items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
+  if (Number.isFinite(minFinal)) items = items.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
+  if (Number.isFinite(maxFinal)) items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
 
   // Orden adicional por precio FINAL (post query)
   if (sortParam === 'final') {
     items.sort(
       (a: any, b: any) =>
-        (a.priceFinal ?? Number.POSITIVE_INFINITY) - (b.priceFinal ?? Number.POSITIVE_INFINITY),
+        (a.priceFinal ?? Number.POSITIVE_INFINITY) - (b.priceFinal ?? Number.POSITIVE_INFINITY)
     );
   } else if (sortParam === '-final') {
     items.sort(
       (a: any, b: any) =>
-        (b.priceFinal ?? Number.NEGATIVE_INFINITY) - (a.priceFinal ?? Number.NEGATIVE_INFINITY),
+        (b.priceFinal ?? Number.NEGATIVE_INFINITY) - (a.priceFinal ?? Number.NEGATIVE_INFINITY)
     );
   }
 
-  const filteredTotal = items.length; // items de esta página luego de post-filtros
+  const filteredTotal = items.length;
   const pageCount = Math.ceil((total ?? 0) / perPage);
   const filteredPageCount = Math.ceil(filteredTotal / perPage);
 
