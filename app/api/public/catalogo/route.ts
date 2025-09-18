@@ -17,9 +17,11 @@ function parseBool(v?: string | null) {
 }
 
 export async function GET(req: NextRequest) {
-  try {
-    const url = new URL(req.url);
+  const url = new URL(req.url);
+  const wantDebug = url.searchParams.has('_debug');
+  const dbg: Record<string, unknown> = { stage: 'start' };
 
+  try {
     const q = (url.searchParams.get('q') || '').trim();
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
     const perPage = Math.min(60, Math.max(1, parseInt(url.searchParams.get('perPage') || '12', 10)));
@@ -44,7 +46,7 @@ export async function GET(req: NextRequest) {
     const onSale = parseBool(url.searchParams.get('onSale'));
 
     // --- Filtros base ---
-    // ✅ Mostrar también AGOTADO en el catálogo público
+    // Mostrar también AGOTADO en el catálogo público
     const where: any = { status: { in: ['ACTIVE', 'AGOTADO'] } };
 
     if (q) {
@@ -109,25 +111,40 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * perPage;
 
-    const [total, itemsRaw] = await Promise.all([
-      prisma.product.count({ where }),
-      prisma.product.findMany({
-        where,
-        skip,
-        take: perPage,
-        orderBy,
-        include: {
-          // ⚠️ En tu schema de imágenes existe `key` (no `url`)
-          images: {
-            orderBy: { sortOrder: 'asc' },
-            take: 1,
-            select: { key: true },
-          },
-          productTags: { select: { tagId: true } },
-        },
-      }),
-    ]);
+    dbg.stage = 'db';
+    dbg.where = where;
+    dbg.orderBy = orderBy;
+    dbg.skip = skip;
+    dbg.take = perPage;
 
+    let total = 0;
+    let itemsRaw: Array<any> = [];
+    try {
+      [total, itemsRaw] = await Promise.all([
+        prisma.product.count({ where }),
+        prisma.product.findMany({
+          where,
+          skip,
+          take: perPage,
+          orderBy,
+          include: {
+            // En el schema de imágenes existe `key` (no `url`)
+            images: {
+              orderBy: { sortOrder: 'asc' },
+              take: 1,
+              select: { key: true },
+            },
+            productTags: { select: { tagId: true } },
+          },
+        }),
+      ]);
+    } catch (dbErr) {
+      const payload: any = { ok: false, error: 'db_error' };
+      if (wantDebug) payload.debug = { ...dbg, message: String(dbErr) };
+      return NextResponse.json(payload, { status: 500, headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    dbg.stage = 'pricing';
     const bare = itemsRaw.map((p: any) => ({
       id: p.id,
       price: p.price,
@@ -135,12 +152,23 @@ export async function GET(req: NextRequest) {
       tags: (p.productTags || []).map((t: any) => t.tagId),
     }));
 
-    const priced = await computePricesBatch(bare);
+    let priced = new Map<number, any>();
+    try {
+      priced = await computePricesBatch(bare);
+    } catch (priceErr) {
+      // Si falla pricing, seguimos sin descuentos (fall back a price base)
+      if (wantDebug) dbg.pricingError = String(priceErr);
+    }
 
+    dbg.stage = 'map';
     let items = itemsRaw.map((p: any) => {
       const pr = priced.get(p.id);
-      const priceOriginal = pr?.priceOriginal ?? null;
-      const priceFinal = pr?.priceFinal ?? null;
+
+      // Fallbacks seguros si no hay pricing o hubo error
+      const priceOriginal =
+        pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
+      const priceFinal =
+        pr?.priceFinal ?? (typeof p.price === 'number' ? p.price : null);
 
       const hasDiscount =
         priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
@@ -168,9 +196,11 @@ export async function GET(req: NextRequest) {
     });
 
     // Filtros por precio FINAL y onSale (post query, dentro de la página)
+    const haveMinFinal = Number.isFinite(minFinal);
+    const haveMaxFinal = Number.isFinite(maxFinal);
     if (onSale) items = items.filter((i) => i.hasDiscount);
-    if (Number.isFinite(minFinal)) items = items.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
-    if (Number.isFinite(maxFinal)) items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
+    if (haveMinFinal) items = items.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
+    if (haveMaxFinal) items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
 
     // Orden adicional por precio FINAL (post query)
     if (sortParam === 'final') {
@@ -189,7 +219,7 @@ export async function GET(req: NextRequest) {
     const pageCount = Math.ceil((total ?? 0) / perPage);
     const filteredPageCount = Math.ceil(filteredTotal / perPage);
 
-    return json({
+    const payload: any = {
       ok: true,
       page,
       perPage,
@@ -211,13 +241,14 @@ export async function GET(req: NextRequest) {
         sort: sortParam,
       },
       items,
-    });
-  } catch (err) {
-    // Evita que la ruta explote en Edge y devuelve JSON
-    console.error('[public/catalogo] error:', err);
-    return NextResponse.json(
-      { ok: false, error: 'internal_error' },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } },
-    );
+    };
+
+    if (wantDebug) payload.debug = dbg;
+
+    return json(payload);
+  } catch (err: any) {
+    const payload: any = { ok: false, error: 'internal_error' };
+    if (wantDebug) payload.debug = { ...dbg, message: String(err?.message || err) };
+    return NextResponse.json(payload, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }
