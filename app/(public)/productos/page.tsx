@@ -24,24 +24,19 @@ export type Product = {
   hasDiscount?: boolean;
   discountPercent?: number | null;
 
-  // ✅ incluimos estado para mostrar “AGOTADO” en la card
+  // incluimos estado para mostrar “AGOTADO” en la card
   status?: 'ACTIVE' | 'AGOTADO' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | string;
 };
-
-// Evitamos headers() en Next 15: usamos BASE_URL pública
-function baseUrl() {
-  return (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
-}
 
 function normalizeProduct(raw: any): Product {
   const price =
     typeof raw?.price === 'number'
       ? raw.price
       : typeof raw?.priceFinal === 'number'
-        ? raw.priceFinal
-        : typeof raw?.priceOriginal === 'number'
-          ? raw.priceOriginal
-          : null;
+      ? raw.priceFinal
+      : typeof raw?.priceOriginal === 'number'
+      ? raw.priceOriginal
+      : null;
 
   const cover: string | null = raw?.cover ?? raw?.coverUrl ?? raw?.images?.[0]?.url ?? null;
 
@@ -57,7 +52,7 @@ function normalizeProduct(raw: any): Product {
     priceFinal: raw?.priceFinal ?? null,
     hasDiscount: Boolean(raw?.hasDiscount ?? false),
     discountPercent: typeof raw?.discountPercent === 'number' ? raw.discountPercent : null,
-    status: typeof raw?.status === 'string' ? raw.status : undefined, // ✅ importante
+    status: typeof raw?.status === 'string' ? raw.status : undefined,
   };
 }
 
@@ -77,24 +72,34 @@ async function getData(page = 1, perPage = 12): Promise<{
   page: number;
   perPage: number;
 }> {
-  const url = `${baseUrl()}/api/public/catalogo?page=${page}&perPage=${perPage}&sort=-id`;
-  const res = await fetch(url, {
-    cache: 'no-store',
-    headers: { Accept: 'application/json' }, // 👈 pedimos JSON explícitamente
-  });
-  if (!res.ok) throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
+  // ✅ URL relativa para evitar depender de NEXT_PUBLIC_BASE_URL en Edge
+  const url = `/api/public/catalogo?page=${page}&perPage=${perPage}&sort=-id`;
 
-  const data = (await res.json()) as ProductsApiResp;
-  const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
-  const items: Product[] = rawItems.map(normalizeProduct);
-  const total: number = typeof data.total === 'number' ? data.total : items.length;
+  try {
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
+    }
 
-  return {
-    items,
-    total,
-    page: typeof data.page === 'number' ? data.page : page,
-    perPage: typeof data.perPage === 'number' ? data.perPage : perPage,
-  };
+    const data = (await res.json()) as ProductsApiResp;
+    const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
+    const items: Product[] = rawItems.map(normalizeProduct);
+    const total: number = typeof data.total === 'number' ? data.total : items.length;
+
+    return {
+      items,
+      total,
+      page: typeof data.page === 'number' ? data.page : page,
+      perPage: typeof data.perPage === 'number' ? data.perPage : perPage,
+    };
+  } catch (e) {
+    // No tiramos el render: devolvemos lista vacía y total 0
+    console.error('[public/productos/page] fetch error:', e);
+    return { items: [], total: 0, page, perPage };
+  }
 }
 
 export default async function ProductosPage(props: any) {
