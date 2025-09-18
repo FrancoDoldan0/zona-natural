@@ -21,31 +21,48 @@ type Product = {
   coverUrl?: string | null;
   images?: ProductImage[] | null;
   category?: Category | null;
-  status?: Status; // ✅ importante para UI y SEO
+  status?: Status; // para UI y SEO
 };
 
-// Base pública (evitamos headers() en Next 15)
-function baseUrl() {
-  return (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
+// ---------- Base pública solo para canonical/OG ----------
+function baseUrl(): string {
+  const env =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.CF_PAGES_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL ||
+    '';
+
+  if (!env) return '';
+  const url = env.startsWith('http') ? env : `https://${env}`;
+  return url.replace(/\/+$/, '');
 }
 
 function absUrl(u?: string | null) {
   if (!u) return undefined;
   if (u.startsWith('http')) return u;
-  const base = baseUrl();
-  return u.startsWith('/') ? `${base}${u}` : `${base}/${u}`;
+  const b = baseUrl();
+  if (!b) return undefined; // si no hay base pública, omitimos
+  return u.startsWith('/') ? `${b}${u}` : `${b}/${u}`;
 }
 
+// ---------- Data fetching ----------
 async function getProduct(slug: string): Promise<Product | null> {
-  const url = `${baseUrl()}/api/public/producto/${encodeURIComponent(slug)}`;
-  const res = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } });
+  // fetch relativo: funciona bien en Edge sin depender de BASE_URL
+  const url = `/api/public/producto/${encodeURIComponent(slug)}`;
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+  });
+
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Producto: ${res.status} ${res.statusText}`);
+
   const data = await res.json<any>();
   return (data?.item ?? data ?? null) as Product | null;
 }
 
-// Mapeo simple a schema.org availability
+// ---------- schema.org ----------
 function availabilityFromStatus(status?: Status) {
   switch ((status || '').toUpperCase()) {
     case 'AGOTADO':
@@ -60,17 +77,17 @@ function availabilityFromStatus(status?: Status) {
 
 export async function generateMetadata({ params }: any): Promise<Metadata> {
   const item = await getProduct(params.slug);
-  if (!item) {
-    return { title: 'Producto no encontrado', robots: { index: false } };
-  }
+  if (!item) return { title: 'Producto no encontrado', robots: { index: false } };
 
   const title = `${item.name} | Zona Natural`;
   const description =
-    (item.description && item.description.slice(0, 160)) || `Compra ${item.name} en Zona Natural.`;
+    (item.description && item.description.slice(0, 160)) ||
+    `Compra ${item.name} en Zona Natural.`;
 
   const firstImg = item.coverUrl || item.images?.[0]?.url || '/placeholder.jpg';
   const ogImage = absUrl(firstImg);
-  const canonical = `${baseUrl()}/productos/${item.slug}`;
+  const b = baseUrl();
+  const canonical = b ? `${b}/productos/${item.slug}` : `/productos/${item.slug}`;
 
   return {
     title,
@@ -110,7 +127,7 @@ export default async function ProductPage({ params }: any) {
       '@type': 'Offer',
       price: item.price,
       priceCurrency: 'ARS',
-      availability: availabilityFromStatus(item.status), // ✅ refleja AGOTADO
+      availability: availabilityFromStatus(item.status),
     };
   }
 
@@ -126,7 +143,6 @@ export default async function ProductPage({ params }: any) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         <div>
           <div style={{ width: '100%', aspectRatio: '4/3', marginBottom: 12, position: 'relative' }}>
-            {/* ✅ Chapita AGOTADO sobre la imagen */}
             {isAgotado && (
               <span
                 style={{
@@ -195,7 +211,6 @@ export default async function ProductPage({ params }: any) {
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>{item.name}</h1>
 
-          {/* Badge textual junto al título (útil si la imagen no carga) */}
           {isAgotado && (
             <div
               style={{
@@ -222,7 +237,6 @@ export default async function ProductPage({ params }: any) {
             </div>
           ) : null}
 
-          {/* ✅ Mostrar “Sin stock” cuando está AGOTADO */}
           {isAgotado ? (
             <div style={{ opacity: 0.75, marginBottom: 12 }}>Sin stock</div>
           ) : typeof item.price === 'number' ? (
