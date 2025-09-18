@@ -38,7 +38,7 @@ function absUrl(u?: string | null) {
 
 async function getProduct(slug: string): Promise<Product | null> {
   const url = `${baseUrl()}/api/public/producto/${encodeURIComponent(slug)}`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Producto: ${res.status} ${res.statusText}`);
   const data = await res.json<any>();
@@ -222,7 +222,10 @@ export default async function ProductPage({ params }: any) {
             </div>
           ) : null}
 
-          {typeof item.price === 'number' ? (
+          {/* ✅ Mostrar “Sin stock” cuando está AGOTADO */}
+          {isAgotado ? (
+            <div style={{ opacity: 0.75, marginBottom: 12 }}>Sin stock</div>
+          ) : typeof item.price === 'number' ? (
             <div style={{ fontSize: 22, marginBottom: 12 }}>
               ${item.price.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
             </div>

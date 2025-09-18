@@ -24,7 +24,7 @@ export type Product = {
   hasDiscount?: boolean;
   discountPercent?: number | null;
 
-  // ✅ ahora incluimos el estado (para mostrar “AGOTADO” en la card)
+  // ✅ incluimos estado para mostrar “AGOTADO” en la card
   status?: 'ACTIVE' | 'AGOTADO' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | string;
 };
 
@@ -38,10 +38,10 @@ function normalizeProduct(raw: any): Product {
     typeof raw?.price === 'number'
       ? raw.price
       : typeof raw?.priceFinal === 'number'
-      ? raw.priceFinal
-      : typeof raw?.priceOriginal === 'number'
-      ? raw.priceOriginal
-      : null;
+        ? raw.priceFinal
+        : typeof raw?.priceOriginal === 'number'
+          ? raw.priceOriginal
+          : null;
 
   const cover: string | null = raw?.cover ?? raw?.coverUrl ?? raw?.images?.[0]?.url ?? null;
 
@@ -78,10 +78,13 @@ async function getData(page = 1, perPage = 12): Promise<{
   perPage: number;
 }> {
   const url = `${baseUrl()}/api/public/catalogo?page=${page}&perPage=${perPage}&sort=-id`;
-  const res = await fetch(url, { cache: 'no-store' });
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' }, // 👈 pedimos JSON explícitamente
+  });
   if (!res.ok) throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
 
-  const data = await res.json<ProductsApiResp>();
+  const data = (await res.json()) as ProductsApiResp;
   const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
   const items: Product[] = rawItems.map(normalizeProduct);
   const total: number = typeof data.total === 'number' ? data.total : items.length;

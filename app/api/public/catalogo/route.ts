@@ -139,11 +139,16 @@ export async function GET(req: NextRequest) {
 
     let items = itemsRaw.map((p: any) => {
       const pr = priced.get(p.id);
+      const priceOriginal = pr?.priceOriginal ?? null;
+      const priceFinal = pr?.priceFinal ?? null;
+
       const hasDiscount =
-        pr?.priceOriginal != null && pr?.priceFinal != null && pr.priceFinal < pr.priceOriginal;
-      const discountPercent = hasDiscount
-        ? Math.round((1 - pr!.priceFinal! / pr!.priceOriginal!) * 100)
-        : 0;
+        priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
+
+      const discountPercent =
+        hasDiscount && priceOriginal && priceFinal
+          ? Math.round((1 - priceFinal / priceOriginal) * 100)
+          : 0;
 
       const coverKey = p.images?.[0]?.key as string | undefined;
       const cover = coverKey ? publicR2Url(coverKey) : null;
@@ -154,8 +159,8 @@ export async function GET(req: NextRequest) {
         slug: p.slug,
         cover,
         status: p.status ?? null, // para mostrar "AGOTADO" en el grid
-        priceOriginal: pr?.priceOriginal ?? null,
-        priceFinal: pr?.priceFinal ?? null,
+        priceOriginal,
+        priceFinal,
         offer: pr?.offer ?? null,
         hasDiscount,
         discountPercent,
