@@ -10,21 +10,14 @@ export type Product = {
   id: number;
   name: string;
   slug: string;
-
-  // catálogo puede traer "cover", detalle puede traer "coverUrl" o "images"
   cover?: string | null;
   coverUrl?: string | null;
   images?: ProductImage[] | null;
-
-  // precios: distintos endpoints usan distintos campos
   price?: number | null;
   priceOriginal?: number | null;
   priceFinal?: number | null;
-
   hasDiscount?: boolean;
   discountPercent?: number | null;
-
-  // estado para mostrar “AGOTADO”
   status?: 'ACTIVE' | 'AGOTADO' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | string;
 };
 
@@ -72,20 +65,31 @@ async function getData(page = 1, perPage = 12): Promise<{
   page: number;
   perPage: number;
 }> {
-  // ✅ URL relativa para que funcione en Cloudflare Pages (Edge)
-  const url = `/api/public/catalogo?page=${page}&perPage=${perPage}&sort=-id`;
+  // Preferimos absoluta con CF_PAGES_URL (Cloudflare) o NEXT_PUBLIC_BASE_URL.
+  const base =
+    process.env.CF_PAGES_URL?.replace(/\/+$/, '') ||
+    process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, '') ||
+    '';
+
+  const qs = `page=${page}&perPage=${perPage}&sort=-id&_ts=${Date.now()}`;
+  const url = `${base}/api/public/catalogo?${qs}`; // si base=='' queda relativa
 
   try {
     const res = await fetch(url, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
+      next: { revalidate: 0 },
     });
-    if (!res.ok) throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      // Log útil en Functions logs de Cloudflare
+      console.error('[productos] catálogo HTTP', res.status, res.statusText);
+      return { items: [], total: 0, page, perPage };
+    }
 
     const data = (await res.json()) as ProductsApiResp;
     const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
     const items: Product[] = rawItems.map(normalizeProduct);
-    const total: number = typeof (data as any).total === 'number' ? (data as any).total : items.length;
+    const total: number = typeof data.total === 'number' ? data.total : items.length;
 
     return {
       items,
@@ -94,8 +98,7 @@ async function getData(page = 1, perPage = 12): Promise<{
       perPage: typeof data.perPage === 'number' ? data.perPage : perPage,
     };
   } catch (e) {
-    // Evitamos romper el render del Server Component
-    console.error('[public/productos] fetch catálogo falló:', e);
+    console.error('[productos] fetch catálogo falló:', e);
     return { items: [], total: 0, page, perPage };
   }
 }
@@ -114,7 +117,6 @@ export default async function ProductosPage(props: any) {
         {total} resultado{total === 1 ? '' : 's'}
       </p>
 
-      {/* Client Component: maneja <img> con onError sin romper RSC */}
       <ProductGrid items={items} />
     </main>
   );
