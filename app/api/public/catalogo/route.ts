@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { json } from '@/lib/json';
 import { createPrisma } from '@/lib/prisma-edge';
 import { computePricesBatch } from '@/lib/pricing';
-import { publicR2Url } from '@/lib/storage';
 import type { Prisma } from '@prisma/client';
 
 const prisma = createPrisma();
@@ -18,8 +17,9 @@ function parseBool(v?: string | null) {
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const wantDebug = url.searchParams.has('_debug');
-  const dbg: Record<string, unknown> = { stage: 'start' };
+
+  // flag de depuración opcional: &_debug=1
+  const debug = url.searchParams.get('_debug') === '1';
 
   try {
     const q = (url.searchParams.get('q') || '').trim();
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const categoryId = parseInt(url.searchParams.get('categoryId') || '', 10);
     const subcategoryId = parseInt(url.searchParams.get('subcategoryId') || '', 10);
 
-    // --- multi-tag + modo de match (any/all) ---
+    // multi-tag + modo de match (any/all)
     const tagIdSingle = parseInt(url.searchParams.get('tagId') || '', 10);
     const tagIdsCsv = (url.searchParams.get('tagIds') || '').trim();
     const tagIdList = url.searchParams.getAll('tagId').map((s) => parseInt(s, 10));
@@ -45,8 +45,7 @@ export async function GET(req: NextRequest) {
     const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
     const onSale = parseBool(url.searchParams.get('onSale'));
 
-    // --- Filtros base ---
-    // Mostrar también AGOTADO en el catálogo público
+    // Filtros base: mostramos ACTIVE y AGOTADO
     const where: any = { status: { in: ['ACTIVE', 'AGOTADO'] } };
 
     if (q) {
@@ -63,12 +62,10 @@ export async function GET(req: NextRequest) {
 
     if (tagIds.length) {
       if (match === 'all') {
-        // Requiere TODOS los tags (intersección)
         where.AND = (where.AND || []).concat(
           tagIds.map((id) => ({ productTags: { some: { tagId: id } } })),
         );
       } else {
-        // ANY de los tags (unión)
         where.productTags = { some: { tagId: { in: tagIds } } };
       }
     }
@@ -79,7 +76,7 @@ export async function GET(req: NextRequest) {
       if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
     }
 
-    // --- Orden (tipado para Prisma) ---
+    // Orden
     const sortParam = (url.searchParams.get('sort') || '-id').toLowerCase();
     let orderBy: Prisma.ProductOrderByWithRelationInput;
     switch (sortParam) {
@@ -111,40 +108,20 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * perPage;
 
-    dbg.stage = 'db';
-    dbg.where = where;
-    dbg.orderBy = orderBy;
-    dbg.skip = skip;
-    dbg.take = perPage;
+    // ⚠️ Importante: NO unimos la tabla de imágenes hasta migrar DB (evita error ProductImage.key)
+    const [total, itemsRaw] = await Promise.all([
+      prisma.product.count({ where }),
+      prisma.product.findMany({
+        where,
+        skip,
+        take: perPage,
+        orderBy,
+        include: {
+          productTags: { select: { tagId: true } },
+        },
+      }),
+    ]);
 
-    let total = 0;
-    let itemsRaw: Array<any> = [];
-    try {
-      [total, itemsRaw] = await Promise.all([
-        prisma.product.count({ where }),
-        prisma.product.findMany({
-          where,
-          skip,
-          take: perPage,
-          orderBy,
-          include: {
-            // En el schema de imágenes existe `key` (no `url`)
-            images: {
-              orderBy: { sortOrder: 'asc' },
-              take: 1,
-              select: { key: true },
-            },
-            productTags: { select: { tagId: true } },
-          },
-        }),
-      ]);
-    } catch (dbErr) {
-      const payload: any = { ok: false, error: 'db_error' };
-      if (wantDebug) payload.debug = { ...dbg, message: String(dbErr) };
-      return NextResponse.json(payload, { status: 500, headers: { 'Cache-Control': 'no-store' } });
-    }
-
-    dbg.stage = 'pricing';
     const bare = itemsRaw.map((p: any) => ({
       id: p.id,
       price: p.price,
@@ -152,41 +129,24 @@ export async function GET(req: NextRequest) {
       tags: (p.productTags || []).map((t: any) => t.tagId),
     }));
 
-    let priced = new Map<number, any>();
-    try {
-      priced = await computePricesBatch(bare);
-    } catch (priceErr) {
-      // Si falla pricing, seguimos sin descuentos (fall back a price base)
-      if (wantDebug) dbg.pricingError = String(priceErr);
-    }
+    const priced = await computePricesBatch(bare);
 
-    dbg.stage = 'map';
     let items = itemsRaw.map((p: any) => {
       const pr = priced.get(p.id);
-
-      // Fallbacks seguros si no hay pricing o hubo error
-      const priceOriginal =
-        pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
-      const priceFinal =
-        pr?.priceFinal ?? (typeof p.price === 'number' ? p.price : null);
-
-      const hasDiscount =
-        priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
-
+      const priceOriginal = pr?.priceOriginal ?? null;
+      const priceFinal = pr?.priceFinal ?? null;
+      const hasDiscount = priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
       const discountPercent =
         hasDiscount && priceOriginal && priceFinal
           ? Math.round((1 - priceFinal / priceOriginal) * 100)
           : 0;
 
-      const coverKey = p.images?.[0]?.key as string | undefined;
-      const cover = coverKey ? publicR2Url(coverKey) : null;
-
       return {
         id: p.id,
         name: p.name,
         slug: p.slug,
-        cover,
-        status: p.status ?? null, // para mostrar "AGOTADO" en el grid
+        cover: null as string | null, // placeholder hasta migrar imágenes
+        status: p.status ?? null,
         priceOriginal,
         priceFinal,
         offer: pr?.offer ?? null,
@@ -195,14 +155,12 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Filtros por precio FINAL y onSale (post query, dentro de la página)
-    const haveMinFinal = Number.isFinite(minFinal);
-    const haveMaxFinal = Number.isFinite(maxFinal);
+    // Post-filtros por precio final / oferta
     if (onSale) items = items.filter((i) => i.hasDiscount);
-    if (haveMinFinal) items = items.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
-    if (haveMaxFinal) items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
+    if (Number.isFinite(minFinal)) items = items.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
+    if (Number.isFinite(maxFinal)) items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
 
-    // Orden adicional por precio FINAL (post query)
+    // Re-orden por precio final, si aplica
     if (sortParam === 'final') {
       items.sort(
         (a: any, b: any) =>
@@ -215,11 +173,11 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const filteredTotal = items.length; // items de esta página luego de post-filtros
+    const filteredTotal = items.length;
     const pageCount = Math.ceil((total ?? 0) / perPage);
     const filteredPageCount = Math.ceil(filteredTotal / perPage);
 
-    const payload: any = {
+    return json({
       ok: true,
       page,
       perPage,
@@ -241,14 +199,21 @@ export async function GET(req: NextRequest) {
         sort: sortParam,
       },
       items,
-    };
-
-    if (wantDebug) payload.debug = dbg;
-
-    return json(payload);
+    });
   } catch (err: any) {
-    const payload: any = { ok: false, error: 'internal_error' };
-    if (wantDebug) payload.debug = { ...dbg, message: String(err?.message || err) };
-    return NextResponse.json(payload, { status: 500, headers: { 'Cache-Control': 'no-store' } });
+    // Errores de DB (por columnas/joins) se exponen si _debug=1
+    const body: any = { ok: false, error: 'internal_error' };
+    if (debug) {
+      body.debug = {
+        stage: 'catch',
+        name: err?.name,
+        message: String(err?.message || err),
+      };
+    }
+    // Evita que la ruta explote en Edge
+    return NextResponse.json(body, {
+      status: 500,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
 }
