@@ -2,7 +2,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import SafeImage from '@/components/SafeImage';
 
 export const runtime = 'edge';
 export const revalidate = 60;
@@ -21,7 +20,7 @@ type Product = {
   coverUrl?: string | null;
   images?: ProductImage[] | null;
   category?: Category | null;
-  status?: Status; // para UI y SEO
+  status?: Status;
 };
 
 // ---------- Base pública solo para canonical/OG ----------
@@ -32,7 +31,6 @@ function baseUrl(): string {
     process.env.VERCEL_PROJECT_PRODUCTION_URL ||
     process.env.VERCEL_URL ||
     '';
-
   if (!env) return '';
   const url = env.startsWith('http') ? env : `https://${env}`;
   return url.replace(/\/+$/, '');
@@ -42,22 +40,19 @@ function absUrl(u?: string | null) {
   if (!u) return undefined;
   if (u.startsWith('http')) return u;
   const b = baseUrl();
-  if (!b) return undefined; // si no hay base pública, omitimos
+  if (!b) return undefined;
   return u.startsWith('/') ? `${b}${u}` : `${b}/${u}`;
 }
 
 // ---------- Data fetching ----------
 async function getProduct(slug: string): Promise<Product | null> {
-  // fetch relativo: funciona bien en Edge sin depender de BASE_URL
   const url = `/api/public/producto/${encodeURIComponent(slug)}`;
   const res = await fetch(url, {
     cache: 'no-store',
     headers: { Accept: 'application/json' },
   });
-
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Producto: ${res.status} ${res.statusText}`);
-
   const data = await res.json<any>();
   return (data?.item ?? data ?? null) as Product | null;
 }
@@ -160,9 +155,10 @@ export default async function ProductPage({ params }: any) {
                 AGOTADO
               </span>
             )}
-            <SafeImage
+            <img
               src={imgSrc}
               alt={item.name}
+              loading="eager"
               style={{
                 width: '100%',
                 height: '100%',
@@ -189,9 +185,10 @@ export default async function ProductPage({ params }: any) {
                     : `/${im.url}`;
                 return (
                   <div key={`${im.url}-${i}`} style={{ width: '100%', aspectRatio: '4/3' }}>
-                    <SafeImage
+                    <img
                       src={thumb}
                       alt={im.alt || item.name}
+                      loading="lazy"
                       style={{
                         width: '100%',
                         height: '100%',
