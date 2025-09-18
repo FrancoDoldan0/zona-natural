@@ -24,7 +24,7 @@ export type Product = {
   hasDiscount?: boolean;
   discountPercent?: number | null;
 
-  // incluimos estado para mostrar “AGOTADO” en la card
+  // estado para mostrar “AGOTADO”
   status?: 'ACTIVE' | 'AGOTADO' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | string;
 };
 
@@ -72,7 +72,7 @@ async function getData(page = 1, perPage = 12): Promise<{
   page: number;
   perPage: number;
 }> {
-  // ✅ URL relativa para evitar depender de NEXT_PUBLIC_BASE_URL en Edge
+  // ✅ URL relativa para que funcione en Cloudflare Pages (Edge)
   const url = `/api/public/catalogo?page=${page}&perPage=${perPage}&sort=-id`;
 
   try {
@@ -80,14 +80,12 @@ async function getData(page = 1, perPage = 12): Promise<{
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
-    if (!res.ok) {
-      throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
-    }
+    if (!res.ok) throw new Error(`Catálogo: ${res.status} ${res.statusText}`);
 
     const data = (await res.json()) as ProductsApiResp;
     const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
     const items: Product[] = rawItems.map(normalizeProduct);
-    const total: number = typeof data.total === 'number' ? data.total : items.length;
+    const total: number = typeof (data as any).total === 'number' ? (data as any).total : items.length;
 
     return {
       items,
@@ -96,8 +94,8 @@ async function getData(page = 1, perPage = 12): Promise<{
       perPage: typeof data.perPage === 'number' ? data.perPage : perPage,
     };
   } catch (e) {
-    // No tiramos el render: devolvemos lista vacía y total 0
-    console.error('[public/productos/page] fetch error:', e);
+    // Evitamos romper el render del Server Component
+    console.error('[public/productos] fetch catálogo falló:', e);
     return { items: [], total: 0, page, perPage };
   }
 }
