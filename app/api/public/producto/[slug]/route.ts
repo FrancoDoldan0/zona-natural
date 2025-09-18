@@ -11,7 +11,7 @@ const prisma = createPrisma();
 // Next 15: no tipar el 2º argumento; usamos `any` para evitar incompatibilidades
 export async function GET(req: Request, { params }: any) {
   const url = new URL(req.url);
-  const debug = url.searchParams.get('_debug');
+  const debug = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
 
   try {
     const slug = String(params?.slug ?? '').trim();
@@ -20,13 +20,17 @@ export async function GET(req: Request, { params }: any) {
     }
 
     // Solo productos visibles públicamente: ACTIVE o AGOTADO
+    // findFirst para combinar slug + status
     const p: any = await prisma.product.findFirst({
-      where: { slug, status: { in: ['ACTIVE', 'AGOTADO'] } },
+      where: {
+        slug,
+        status: { in: ['ACTIVE', 'AGOTADO'] },
+      },
       include: {
         images: {
           orderBy: { sortOrder: 'asc' },
-          // En el schema usamos `key` (no `url`)
-          select: { id: true, key: true, alt: true, sortOrder: true, isCover: true, size: true },
+          // ⚠ Seleccionamos solo columnas que existen seguro en tu DB actual
+          select: { id: true, key: true },
         },
         category: { select: { id: true, name: true, slug: true } },
         productTags: { select: { tagId: true } },
@@ -42,54 +46,33 @@ export async function GET(req: Request, { params }: any) {
       (p.images ?? []).map((img: any) => ({
         id: img.id,
         url: publicR2Url(img.key),
-        alt: img.alt ?? null,
-        sortOrder: img.sortOrder ?? 0,
-        isCover: !!img.isCover,
-        size: img.size ?? null,
+        alt: null,            // campos opcionales no presentes en tu DB actual
+        sortOrder: 0,
+        isCover: false,
+        size: null,
       })) ?? [];
 
-    // Precios y oferta (mismo helper que catálogo), con fallback defensivo
-    let priceOriginal: number | null = typeof p.price === 'number' ? p.price : null;
-    let priceFinal: number | null = priceOriginal;
-    let offer: any = null;
-
-    try {
-      const bare = [
-        {
-          id: p.id,
-          price: p.price,
-          categoryId: p.categoryId,
-          tags: (p.productTags || []).map((t: any) => t.tagId),
-        },
-      ];
-      const priced = await computePricesBatch(bare);
-      const pr = priced.get(p.id);
-      if (pr) {
-        priceOriginal = pr.priceOriginal ?? priceOriginal;
-        priceFinal = pr.priceFinal ?? priceFinal;
-        offer = pr.offer ?? null;
-      }
-    } catch (e) {
-      if (debug) {
-        console.warn('[public/producto] computePricesBatch error:', e);
-      }
-      // seguimos con los fallbacks
-    }
+    // Precios y oferta (mismo helper que catálogo)
+    const bare = [
+      {
+        id: p.id,
+        price: p.price,
+        categoryId: p.categoryId,
+        tags: (p.productTags || []).map((t: any) => t.tagId),
+      },
+    ];
+    const priced = await computePricesBatch(bare);
+    const pr = priced.get(p.id);
 
     const hasDiscount =
-      priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
-
-    const discountPercent =
-      hasDiscount && priceOriginal && priceFinal
-        ? Math.round((1 - priceFinal / priceOriginal) * 100)
-        : 0;
+      pr?.priceOriginal != null && pr?.priceFinal != null && pr.priceFinal < pr.priceOriginal;
 
     const item = {
       id: p.id,
       name: p.name,
       slug: p.slug,
       description: p.description,
-      price: typeof p.price === 'number' ? p.price : null,
+      price: p.price,
       sku: p.sku,
       status: p.status as string, // para poder mostrar “AGOTADO” en la UI
       coverUrl: images[0]?.url ?? null,
@@ -97,24 +80,25 @@ export async function GET(req: Request, { params }: any) {
       category: p.category ? { id: p.category.id, name: p.category.name, slug: p.category.slug } : null,
 
       // datos enriquecidos para la UI
-      priceOriginal,
-      priceFinal,
-      offer,
+      priceOriginal: pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null),
+      priceFinal: pr?.priceFinal ?? (typeof p.price === 'number' ? p.price : null),
+      offer: pr?.offer ?? null,
       hasDiscount,
-      discountPercent,
+      discountPercent:
+        hasDiscount && pr?.priceOriginal && pr?.priceFinal
+          ? Math.round((1 - pr.priceFinal! / pr.priceOriginal!) * 100)
+          : 0,
     };
 
     return NextResponse.json({ ok: true, item });
-  } catch (err) {
-    if (debug) {
-      console.error('[public/producto] error:', err);
-      return NextResponse.json(
-        { ok: false, error: 'internal_error', debug: { message: String(err) } },
-        { status: 500, headers: { 'Cache-Control': 'no-store' } },
-      );
-    }
+  } catch (err: any) {
+    console.error('[public/producto] error:', err);
     return NextResponse.json(
-      { ok: false, error: 'internal_error' },
+      {
+        ok: false,
+        error: 'internal_error',
+        ...(debug ? { debug: { message: String(err?.message || err) } } : null),
+      },
       { status: 500, headers: { 'Cache-Control': 'no-store' } },
     );
   }
