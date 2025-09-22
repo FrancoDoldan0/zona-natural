@@ -57,6 +57,15 @@ async function getProduct(slug: string): Promise<Product | null> {
   return (data?.item ?? data ?? null) as Product | null;
 }
 
+// Versión segura para usar en generateMetadata (no rompe el render)
+async function getProductSafe(slug: string): Promise<Product | null> {
+  try {
+    return await getProduct(slug);
+  } catch {
+    return null;
+  }
+}
+
 // ---------- schema.org ----------
 function availabilityFromStatus(status?: Status) {
   switch ((status || '').toUpperCase()) {
@@ -71,7 +80,7 @@ function availabilityFromStatus(status?: Status) {
 }
 
 export async function generateMetadata({ params }: any): Promise<Metadata> {
-  const item = await getProduct(params.slug);
+  const item = await getProductSafe(params.slug);
   if (!item) return { title: 'Producto no encontrado', robots: { index: false } };
 
   const title = `${item.name} | Zona Natural`;
@@ -99,7 +108,7 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 }
 
 export default async function ProductPage({ params }: any) {
-  const item = await getProduct(params.slug);
+  const item = await getProductSafe(params.slug);
   if (!item) notFound();
 
   const firstImg = item.coverUrl || item.images?.[0]?.url || '/placeholder.jpg';
