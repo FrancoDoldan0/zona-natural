@@ -44,20 +44,47 @@ function absUrl(u?: string | null) {
   return u.startsWith('/') ? `${b}${u}` : `${b}/${u}`;
 }
 
-// ---------- Data fetching ----------
-async function getProduct(slug: string): Promise<Product | null> {
-  const url = `/api/public/producto/${encodeURIComponent(slug)}`;
-  const res = await fetch(url, {
-    cache: 'no-store',
-    headers: { Accept: 'application/json' },
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Producto: ${res.status} ${res.statusText}`);
-  const data = await res.json<any>();
-  return (data?.item ?? data ?? null) as Product | null;
+// ---------- Data fetching con fallback (relativa -> absoluta) ----------
+async function fetchJSON(url: string) {
+  const res = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } });
+  return res;
 }
 
-// Versión segura para usar en generateMetadata (no rompe el render)
+async function getProduct(slug: string): Promise<Product | null> {
+  const rel = `/api/public/producto/${encodeURIComponent(slug)}`;
+
+  // 1) Intento relativo
+  try {
+    const r1 = await fetchJSON(rel);
+    if (r1.status === 404) return null;
+    if (r1.ok) {
+      const j = (await r1.json()) as any;
+      return (j?.item ?? j ?? null) as Product | null;
+    }
+    // si no ok, sigo al fallback
+  } catch {
+    // paso al fallback
+  }
+
+  // 2) Fallback absoluto (por si el fetch relativo no resuelve en ese entorno)
+  const b = baseUrl();
+  if (b) {
+    try {
+      const r2 = await fetchJSON(`${b}${rel}`);
+      if (r2.status === 404) return null;
+      if (r2.ok) {
+        const j = (await r2.json()) as any;
+        return (j?.item ?? j ?? null) as Product | null;
+      }
+    } catch {
+      // nada
+    }
+  }
+
+  return null;
+}
+
+// Versión segura para metadata (no rompe el render si falla)
 async function getProductSafe(slug: string): Promise<Product | null> {
   try {
     return await getProduct(slug);
@@ -108,7 +135,7 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 }
 
 export default async function ProductPage({ params }: any) {
-  const item = await getProductSafe(params.slug);
+  const item = await getProduct(params.slug);
   if (!item) notFound();
 
   const firstImg = item.coverUrl || item.images?.[0]?.url || '/placeholder.jpg';
