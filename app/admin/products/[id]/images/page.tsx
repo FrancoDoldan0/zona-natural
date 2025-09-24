@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 
-type ProductImage = {
-  id: number;
-  productId: number;
-  url: string;
-  alt: string | null;
-  sortOrder: number | null;
+/** ==== Tipos R2 ==== */
+type R2Item = {
+  key: string;
+  url: string;             // URL pública resuelta en el API (publicR2Url)
+  size?: number;
+  uploaded?: string;
 };
 
 function getCsrf() {
@@ -21,20 +21,20 @@ async function fetchJsonTry(urls: string[], init?: RequestInit) {
   let lastErr: any = null;
   for (const u of urls) {
     try {
-      const r = await fetch(u, { ...init, cache: 'no-store' });
+      const r = await fetch(u, { ...init, cache: 'no-store', credentials: 'include' });
       const ct = r.headers.get('content-type') || '';
-      const body = await r.text();
+      const text = await r.text();
       const json = ct.includes('application/json')
-        ? (() => { try { return JSON.parse(body); } catch { return null; } })()
+        ? (() => { try { return JSON.parse(text); } catch { return null; } })()
         : null;
 
       if (!r.ok) {
         lastErr = new Error(
-          `${init?.method || 'GET'} ${u} → ${r.status} ${r.statusText} — ${body?.slice(0, 200) || '(sin cuerpo)'}`
+          `${init?.method || 'GET'} ${u} → ${r.status} ${r.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`
         );
         continue;
       }
-      return json ?? body;
+      return json ?? text;
     } catch (e) {
       lastErr = e;
     }
@@ -42,69 +42,49 @@ async function fetchJsonTry(urls: string[], init?: RequestInit) {
   throw lastErr ?? new Error('No pude leer la API.');
 }
 
-/** URLs de imágenes */
+/** Endpoints (modo R2) */
 const urls = {
+  /** Lista objetos bajo products/<id>/ */
   list: (id: number) => [
-    `/api/admin/product-images?productId=${id}`,
-    `/api/admin/products/images?productId=${id}`,
-    `/api/admin/productos/imagenes?productId=${id}`,      // español (por query)
-    `/api/admin/products/${id}/images`,                    // path EN
-    `/api/admin/productos/${id}/imagenes`,                 // path ES
+    `/api/admin/uploads?productId=${id}`,            // recomendado
+    `/api/admin/uploads?prefix=${encodeURIComponent(`products/${id}/`)}`, // fallback
   ],
-  upload: (id: number) => [
-    `/api/admin/product-images?productId=${id}`,
-    `/api/admin/products/images?productId=${id}`,
-    `/api/admin/productos/imagenes?productId=${id}`,
-    `/api/admin/products/${id}/images`,
-    `/api/admin/productos/${id}/imagenes`,
-  ],
-  reorder: (id: number) => [
-    `/api/admin/product-images/reorder?productId=${id}`,
-    `/api/admin/products/images/reorder?productId=${id}`,
-    `/api/admin/productos/imagenes/reordenar?productId=${id}`,
-    `/api/admin/products/${id}/images/reorder`,
-    `/api/admin/productos/${id}/imagenes/reordenar`,
-  ],
-  item: (id: number, imageId: number) => [
-    `/api/admin/product-images/${imageId}?productId=${id}`,
-    `/api/admin/products/images/${imageId}?productId=${id}`,
-    `/api/admin/productos/imagenes/${imageId}?productId=${id}`,
-    `/api/admin/products/${id}/images/${imageId}`,
-    `/api/admin/productos/${id}/imagenes/${imageId}`,
+  /** Subida */
+  upload: `/api/admin/uploads`,
+  /** Borrado por key */
+  del: (key: string) => [
+    `/api/admin/uploads?key=${encodeURIComponent(key)}`,
   ],
 };
 
 export default function ImagesPage() {
   const params = useParams<{ id: string }>();
   const productId = Number(params.id);
-  const base = useMemo(() => '', []);
-  const [items, setItems] = useState<ProductImage[]>([]);
+
+  const [items, setItems] = useState<R2Item[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [alt, setAlt] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [savingId, setSavingId] = useState<number | null>(null);
 
-  // DnD
-  const dragIndex = useRef<number | null>(null);
-  const overIndex = useRef<number | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [alt, setAlt] = useState(''); // guardado “a futuro”: hoy no hay DB para ALT
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const prefix = useMemo(() => `products/${productId}/`, [productId]);
 
   async function load() {
+    if (!Number.isFinite(productId)) return;
     setLoading(true);
     setError(null);
     try {
-      const j = await fetchJsonTry(urls.list(productId).map((u) => `${base}${u}`), {
+      const j = await fetchJsonTry(urls.list(productId), {
         headers: { Accept: 'application/json' },
-        credentials: 'include',
       });
 
-      const arr: ProductImage[] =
-        j?.items ?? j?.data ?? Array.isArray(j) ? j : [];
-
-      setItems((arr as ProductImage[]).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
-      setDirty(false);
+      const arr: R2Item[] = j?.items ?? j?.data ?? [];
+      // Ordenar por nombre (simula “sortOrder” asc)
+      arr.sort((a, b) => a.key.localeCompare(b.key));
+      setItems(arr);
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
@@ -113,117 +93,9 @@ export default function ImagesPage() {
   }
 
   useEffect(() => {
-    if (Number.isFinite(productId)) load();
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
-
-  function onDragStart(idx: number) {
-    dragIndex.current = idx;
-  }
-  function onDragOver(e: React.DragEvent, idx: number) {
-    e.preventDefault();
-    overIndex.current = idx;
-  }
-  function onDrop() {
-    const from = dragIndex.current, to = overIndex.current;
-    dragIndex.current = null;
-    overIndex.current = null;
-    if (from == null || to == null || from === to) return;
-    setItems((prev) => {
-      const next = prev.slice();
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      setDirty(true);
-      return next;
-    });
-  }
-
-  async function saveOrder() {
-    setSaving(true);
-    setError(null);
-    try {
-      const order = items.map((it) => it.id);
-      const j = await fetchJsonTry(urls.reorder(productId).map((u) => `${base}${u}`), {
-        method: 'PUT',
-        headers: {
-          'content-type': 'application/json',
-          'x-csrf-token': getCsrf(),
-          Accept: 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ order }),
-      });
-      const arr: ProductImage[] = j?.items ?? j?.data ?? [];
-      setItems(arr.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
-      setDirty(false);
-    } catch (e: any) {
-      setError(e?.message || String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function doMove(id: number, dir: 'up' | 'down') {
-    setSavingId(id);
-    setError(null);
-    try {
-      await fetchJsonTry(urls.item(productId, id).map((u) => `${base}${u}`), {
-        method: 'PUT',
-        headers: {
-          'content-type': 'application/json',
-          'x-csrf-token': getCsrf(),
-          Accept: 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ move: dir }),
-      });
-      await load();
-    } catch (e: any) {
-      setError(e?.message || String(e));
-    } finally {
-      setSavingId(null);
-    }
-  }
-
-  async function doAlt(id: number, newAlt: string) {
-    setSavingId(id);
-    setError(null);
-    try {
-      await fetchJsonTry(urls.item(productId, id).map((u) => `${base}${u}`), {
-        method: 'PUT',
-        headers: {
-          'content-type': 'application/json',
-          'x-csrf-token': getCsrf(),
-          Accept: 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ alt: newAlt }),
-      });
-      await load();
-    } catch (e: any) {
-      setError(e?.message || String(e));
-    } finally {
-      setSavingId(null);
-    }
-  }
-
-  async function doDelete(id: number) {
-    if (!confirm('¿Eliminar esta imagen?')) return;
-    setSavingId(id);
-    setError(null);
-    try {
-      await fetchJsonTry(urls.item(productId, id).map((u) => `${base}${u}`), {
-        method: 'DELETE',
-        headers: { 'x-csrf-token': getCsrf(), Accept: 'application/json' },
-        credentials: 'include',
-      });
-      await load();
-    } catch (e: any) {
-      setError(e?.message || String(e));
-    } finally {
-      setSavingId(null);
-    }
-  }
 
   async function doUpload(e: React.FormEvent) {
     e.preventDefault();
@@ -233,19 +105,36 @@ export default function ImagesPage() {
     try {
       const fd = new FormData();
       fd.set('file', file, file.name);
-      if (alt.trim()) fd.set('alt', alt.trim());
+      fd.set('productId', String(productId));
+      if (alt.trim()) fd.set('alt', alt.trim()); // hoy no se persiste, pero ya lo mandamos
 
-      await fetchJsonTry(urls.upload(productId).map((u) => `${base}${u}`), {
+      await fetchJsonTry([urls.upload], {
         method: 'POST',
         headers: { 'x-csrf-token': getCsrf(), Accept: 'application/json' },
-        credentials: 'include',
         body: fd,
       });
 
+      // reset
       setFile(null);
       setAlt('');
-      const input = document.getElementById('fileInput') as HTMLInputElement | null;
-      if (input) input.value = '';
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      await load();
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function doDelete(key: string) {
+    if (!confirm('¿Eliminar esta imagen de R2?')) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await fetchJsonTry(urls.del(key), {
+        method: 'DELETE',
+        headers: { 'x-csrf-token': getCsrf(), Accept: 'application/json' },
+      });
       await load();
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -255,22 +144,28 @@ export default function ImagesPage() {
   }
 
   return (
-    <main className="p-6 max-w-4xl mx-auto">
+    <main className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between gap-4 mb-4">
-        <h1 className="text-2xl font-semibold">Imágenes del producto #{productId}</h1>
-        <button
-          onClick={saveOrder}
-          disabled={!dirty || saving}
-          className="rounded px-4 py-2 bg-black text-white disabled:opacity-50"
-          title={!dirty ? 'Sin cambios' : 'Guardar nuevo orden'}
+        <h1 className="text-2xl font-semibold">Imágenes — Producto #{productId}</h1>
+        <a
+          className="rounded px-3 py-2 border"
+          href={`/productos/${productId}`}
+          target="_blank"
+          rel="noreferrer"
         >
-          {saving ? 'Guardando…' : 'Guardar orden'}
-        </button>
+          Ver en tienda →
+        </a>
       </div>
+
+      <p className="mb-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+        Mostrando desde <b>R2</b> (sin registros en DB): podés subir y borrar. <br />
+        No hay reordenar/portada/ALT hasta que migremos a tabla <code>ProductImage</code>.
+      </p>
 
       <form onSubmit={doUpload} className="mb-6 grid gap-3 md:grid-cols-[1fr_auto] items-end">
         <div className="grid gap-2">
           <input
+            ref={fileInputRef}
             id="fileInput"
             type="file"
             accept="image/*"
@@ -280,7 +175,7 @@ export default function ImagesPage() {
           />
           <input
             type="text"
-            placeholder="Texto ALT (opcional)"
+            placeholder="Texto ALT (opcional, no se guarda todavía)"
             value={alt}
             onChange={(e) => setAlt(e.target.value)}
             className="block w-full rounded border p-2"
@@ -299,68 +194,50 @@ export default function ImagesPage() {
 
       {loading ? (
         <div>Cargando…</div>
+      ) : items.length === 0 ? (
+        <div className="text-sm text-gray-500">Sin imágenes aún en <code>{prefix}</code>.</div>
       ) : (
-        <ul className="grid gap-3">
-          {items.map((it, idx) => (
-            <li
-              key={it.id}
-              draggable
-              onDragStart={() => onDragStart(idx)}
-              onDragOver={(e) => onDragOver(e, idx)}
-              onDrop={onDrop}
-              className="border rounded p-3 flex items-center gap-4 bg-white"
-            >
-              <span className="cursor-move select-none px-2 py-1 border rounded">↕</span>
+        <ul className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+          {items.map((it) => (
+            <li key={it.key} className="border rounded p-3 bg-white flex flex-col gap-2">
+              <div className="aspect-[4/3] overflow-hidden rounded bg-gray-50 border">
+                <img
+                  src={it.url?.startsWith('http') || it.url?.startsWith('/')
+                    ? it.url
+                    : `/${it.url}`}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              </div>
 
-              <img src={it.url} alt={it.alt ?? ''} className="h-20 w-20 object-cover rounded" />
+              <div className="text-xs text-gray-600 break-all">
+                <div className="font-mono">{it.key}</div>
+                {typeof it.size === 'number' && (
+                  <div>{(it.size / 1024).toFixed(1)} KB</div>
+                )}
+                {it.uploaded && <div>Subida: {new Date(it.uploaded).toLocaleString()}</div>}
+              </div>
 
-              <div className="flex-1">
-                <div className="text-xs text-gray-500">
-                  id={it.id} • sortOrder={it.sortOrder ?? '-'}
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="text"
-                    defaultValue={it.alt ?? ''}
-                    placeholder="ALT"
-                    className="border rounded p-2 w-full"
-                    onBlur={(e) => {
-                      const val = e.currentTarget.value ?? '';
-                      if ((it.alt ?? '') !== val) doAlt(it.id, val);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => doMove(it.id, 'up')}
-                    disabled={savingId === it.id}
-                    className="border rounded px-3 py-2"
-                    title="Mover arriba"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => doMove(it.id, 'down')}
-                    disabled={savingId === it.id}
-                    className="border rounded px-3 py-2"
-                    title="Mover abajo"
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => doDelete(it.id)}
-                    disabled={savingId === it.id}
-                    className="border rounded px-3 py-2 text-red-600"
-                    title="Eliminar"
-                  >
-                    Borrar
-                  </button>
-                </div>
+              <div className="flex gap-2 mt-1">
+                <a
+                  href={it.url}
+                  className="px-3 py-2 border rounded text-sm"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Abrir
+                </a>
+                <button
+                  type="button"
+                  onClick={() => doDelete(it.key)}
+                  className="px-3 py-2 border rounded text-sm text-red-600"
+                >
+                  Eliminar
+                </button>
               </div>
             </li>
           ))}
-          {items.length === 0 && <li className="text-sm text-gray-500">Sin imágenes aún.</li>}
         </ul>
       )}
     </main>
