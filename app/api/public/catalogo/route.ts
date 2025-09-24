@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { json } from '@/lib/json';
 import { createPrisma } from '@/lib/prisma-edge';
 import { computePricesBatch } from '@/lib/pricing';
+import { publicR2Url } from '@/lib/storage';
 import type { Prisma } from '@prisma/client';
 
 const prisma = createPrisma();
@@ -16,19 +17,15 @@ function parseBool(v?: string | null) {
 }
 
 export async function GET(req: NextRequest) {
-  const url = new URL(req.url);
-
-  // flag de depuración opcional: &_debug=1
-  const debug = url.searchParams.get('_debug') === '1';
-
   try {
+    const url = new URL(req.url);
+
     const q = (url.searchParams.get('q') || '').trim();
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
     const perPage = Math.min(60, Math.max(1, parseInt(url.searchParams.get('perPage') || '12', 10)));
     const categoryId = parseInt(url.searchParams.get('categoryId') || '', 10);
     const subcategoryId = parseInt(url.searchParams.get('subcategoryId') || '', 10);
 
-    // multi-tag + modo de match (any/all)
     const tagIdSingle = parseInt(url.searchParams.get('tagId') || '', 10);
     const tagIdsCsv = (url.searchParams.get('tagIds') || '').trim();
     const tagIdList = url.searchParams.getAll('tagId').map((s) => parseInt(s, 10));
@@ -45,7 +42,7 @@ export async function GET(req: NextRequest) {
     const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
     const onSale = parseBool(url.searchParams.get('onSale'));
 
-    // Filtros base: mostramos ACTIVE y AGOTADO
+    // ✅ Público: mostrar ACTIVE + AGOTADO
     const where: any = { status: { in: ['ACTIVE', 'AGOTADO'] } };
 
     if (q) {
@@ -76,7 +73,7 @@ export async function GET(req: NextRequest) {
       if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
     }
 
-    // Orden
+    // --- Orden principal ---
     const sortParam = (url.searchParams.get('sort') || '-id').toLowerCase();
     let orderBy: Prisma.ProductOrderByWithRelationInput;
     switch (sortParam) {
@@ -108,7 +105,6 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * perPage;
 
-    // ⚠️ Importante: NO unimos la tabla de imágenes hasta migrar DB (evita error ProductImage.key)
     const [total, itemsRaw] = await Promise.all([
       prisma.product.count({ where }),
       prisma.product.findMany({
@@ -117,6 +113,12 @@ export async function GET(req: NextRequest) {
         take: perPage,
         orderBy,
         include: {
+          // ❗️Sin `take`: algunos runtimes omiten la relación si se usa `take` en include.
+          // Ordenamos para que venga primero la portada y luego por sortOrder.
+          images: {
+            select: { key: true, isCover: true, sortOrder: true },
+            orderBy: [{ isCover: 'desc' }, { sortOrder: 'asc' }, { key: 'asc' }],
+          },
           productTags: { select: { tagId: true } },
         },
       }),
@@ -128,24 +130,30 @@ export async function GET(req: NextRequest) {
       categoryId: p.categoryId,
       tags: (p.productTags || []).map((t: any) => t.tagId),
     }));
-
     const priced = await computePricesBatch(bare);
 
     let items = itemsRaw.map((p: any) => {
       const pr = priced.get(p.id);
       const priceOriginal = pr?.priceOriginal ?? null;
       const priceFinal = pr?.priceFinal ?? null;
-      const hasDiscount = priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
+
+      const hasDiscount =
+        priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
+
       const discountPercent =
         hasDiscount && priceOriginal && priceFinal
           ? Math.round((1 - priceFinal / priceOriginal) * 100)
           : 0;
 
+      // ✅ Elegimos la primera imagen ya ordenada (portada primero). Si no hay, null.
+      const firstImg = (p.images && p.images[0]) || null;
+      const cover = firstImg?.key ? publicR2Url(firstImg.key) : null;
+
       return {
         id: p.id,
         name: p.name,
         slug: p.slug,
-        cover: null as string | null, // placeholder hasta migrar imágenes
+        cover,
         status: p.status ?? null,
         priceOriginal,
         priceFinal,
@@ -155,12 +163,12 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Post-filtros por precio final / oferta
+    // Post-filtros por precio FINAL
     if (onSale) items = items.filter((i) => i.hasDiscount);
     if (Number.isFinite(minFinal)) items = items.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
     if (Number.isFinite(maxFinal)) items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
 
-    // Re-orden por precio final, si aplica
+    // Orden adicional por precio FINAL (post query)
     if (sortParam === 'final') {
       items.sort(
         (a: any, b: any) =>
@@ -200,20 +208,11 @@ export async function GET(req: NextRequest) {
       },
       items,
     });
-  } catch (err: any) {
-    // Errores de DB (por columnas/joins) se exponen si _debug=1
-    const body: any = { ok: false, error: 'internal_error' };
-    if (debug) {
-      body.debug = {
-        stage: 'catch',
-        name: err?.name,
-        message: String(err?.message || err),
-      };
-    }
-    // Evita que la ruta explote en Edge
-    return NextResponse.json(body, {
-      status: 500,
-      headers: { 'Cache-Control': 'no-store' },
-    });
+  } catch (err) {
+    console.error('[public/catalogo] error:', err);
+    return NextResponse.json(
+      { ok: false, error: 'internal_error' },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 }
