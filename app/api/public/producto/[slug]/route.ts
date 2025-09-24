@@ -4,7 +4,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { createPrisma } from '@/lib/prisma-edge';
 import { computePricesBatch } from '@/lib/pricing';
-import { publicR2Url } from '@/lib/storage';
+import { publicR2Url, r2List } from '@/lib/storage';
 
 const prisma = createPrisma();
 
@@ -22,14 +22,11 @@ export async function GET(req: Request, { params }: any) {
     // Solo productos visibles públicamente: ACTIVE o AGOTADO
     // findFirst para combinar slug + status
     const p: any = await prisma.product.findFirst({
-      where: {
-        slug,
-        status: { in: ['ACTIVE', 'AGOTADO'] },
-      },
+      where: { slug, status: { in: ['ACTIVE', 'AGOTADO'] } },
       include: {
         images: {
           orderBy: { sortOrder: 'asc' },
-          // ⚠ Seleccionamos solo columnas que existen seguro en tu DB actual
+          // columnas que existen seguro en tu DB actual
           select: { id: true, key: true },
         },
         category: { select: { id: true, name: true, slug: true } },
@@ -41,16 +38,40 @@ export async function GET(req: Request, { params }: any) {
       return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
     }
 
-    // Mapear imágenes al shape público con `url`
-    const images =
-      (p.images ?? []).map((img: any) => ({
+    // Mapear imágenes DB → shape público
+    let images =
+      (p.images ?? []).map((img: any, idx: number) => ({
         id: img.id,
         url: publicR2Url(img.key),
-        alt: null,            // campos opcionales no presentes en tu DB actual
-        sortOrder: 0,
-        isCover: false,
+        alt: null,
+        sortOrder: idx,
+        isCover: idx === 0,
         size: null,
       })) ?? [];
+
+    // Fallback: si no hay filas en DB, listar de R2 por prefijo "products/<id>/"
+    let r2Debug: any = null;
+    if (images.length === 0) {
+      try {
+        const objects = await r2List(`products/${p.id}/`, 100);
+        const onlyImages = objects.filter((o) =>
+          /\.(?:jpe?g|png|webp|gif|avif)$/i.test(o.key),
+        );
+        // Orden estable por nombre; el primero será coverUrl
+        onlyImages.sort((a, b) => a.key.localeCompare(b.key, 'es'));
+        images = onlyImages.map((o, idx) => ({
+          id: -(idx + 1), // ids negativos para denotar "sólo R2"
+          url: publicR2Url(o.key),
+          alt: null,
+          sortOrder: idx,
+          isCover: idx === 0,
+          size: o.size ?? null,
+        }));
+        if (debug) r2Debug = { listedFromR2: true, count: images.length };
+      } catch (e: any) {
+        if (debug) r2Debug = { listedFromR2: false, error: String(e?.message || e) };
+      }
+    }
 
     // Precios y oferta (mismo helper que catálogo)
     const bare = [
@@ -90,7 +111,7 @@ export async function GET(req: Request, { params }: any) {
           : 0,
     };
 
-    return NextResponse.json({ ok: true, item });
+    return NextResponse.json({ ok: true, item, ...(debug && r2Debug ? { debug: r2Debug } : {}) });
   } catch (err: any) {
     console.error('[public/producto] error:', err);
     return NextResponse.json(
