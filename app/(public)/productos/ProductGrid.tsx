@@ -8,6 +8,10 @@ import type { Product } from './page';
 type WithStatus =
   Product & { status?: 'ACTIVE' | 'AGOTADO' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | string };
 
+// utilitos
+const isAbs = (u?: string | null) => !!u && /^(?:https?:)?\/\//i.test(u!);
+const startsSlash = (u?: string | null) => !!u && u!.startsWith('/');
+
 export default function ProductGrid({ items }: { items: Product[] }) {
   if (!items?.length) {
     return <p style={{ opacity: 0.7 }}>No hay productos para mostrar.</p>;
@@ -23,28 +27,30 @@ export default function ProductGrid({ items }: { items: Product[] }) {
     >
       {items.map((p) => {
         const pp = p as WithStatus;
-        const isAgotado = pp.status === 'AGOTADO';
+        const isAgotado = String(pp.status || '').toUpperCase() === 'AGOTADO';
 
         // Catálogo: p.cover   | Detalle: p.coverUrl o p.images[0].url
-        const firstImage =
-          pp.cover || (pp as any).coverUrl || (pp as any).images?.[0]?.url || '/placeholder.jpg';
+        const raw =
+          (pp as any).cover ??
+          (pp as any).coverUrl ??
+          (pp as any).images?.[0]?.url ??
+          null;
 
         // Normalizar a ruta válida
-        const src =
-          typeof firstImage === 'string' &&
-          (firstImage.startsWith('http') || firstImage.startsWith('/'))
-            ? firstImage
-            : `/${firstImage}`;
+        let src = '/placeholder.jpg';
+        if (typeof raw === 'string' && raw.length) {
+          src = isAbs(raw) || startsSlash(raw) ? raw : `/${raw}`;
+        }
 
         // Precio a mostrar
         const displayPrice =
           typeof (pp as any).price === 'number'
             ? (pp as any).price
             : typeof (pp as any).priceFinal === 'number'
-              ? (pp as any).priceFinal
-              : typeof (pp as any).priceOriginal === 'number'
-                ? (pp as any).priceOriginal
-                : null;
+            ? (pp as any).priceFinal
+            : typeof (pp as any).priceOriginal === 'number'
+            ? (pp as any).priceOriginal
+            : null;
 
         return (
           <article
@@ -68,7 +74,7 @@ export default function ProductGrid({ items }: { items: Product[] }) {
                       borderRadius: 6,
                       fontSize: 12,
                       fontWeight: 700,
-                      background: '#b91c1c', // rojo
+                      background: '#b91c1c',
                       color: '#fff',
                       zIndex: 2,
                     }}
