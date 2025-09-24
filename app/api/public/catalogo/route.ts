@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { json } from '@/lib/json';
 import { createPrisma } from '@/lib/prisma-edge';
 import { computePricesBatch } from '@/lib/pricing';
-import { publicR2Url } from '@/lib/storage';
+import { publicR2Url, r2List } from '@/lib/storage';
 import type { Prisma } from '@prisma/client';
 
 const prisma = createPrisma();
@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
     const categoryId = parseInt(url.searchParams.get('categoryId') || '', 10);
     const subcategoryId = parseInt(url.searchParams.get('subcategoryId') || '', 10);
 
+    // tags
     const tagIdSingle = parseInt(url.searchParams.get('tagId') || '', 10);
     const tagIdsCsv = (url.searchParams.get('tagIds') || '').trim();
     const tagIdList = url.searchParams.getAll('tagId').map((s) => parseInt(s, 10));
@@ -105,6 +106,7 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * perPage;
 
+    // ⚠️ Seleccionamos SOLO 'key' para evitar errores si faltan columnas (isCover/sortOrder)
     const [total, itemsRaw] = await Promise.all([
       prisma.product.count({ where }),
       prisma.product.findMany({
@@ -113,17 +115,13 @@ export async function GET(req: NextRequest) {
         take: perPage,
         orderBy,
         include: {
-          // ❗️Sin orderBy/take en el include (algunos runtimes fallan).
-          // Traemos campos necesarios y ordenaremos en JS.
-          images: {
-            select: { key: true, isCover: true, sortOrder: true },
-          },
+          images: { select: { key: true } },
           productTags: { select: { tagId: true } },
         },
       }),
     ]);
 
-    // Para precios
+    // Precios
     const bare = itemsRaw.map((p: any) => ({
       id: p.id,
       price: p.price,
@@ -132,64 +130,75 @@ export async function GET(req: NextRequest) {
     }));
     const priced = await computePricesBatch(bare);
 
-    let items = itemsRaw.map((p: any) => {
-      const pr = priced.get(p.id);
-      const priceOriginal = pr?.priceOriginal ?? null;
-      const priceFinal = pr?.priceFinal ?? null;
+    // Resolvemos cover: DB o, si no hay, listamos en R2 (products/<id>/)
+    async function resolveCoverKey(p: any): Promise<string | null> {
+      const keysFromDb = (Array.isArray(p.images) ? p.images : []).map((i: any) => i?.key).filter(Boolean);
+      if (keysFromDb.length > 0) return String(keysFromDb[0]);
 
-      const hasDiscount =
-        priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
+      try {
+        const prefix = `products/${p.id}/`;
+        const listed = await r2List(prefix, 1); // pedimos solo 1
+        const first = Array.isArray(listed) && listed[0]
+          ? (typeof listed[0] === 'string' ? listed[0] : (listed[0] as any).key)
+          : null;
+        return first || null;
+      } catch {
+        return null;
+      }
+    }
 
-      const discountPercent =
-        hasDiscount && priceOriginal && priceFinal
-          ? Math.round((1 - priceFinal / priceOriginal) * 100)
-          : 0;
+    const items = await Promise.all(
+      itemsRaw.map(async (p: any) => {
+        const pr = priced.get(p.id);
+        const priceOriginal = pr?.priceOriginal ?? null;
+        const priceFinal = pr?.priceFinal ?? null;
 
-      // ✅ Orden en JS: portada primero, luego sortOrder, luego key
-      const imgs = Array.isArray(p.images) ? p.images.slice() : [];
-      imgs.sort((a: any, b: any) => {
-        const c = (b?.isCover ? 1 : 0) - (a?.isCover ? 1 : 0);
-        if (c !== 0) return c;
-        const so = (a?.sortOrder ?? 0) - (b?.sortOrder ?? 0);
-        if (so !== 0) return so;
-        return String(a?.key ?? '').localeCompare(String(b?.key ?? ''));
-        });
-      const first = imgs[0];
-      const cover = first?.key ? publicR2Url(first.key) : null;
+        const hasDiscount =
+          priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
 
-      return {
-        id: p.id,
-        name: p.name,
-        slug: p.slug,
-        cover,
-        status: p.status ?? null,
-        priceOriginal,
-        priceFinal,
-        offer: pr?.offer ?? null,
-        hasDiscount,
-        discountPercent,
-      };
-    });
+        const discountPercent =
+          hasDiscount && priceOriginal && priceFinal
+            ? Math.round((1 - priceFinal / priceOriginal) * 100)
+            : 0;
+
+        const coverKey = await resolveCoverKey(p);
+        const cover = coverKey ? publicR2Url(coverKey) : null;
+
+        return {
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          cover,
+          status: p.status ?? null,
+          priceOriginal,
+          priceFinal,
+          offer: pr?.offer ?? null,
+          hasDiscount,
+          discountPercent,
+        };
+      }),
+    );
 
     // Post-filtros por precio FINAL
-    if (onSale) items = items.filter((i) => i.hasDiscount);
-    if (Number.isFinite(minFinal)) items = items.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
-    if (Number.isFinite(maxFinal)) items = items.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
+    let filtered = items;
+    if (onSale) filtered = filtered.filter((i) => i.hasDiscount);
+    if (Number.isFinite(minFinal)) filtered = filtered.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
+    if (Number.isFinite(maxFinal)) filtered = filtered.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
 
     // Orden adicional por precio FINAL (post query)
     if (sortParam === 'final') {
-      items.sort(
+      filtered = filtered.slice().sort(
         (a: any, b: any) =>
           (a.priceFinal ?? Number.POSITIVE_INFINITY) - (b.priceFinal ?? Number.POSITIVE_INFINITY),
       );
     } else if (sortParam === '-final') {
-      items.sort(
+      filtered = filtered.slice().sort(
         (a: any, b: any) =>
           (b.priceFinal ?? Number.NEGATIVE_INFINITY) - (a.priceFinal ?? Number.NEGATIVE_INFINITY),
       );
     }
 
-    const filteredTotal = items.length;
+    const filteredTotal = filtered.length;
     const pageCount = Math.ceil((total ?? 0) / perPage);
     const filteredPageCount = Math.ceil(filteredTotal / perPage);
 
@@ -214,12 +223,16 @@ export async function GET(req: NextRequest) {
         onSale,
         sort: sortParam,
       },
-      items,
+      items: filtered,
     });
   } catch (err: any) {
     console.error('[public/catalogo] error:', err);
     return NextResponse.json(
-      { ok: false, error: 'internal_error', ...(debug ? { debug: String(err?.message || err) } : null) },
+      {
+        ok: false,
+        error: 'internal_error',
+        ...(debug ? { debug: { message: String(err?.message || err) } } : null),
+      },
       { status: 500, headers: { 'Cache-Control': 'no-store' } },
     );
   }
