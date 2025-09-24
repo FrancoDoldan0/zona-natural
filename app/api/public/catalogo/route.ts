@@ -17,9 +17,10 @@ function parseBool(v?: string | null) {
 }
 
 export async function GET(req: NextRequest) {
-  try {
-    const url = new URL(req.url);
+  const url = new URL(req.url);
+  const debug = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
 
+  try {
     const q = (url.searchParams.get('q') || '').trim();
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
     const perPage = Math.min(60, Math.max(1, parseInt(url.searchParams.get('perPage') || '12', 10)));
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
       ...(tagIdsCsv ? tagIdsCsv.split(',').map((s) => parseInt(s.trim(), 10)) : []),
       ...(Number.isFinite(tagIdSingle) ? [tagIdSingle] : []),
     ].filter(Number.isFinite) as number[];
-    const match = (url.searchParams.get('match') || 'any').toLowerCase(); // "any" | "all"
+    const match = (url.searchParams.get('match') || 'any').toLowerCase();
 
     const minPrice = parseFloat(url.searchParams.get('minPrice') || '');
     const maxPrice = parseFloat(url.searchParams.get('maxPrice') || '');
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
     const onSale = parseBool(url.searchParams.get('onSale'));
 
-    // ✅ Público: mostrar ACTIVE + AGOTADO
+    // Público: ACTIVE + AGOTADO
     const where: any = { status: { in: ['ACTIVE', 'AGOTADO'] } };
 
     if (q) {
@@ -53,7 +54,6 @@ export async function GET(req: NextRequest) {
         { sku: { contains: q, mode: 'insensitive' } },
       ];
     }
-
     if (Number.isFinite(categoryId)) where.categoryId = categoryId;
     if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
 
@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
       if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
     }
 
-    // --- Orden principal ---
+    // Orden principal
     const sortParam = (url.searchParams.get('sort') || '-id').toLowerCase();
     let orderBy: Prisma.ProductOrderByWithRelationInput;
     switch (sortParam) {
@@ -113,17 +113,17 @@ export async function GET(req: NextRequest) {
         take: perPage,
         orderBy,
         include: {
-          // ❗️Sin `take`: algunos runtimes omiten la relación si se usa `take` en include.
-          // Ordenamos para que venga primero la portada y luego por sortOrder.
+          // ❗️Sin orderBy/take en el include (algunos runtimes fallan).
+          // Traemos campos necesarios y ordenaremos en JS.
           images: {
             select: { key: true, isCover: true, sortOrder: true },
-            orderBy: [{ isCover: 'desc' }, { sortOrder: 'asc' }, { key: 'asc' }],
           },
           productTags: { select: { tagId: true } },
         },
       }),
     ]);
 
+    // Para precios
     const bare = itemsRaw.map((p: any) => ({
       id: p.id,
       price: p.price,
@@ -145,9 +145,17 @@ export async function GET(req: NextRequest) {
           ? Math.round((1 - priceFinal / priceOriginal) * 100)
           : 0;
 
-      // ✅ Elegimos la primera imagen ya ordenada (portada primero). Si no hay, null.
-      const firstImg = (p.images && p.images[0]) || null;
-      const cover = firstImg?.key ? publicR2Url(firstImg.key) : null;
+      // ✅ Orden en JS: portada primero, luego sortOrder, luego key
+      const imgs = Array.isArray(p.images) ? p.images.slice() : [];
+      imgs.sort((a: any, b: any) => {
+        const c = (b?.isCover ? 1 : 0) - (a?.isCover ? 1 : 0);
+        if (c !== 0) return c;
+        const so = (a?.sortOrder ?? 0) - (b?.sortOrder ?? 0);
+        if (so !== 0) return so;
+        return String(a?.key ?? '').localeCompare(String(b?.key ?? ''));
+        });
+      const first = imgs[0];
+      const cover = first?.key ? publicR2Url(first.key) : null;
 
       return {
         id: p.id,
@@ -208,10 +216,10 @@ export async function GET(req: NextRequest) {
       },
       items,
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[public/catalogo] error:', err);
     return NextResponse.json(
-      { ok: false, error: 'internal_error' },
+      { ok: false, error: 'internal_error', ...(debug ? { debug: String(err?.message || err) } : null) },
       { status: 500, headers: { 'Cache-Control': 'no-store' } },
     );
   }
