@@ -20,6 +20,12 @@ type Offer = {
 
 // ---- helpers ---------------------------------------------------------------
 
+/** Respuesta estándar de APIs admin: permite ok/error + payload arbitrario */
+type ApiResult<T = unknown> = {
+  ok?: boolean;
+  error?: string;
+} & T;
+
 /** Soporta respuestas {ok:true,items:[...]} o arrays directos */
 async function fetchList<T>(urls: string[]): Promise<T[]> {
   let lastErr: any = null;
@@ -37,7 +43,7 @@ async function fetchList<T>(urls: string[]): Promise<T[]> {
       }
       if (!data) return [];
       if (Array.isArray(data)) return data as T[];
-      if (data.ok && Array.isArray(data.items)) return data.items as T[];
+      if ((data as any).ok && Array.isArray((data as any).items)) return (data as any).items as T[];
       if (Array.isArray((data as any).data)) return (data as any).data as T[];
       return [];
     } catch (e) {
@@ -152,9 +158,9 @@ export default function OffersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const j = await r.json();
-      if (!r.ok || j?.ok === false) {
-        throw new Error(j?.error || 'Error al crear la oferta');
+      const j = (await r.json()) as ApiResult;
+      if (!r.ok || j.ok === false) {
+        throw new Error(j.error || 'Error al crear la oferta');
       }
       // limpiar
       setTitle('');
@@ -178,8 +184,8 @@ export default function OffersPage() {
     setErr(null);
     try {
       const r = await fetch(`/api/admin/offers/${id}`, { method: 'DELETE' });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j?.ok === false) throw new Error(j?.error || 'No se pudo eliminar');
+      const j = (await r.json().catch(() => ({}))) as ApiResult;
+      if (!r.ok || j.ok === false) throw new Error(j.error || 'No se pudo eliminar');
       setItems((prev) => prev.filter((x) => x.id !== id));
     } catch (e: any) {
       setErr(e?.message || String(e));
