@@ -44,8 +44,23 @@ export async function GET(req: NextRequest) {
     const maxFinal = parseFloat(url.searchParams.get('maxFinal') || '');
     const onSale = parseBool(url.searchParams.get('onSale'));
 
-    // Público: ACTIVE + AGOTADO
-    const where: any = { status: { in: ['ACTIVE', 'AGOTADO'] } };
+    // ─────────────────────────────────────────────────────────────
+    // Filtro de estado (ajustable por querystring)
+    // status=active  → ACTIVE + AGOTADO
+    // status=all     → todos excepto ARCHIVED   (DEFAULT)
+    // status=raw     → sin filtro de status     (debug)
+    // ─────────────────────────────────────────────────────────────
+    const statusParam = (url.searchParams.get('status') || 'all').toLowerCase();
+
+    const where: any = {};
+    if (statusParam === 'active') {
+      where.status = { in: ['ACTIVE', 'AGOTADO'] };
+    } else if (statusParam === 'raw') {
+      // sin filtro
+    } else {
+      // default: all (todo menos ARCHIVED)
+      where.status = { not: 'ARCHIVED' };
+    }
 
     if (q) {
       where.OR = [
@@ -106,7 +121,7 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * perPage;
 
-    // ⚠️ Seleccionamos SOLO 'key' para evitar errores si faltan columnas (isCover/sortOrder)
+    // Seleccionamos solo lo necesario
     const [total, itemsRaw] = await Promise.all([
       prisma.product.count({ where }),
       prisma.product.findMany({
@@ -130,17 +145,20 @@ export async function GET(req: NextRequest) {
     }));
     const priced = await computePricesBatch(bare);
 
-    // Resolvemos cover: DB o, si no hay, listamos en R2 (products/<id>/)
+    // Resolver cover: DB o, si no hay, listar en R2
     async function resolveCoverKey(p: any): Promise<string | null> {
-      const keysFromDb = (Array.isArray(p.images) ? p.images : []).map((i: any) => i?.key).filter(Boolean);
+      const keysFromDb = (Array.isArray(p.images) ? p.images : [])
+        .map((i: any) => i?.key)
+        .filter(Boolean);
       if (keysFromDb.length > 0) return String(keysFromDb[0]);
 
       try {
         const prefix = `products/${p.id}/`;
-        const listed = await r2List(prefix, 1); // pedimos solo 1
-        const first = Array.isArray(listed) && listed[0]
-          ? (typeof listed[0] === 'string' ? listed[0] : (listed[0] as any).key)
-          : null;
+        const listed = await r2List(prefix, 1);
+        const first =
+          Array.isArray(listed) && listed[0]
+            ? (typeof listed[0] === 'string' ? listed[0] : (listed[0] as any).key)
+            : null;
         return first || null;
       } catch {
         return null;
@@ -187,15 +205,19 @@ export async function GET(req: NextRequest) {
 
     // Orden adicional por precio FINAL (post query)
     if (sortParam === 'final') {
-      filtered = filtered.slice().sort(
-        (a: any, b: any) =>
-          (a.priceFinal ?? Number.POSITIVE_INFINITY) - (b.priceFinal ?? Number.POSITIVE_INFINITY),
-      );
+      filtered = filtered
+        .slice()
+        .sort(
+          (a: any, b: any) =>
+            (a.priceFinal ?? Number.POSITIVE_INFINITY) - (b.priceFinal ?? Number.POSITIVE_INFINITY),
+        );
     } else if (sortParam === '-final') {
-      filtered = filtered.slice().sort(
-        (a: any, b: any) =>
-          (b.priceFinal ?? Number.NEGATIVE_INFINITY) - (a.priceFinal ?? Number.NEGATIVE_INFINITY),
-      );
+      filtered = filtered
+        .slice()
+        .sort(
+          (a: any, b: any) =>
+            (b.priceFinal ?? Number.NEGATIVE_INFINITY) - (a.priceFinal ?? Number.NEGATIVE_INFINITY),
+        );
     }
 
     const filteredTotal = filtered.length;
@@ -222,6 +244,7 @@ export async function GET(req: NextRequest) {
         maxFinal: Number.isFinite(maxFinal) ? maxFinal : null,
         onSale,
         sort: sortParam,
+        status: statusParam,
       },
       items: filtered,
     });
