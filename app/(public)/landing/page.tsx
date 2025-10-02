@@ -1,8 +1,15 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 60;
+
 import BannerSlider from '@/components/public/BannerSlider';
 
-type PublicBanner = { id: number; title: string; imageUrl: string; link: string | null };
+type PublicBanner = {
+  id: number;
+  title: string;
+  url: string;
+  linkUrl: string | null;
+};
+
 type PublicOffer = {
   id: number;
   title: string;
@@ -13,26 +20,43 @@ type PublicOffer = {
   category?: { id: number; name: string; slug: string } | null;
 };
 
-// Usamos solo la base pública (evitamos headers() para Next 15)
-function baseUrl() {
-  const env = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  return env;
+// Helper: usa absoluta si definís NEXT_PUBLIC_BASE_URL; si no, usa relativa (ideal en Pages)
+function api(path: string) {
+  const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+  const base = raw ? raw.replace(/\/+$/, '') : '';
+  return base ? `${base}${path}` : path;
 }
 
 async function getBanners(): Promise<PublicBanner[]> {
-  const r = await fetch(`${baseUrl()}/api/public/banners`, { next: { revalidate: 60 } });
-  const j = await r.json<{ items?: PublicBanner[] }>().catch(() => ({ items: [] as PublicBanner[] }));
-  return j.items || [];
+  const r = await fetch(api('/api/public/banners?placement=home'), { next: { revalidate: 60 } });
+  const j = (await r
+    .json()
+    .catch(() => ({ items: [] as any[] }))) as { items?: any[] };
+
+  const items = (j.items ?? []).map((b: any): PublicBanner => ({
+    id: Number(b?.id),
+    title: String(b?.title ?? ''),
+    // La pública ya devuelve `url`; si no, caemos a legacy `imageUrl`
+    url: String(b?.url ?? b?.imageUrl ?? ''),
+    // La pública devuelve `linkUrl`; si no, caemos a legacy `link`
+    linkUrl: b?.linkUrl ?? b?.link ?? null,
+  }));
+
+  // Filtramos banners sin URL válida
+  return items.filter((b) => b.url);
 }
 
 async function getOffers(): Promise<PublicOffer[]> {
-  const r = await fetch(`${baseUrl()}/api/public/offers`, { next: { revalidate: 60 } });
-  const j = await r.json<{ items?: PublicOffer[] }>().catch(() => ({ items: [] as PublicOffer[] }));
+  const r = await fetch(api('/api/public/offers'), { next: { revalidate: 60 } });
+  const j = (await r
+    .json()
+    .catch(() => ({ items: [] as PublicOffer[] }))) as { items?: PublicOffer[] };
   return j.items || [];
 }
 
 export default async function HomePage() {
   const [banners, offers] = await Promise.all([getBanners(), getOffers()]);
+
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-8">
       <section className="space-y-3">
@@ -62,8 +86,8 @@ export default async function HomePage() {
                   {o.product
                     ? `Producto: ${o.product.name}`
                     : o.category
-                      ? `Categoría: ${o.category.name}`
-                      : 'General'}
+                    ? `Categoría: ${o.category.name}`
+                    : 'General'}
                 </div>
                 {o.description && <p className="text-sm mt-1">{o.description}</p>}
               </li>
