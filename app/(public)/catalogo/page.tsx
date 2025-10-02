@@ -30,11 +30,17 @@ function fmt(n: number | null) {
   return '$ ' + n.toFixed(2).replace('.', ',');
 }
 
+// Helper: usa absoluta si definiste NEXT_PUBLIC_BASE_URL; si no, usa relativa (ideal en Pages)
+function api(path: string) {
+  const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+  const base = raw ? raw.replace(/\/+$/, '') : '';
+  return base ? `${base}${path}` : path;
+}
+
 async function getData(params: URLSearchParams) {
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
   const [catsRes, listRes] = await Promise.all([
-    fetch(`${base}/api/public/categories`, { next: { revalidate: 60 } }),
-    fetch(`${base}/api/public/catalogo?${params.toString()}`, { next: { revalidate: 30 } }),
+    fetch(api('/api/public/categories'), { next: { revalidate: 60 } }),
+    fetch(api(`/api/public/catalogo?${params.toString()}`), { next: { revalidate: 30 } }),
   ]);
 
   const catsJson = await catsRes.json<{ items?: Cat[] }>();
