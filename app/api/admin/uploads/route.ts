@@ -77,8 +77,8 @@ export async function POST(req: Request) {
       key = `products/${productId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
     }
 
-    // Subir a R2 (stream WHATWG; válido en Edge)
-    await r2Put(key, file.stream(), contentType);
+    // Subir a R2 (Edge/WHATWG stream)
+    await r2Put(key, (file as any).stream(), contentType);
     uploadedKey = key;
 
     if (kind === 'banner') {
@@ -127,41 +127,73 @@ export async function POST(req: Request) {
         },
         { headers: { 'Cache-Control': 'no-store' } },
       );
-    } else {
-      // Imagen de producto
-      const productId = intOrNull(form.get('productId'))!;
-      const alt = strOrNull(form.get('alt'));
-      const forceCover = parseBool(form.get('isCover'));
+    }
 
-      // Calcular orden e isCover
-      const existing = await prisma.productImage.aggregate({
-        where: { productId },
-        _max: { sortOrder: true },
-        _count: true,
+    // ---------- Imagen de producto ----------
+    const productId = intOrNull(form.get('productId'))!;
+    const alt = strOrNull(form.get('alt'));
+    const forceCover = parseBool(form.get('isCover'));
+
+    // Calcular orden e isCover
+    const existing = await prisma.productImage.aggregate({
+      where: { productId },
+      _max: { sortOrder: true },
+      _count: true,
+    });
+    const isFirst = (existing?._count ?? 0) === 0;
+    const sortOrder = (existing?._max?.sortOrder ?? -1) + 1;
+    const isCover = isFirst || forceCover;
+
+    // Crear registro
+    const created = await prisma.productImage.create({
+      data: {
+        productId,
+        key,
+        alt,
+        isCover,
+        sortOrder,
+        size: Number(file.size) || null,
+      },
+      select: {
+        id: true,
+        productId: true,
+        key: true,
+        alt: true,
+        isCover: true,
+        sortOrder: true,
+        size: true,
+      },
+    });
+
+    // Si marcamos portada y no es la primera, desmarcamos el resto
+    if (isCover && !isFirst) {
+      await prisma.productImage.updateMany({
+        where: { productId, id: { not: created.id }, isCover: true },
+        data: { isCover: false },
       });
-      const isFirst = (existing?._count ?? 0) === 0;
-      const sortOrder = (existing?._max?.sortOrder ?? -1) + 1;
-      const isCover = isFirst || forceCover;
+    }
 
-      // Crear registro
-      const created = await prisma.productImage.create({
-        data: {
-          productId,
-          key,
-          alt,
-          isCover,
-          sortOrder,
-          size: Number(file.size) || null,
+    // Importante: usar `key` (string garantizado) para construir la URL
+    return NextResponse.json(
+      {
+        ok: true,
+        image: {
+          ...created,
+          url: publicR2Url(key),
         },
-        select: {
-          id: true,
-          productId: true,
-          key: true,
-          alt: true,
-          isCover: true,
-          sortOrder: true,
-          size: true,
-        },
-      });
-
-      // Si marcamos portada y no es la primer
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (err: any) {
+    // Limpieza best-effort si ya subimos a R2
+    try {
+      if (uploadedKey) await r2Delete(uploadedKey);
+    } catch {
+      // noop
+    }
+    return NextResponse.json(
+      { ok: false, error: 'upload_failed' },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
+}
