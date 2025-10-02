@@ -48,7 +48,7 @@ model Product {
   description   String?
   price         Float?
   sku           String?
-  status        String         @default("ACTIVE")
+  status        ProductStatus  @default(ACTIVE)
   categoryId    Int?
   category      Category?      @relation(fields: [categoryId], references: [id])
   subcategoryId Int?
@@ -67,8 +67,11 @@ model ProductImage {
   productId  Int
   product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  // Legacy (si ya existía en tu DB)
+  url        String?     // ← opcional para poder copiar a `key`
+
   // Clave del objeto en R2 (p.ej. "products/1/1757875-xxxx.jpg")
-  key        String   @unique
+  key        String?     // ← primero opcional; luego la volvemos obligatoria
 
   alt        String?
   isCover    Boolean  @default(false)
@@ -83,6 +86,8 @@ model ProductImage {
   updatedAt  DateTime @updatedAt
 
   @@index([productId, sortOrder])
+  // Cuando `key` sea obligatoria, si querés:
+  // @@unique([key])
 }
 
 model Tag {
@@ -157,4 +162,12 @@ model AuditLog {
   userAgent String?
   details   String?
   createdAt DateTime @default(now())
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DRAFT
+  ARCHIVED
+  AGOTADO
 }
