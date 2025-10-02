@@ -59,20 +59,26 @@ type ProductsApiResp = {
   perPage?: number;
 };
 
+function api(path: string) {
+  // Si definís NEXT_PUBLIC_BASE_URL la usamos; si no, usamos ruta relativa (recomendado en Pages)
+  const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+  const base = raw ? raw.replace(/\/+$/, '') : '';
+  return base ? `${base}${path}` : path;
+}
+
 async function getData(page = 1, perPage = 12): Promise<{
   items: Product[];
   total: number;
   page: number;
   perPage: number;
 }> {
-  // Preferimos absoluta con CF_PAGES_URL (Cloudflare) o NEXT_PUBLIC_BASE_URL.
-  const base =
-    process.env.CF_PAGES_URL?.replace(/\/+$/, '') ||
-    process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, '') ||
-    '';
-
-  const qs = `page=${page}&perPage=${perPage}&sort=-id&_ts=${Date.now()}`;
-  const url = `${base}/api/public/catalogo?${qs}`; // si base=='' queda relativa
+  const qs = new URLSearchParams({
+    page: String(page),
+    perPage: String(perPage),
+    sort: '-id',
+    _ts: String(Date.now()),
+  });
+  const url = api(`/api/public/catalogo?${qs.toString()}`);
 
   try {
     const res = await fetch(url, {
@@ -81,7 +87,6 @@ async function getData(page = 1, perPage = 12): Promise<{
       next: { revalidate: 0 },
     });
     if (!res.ok) {
-      // Log útil en Functions logs de Cloudflare
       console.error('[productos] catálogo HTTP', res.status, res.statusText);
       return { items: [], total: 0, page, perPage };
     }
