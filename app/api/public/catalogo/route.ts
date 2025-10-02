@@ -47,8 +47,8 @@ export async function GET(req: NextRequest) {
     // ─────────────────────────────────────────────────────────────
     // Filtro de estado (ajustable por querystring)
     // status=active  → ACTIVE + AGOTADO
-    // status=all     → todos excepto ARCHIVED   (DEFAULT)
-    // status=raw     → sin filtro de status     (debug)
+    // status=all     → todos excepto ARCHIVED **e incluye status NULL**  (DEFAULT)
+    // status=raw     → sin filtro de status (debug)
     // ─────────────────────────────────────────────────────────────
     const statusParam = (url.searchParams.get('status') || 'all').toLowerCase();
 
@@ -58,17 +58,23 @@ export async function GET(req: NextRequest) {
     } else if (statusParam === 'raw') {
       // sin filtro
     } else {
-      // default: all (todo menos ARCHIVED)
-      where.status = { not: 'ARCHIVED' };
+      // default "all": incluir no ARCHIVED + status NULL
+      where.OR = [
+        { status: { in: ['ACTIVE', 'INACTIVE', 'DRAFT', 'AGOTADO'] } },
+        { status: null },
+      ];
     }
 
     if (q) {
-      where.OR = [
+      // si ya hay OR por status, lo extendemos; si no, lo creamos
+      const textOR = [
         { name: { contains: q, mode: 'insensitive' } },
         { slug: { contains: q, mode: 'insensitive' } },
         { description: { contains: q, mode: 'insensitive' } },
         { sku: { contains: q, mode: 'insensitive' } },
       ];
+      if (where.OR) where.OR = [...where.OR, ...textOR];
+      else where.OR = textOR;
     }
     if (Number.isFinite(categoryId)) where.categoryId = categoryId;
     if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
@@ -136,14 +142,25 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
-    // Precios
+    // Precios: tolerar fallas en computePricesBatch
     const bare = itemsRaw.map((p: any) => ({
       id: p.id,
       price: p.price,
       categoryId: p.categoryId,
       tags: (p.productTags || []).map((t: any) => t.tagId),
     }));
-    const priced = await computePricesBatch(bare);
+
+    let priced: Map<number, { priceOriginal: number | null; priceFinal: number | null; offer?: any }>;
+    try {
+      priced = await computePricesBatch(bare);
+    } catch (e) {
+      console.error('[public/catalogo] computePricesBatch falló, fallback a precio base:', e);
+      priced = new Map();
+      for (const b of bare) {
+        const v = typeof b.price === 'number' ? b.price : null;
+        priced.set(b.id, { priceOriginal: v, priceFinal: v, offer: null });
+      }
+    }
 
     // Resolver cover: DB o, si no hay, listar en R2
     async function resolveCoverKey(p: any): Promise<string | null> {
@@ -168,8 +185,8 @@ export async function GET(req: NextRequest) {
     const items = await Promise.all(
       itemsRaw.map(async (p: any) => {
         const pr = priced.get(p.id);
-        const priceOriginal = pr?.priceOriginal ?? null;
-        const priceFinal = pr?.priceFinal ?? null;
+        const priceOriginal = pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
+        const priceFinal = pr?.priceFinal ?? priceOriginal;
 
         const hasDiscount =
           priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
