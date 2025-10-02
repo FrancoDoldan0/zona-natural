@@ -28,6 +28,8 @@ model Category {
   subcats   Subcategory[]
   products  Product[]
   offers    Offer[]       @relation("CategoryOffers")
+  // Relación inversa opcional para banners (no cambia la DB)
+  banners   Banner[]
 }
 
 model Subcategory {
@@ -114,15 +116,35 @@ enum DiscountType {
 }
 
 model Banner {
-  id        Int      @id @default(autoincrement())
-  title     String
-  imageUrl  String
-  link      String?
-  active    Boolean  @default(true)
-  sortOrder Int      @default(0) @map("order")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         Int              @id @default(autoincrement())
+  title      String
 
+  // Legacy URL (previa a almacenar en R2). Se mantiene por compatibilidad.
+  imageUrl   String
+
+  // Clave de objeto en R2 (p.ej. "banners/uuid.jpg") para publicR2Url(imageKey)
+  imageKey   String?
+
+  // Campos renombrados lógicos mapeando columnas existentes
+  linkUrl    String?          @map("link")
+  isActive   Boolean          @default(true) @map("active")
+
+  // Ubicación destinada del banner
+  placement  BannerPlacement  @default(HOME)
+
+  // Si placement === CATEGORY, se puede asociar a una categoría
+  categoryId Int?
+  category   Category?        @relation(fields: [categoryId], references: [id])
+
+  // Ventana de vigencia (si se setean, se filtra por now ∈ [startAt, endAt])
+  startAt    DateTime?
+  endAt      DateTime?
+
+  sortOrder  Int              @default(0) @map("order")
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@index([placement, isActive, categoryId, startAt, endAt])
   @@index([sortOrder])
 }
 
@@ -170,4 +192,11 @@ enum ProductStatus {
   DRAFT
   ARCHIVED
   AGOTADO
+}
+
+enum BannerPlacement {
+  HOME
+  PRODUCTS
+  CATEGORY
+  CHECKOUT
 }
