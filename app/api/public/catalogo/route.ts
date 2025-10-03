@@ -32,13 +32,6 @@ function appendAND(
   }
 }
 
-// Helper: construye un OR con los estados permitidos (evita usar `in`/`not` sobre enum)
-function statusOR(
-  statuses: Array<'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'AGOTADO' | 'ARCHIVED'>,
-): Prisma.ProductWhereInput {
-  return { OR: statuses.map((s) => ({ status: s })) };
-}
-
 // Tipos auxiliares para lo que seleccionamos de Prisma
 type ProductTagRow = { tagId: number };
 type ProductImageRow = { key: string | null };
@@ -82,17 +75,19 @@ export async function GET(req: NextRequest) {
     const onSale = parseBool(url.searchParams.get('onSale'));
 
     // ─────────────────────────────────────────────────────────────
-    // Filtro de estado (ajustable por querystring)
     // status=active  → ACTIVE + AGOTADO
-    // status=all     → ACTIVE + INACTIVE + DRAFT + AGOTADO (DEFAULT)  [excluye ARCHIVED]
-    // status=raw     → sin filtro de status (debug)
+    // status=all     → todos excepto ARCHIVED (DEFAULT)
+    // status=raw     → sin filtro de status
     // ─────────────────────────────────────────────────────────────
-    const statusParam = (url.searchParams.get('status') || 'all').toLowerCase();
+    const statusParam = (url.searchParams.get('status') || 'all').toLowerCase() as
+      | 'active'
+      | 'all'
+      | 'raw';
 
-    // Base del WHERE sin estado (para poder hacer fallback a raw)
+    // Base del WHERE (SIN FILTRO DE ESTADO) → evitamos el bug del enum en Edge/Accelerate
     const baseWhere: Prisma.ProductWhereInput = {};
 
-    // Búsqueda de texto
+    // Búsqueda de texto (AND con el resto de filtros)
     if (q) {
       const textOR: Prisma.ProductWhereInput['OR'] = [
         { name: { contains: q, mode: 'insensitive' } },
@@ -159,55 +154,25 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * perPage;
 
-    // Función que ejecuta la query con un where dado
-    async function fetchWithWhere(where: Prisma.ProductWhereInput) {
-      const [total, itemsRaw] = await Promise.all([
-        prisma.product.count({ where }),
-        prisma.product.findMany({
-          where,
-          skip,
-          take: perPage,
-          orderBy,
-          include: {
-            images: { select: { key: true } },
-            productTags: { select: { tagId: true } },
-          },
-        }),
-      ]);
-      return { total, itemsRaw: itemsRaw as ProductRow[] };
-    }
+    // Ejecutamos SIEMPRE sin filtro de estado en DB
+    const [total, itemsRaw] = await Promise.all([
+      prisma.product.count({ where: baseWhere }),
+      prisma.product.findMany({
+        where: baseWhere,
+        skip,
+        take: perPage,
+        orderBy,
+        include: {
+          images: { select: { key: true } },
+          productTags: { select: { tagId: true } },
+        },
+      }),
+    ]);
 
-    // Construyo el where con estado (si corresponde)
-    let effectiveStatus: 'active' | 'all' | 'raw' = statusParam as any;
-    let statusClause: Prisma.ProductWhereInput | null = null;
-    if (statusParam === 'active') {
-      statusClause = statusOR(['ACTIVE', 'AGOTADO']);
-    } else if (statusParam === 'raw') {
-      statusClause = null; // sin filtro
-    } else {
-      // default: all -> excluye ARCHIVED
-      statusClause = statusOR(['ACTIVE', 'INACTIVE', 'DRAFT', 'AGOTADO']);
-      effectiveStatus = 'all';
-    }
-
-    let total = 0;
-    let itemsRaw: ProductRow[] = [];
-    let usedFallbackRaw = false;
-
-    try {
-      const whereWithStatus: Prisma.ProductWhereInput = { ...baseWhere };
-      if (statusClause) appendAND(whereWithStatus, statusClause);
-      ({ total, itemsRaw } = await fetchWithWhere(whereWithStatus));
-    } catch (e) {
-      console.error('[public/catalogo] fallo con filtro de estado, fallback a raw:', e);
-      // Fallback a RAW (sin filtro por status)
-      ({ total, itemsRaw } = await fetchWithWhere(baseWhere));
-      effectiveStatus = 'raw';
-      usedFallbackRaw = true;
-    }
+    const typedItems = itemsRaw as ProductRow[];
 
     // Precios: tolerar fallas en computePricesBatch
-    const bare = itemsRaw.map((p) => ({
+    const bare = typedItems.map((p) => ({
       id: p.id,
       price: (p.price ?? null) as number | null,
       categoryId: (p.categoryId ?? null) as number | null,
@@ -246,8 +211,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const items = await Promise.all(
-      itemsRaw.map(async (p) => {
+    // Mapeo base (antes del filtro de estado)
+    const mapped = await Promise.all(
+      typedItems.map(async (p) => {
         const pr = priced.get(p.id);
         const priceOriginal = pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
         const priceFinal = pr?.priceFinal ?? priceOriginal;
@@ -278,8 +244,18 @@ export async function GET(req: NextRequest) {
       }),
     );
 
+    // Filtro de estado EN MEMORIA (evitamos bugs de enum en DB)
+    let filtered = mapped;
+    if (statusParam === 'active') {
+      filtered = filtered.filter((i) => {
+        const s = String(i.status || '').toUpperCase();
+        return s === 'ACTIVE' || s === 'AGOTADO';
+      });
+    } else if (statusParam === 'all') {
+      filtered = filtered.filter((i) => String(i.status || '').toUpperCase() !== 'ARCHIVED');
+    } // raw => no filtro
+
     // Post-filtros por precio FINAL
-    let filtered = items;
     if (onSale) filtered = filtered.filter((i) => i.hasDiscount);
     if (Number.isFinite(minFinal)) filtered = filtered.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
     if (Number.isFinite(maxFinal)) filtered = filtered.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
@@ -309,9 +285,9 @@ export async function GET(req: NextRequest) {
       ok: true,
       page,
       perPage,
-      total,
+      total,                // total de la query base (sin estado)
       pageCount,
-      filteredTotal,
+      filteredTotal,        // total luego de aplicar estado + post-filtros
       filteredPageCount,
       appliedFilters: {
         q,
@@ -326,8 +302,8 @@ export async function GET(req: NextRequest) {
         onSale,
         sort: sortParam,
         status: statusParam,
-        effectiveStatus: effectiveStatus,
-        fallbackRaw: usedFallbackRaw,
+        effectiveStatus: statusParam, // ahora siempre coincide (no hay fallback DB)
+        fallbackRaw: false,
       },
       items: filtered,
     });
