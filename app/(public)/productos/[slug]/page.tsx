@@ -38,11 +38,21 @@ function baseFromEnv(): string {
   return url.replace(/\/+$/, '');
 }
 
+// ⚠️ Tipado flexible para evitar el error de Promise<ReadonlyHeaders>
 function baseFromHeaders(): string {
-  const h = headers();
-  const host = h.get('x-forwarded-host') || h.get('host') || '';
-  const proto = h.get('x-forwarded-proto') || 'https';
-  return host ? `${proto}://${host}` : '';
+  try {
+    const h: any = (headers as any)(); // puede ser ReadonlyHeaders o Promise en typings
+    const get =
+      h && typeof h.get === 'function'
+        ? (k: string) => h.get(k)
+        : undefined;
+
+    const host = (get && (get('x-forwarded-host') || get('host'))) || '';
+    const proto = (get && get('x-forwarded-proto')) || 'https';
+    return host ? `${proto}://${host}` : '';
+  } catch {
+    return '';
+  }
 }
 
 function absUrl(u?: string | null) {
@@ -83,9 +93,7 @@ async function getProduct(slug: string): Promise<Product | null> {
         const j = (await r2.json()) as any;
         return (j?.item ?? j ?? null) as Product | null;
       }
-    } catch {
-      // sigue fallback
-    }
+    } catch {}
   }
 
   // 3) Fallback con base de entorno (NEXT_PUBLIC_BASE_URL, etc.)
@@ -98,9 +106,7 @@ async function getProduct(slug: string): Promise<Product | null> {
         const j = (await r3.json()) as any;
         return (j?.item ?? j ?? null) as Product | null;
       }
-    } catch {
-      // nada más
-    }
+    } catch {}
   }
 
   return null;
