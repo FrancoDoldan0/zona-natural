@@ -1,10 +1,12 @@
 // app/(public)/productos/[slug]/page.tsx
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, headers } from 'next/navigation';
 
 export const runtime = 'edge';
 export const revalidate = 60;
+// Fuerza dinámico para evitar prerender 404 en entornos edge
+export const dynamic = 'force-dynamic';
 
 type ProductImage = { url: string; alt?: string | null; sortOrder?: number | null };
 type Category = { id?: number; name?: string; slug?: string };
@@ -23,61 +25,80 @@ type Product = {
   status?: Status;
 };
 
-// ---------- Base pública solo para canonical/OG ----------
-function baseUrl(): string {
-  const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
-  if (!raw) return '';
-  const url = raw.startsWith('http') ? raw : `https://${raw}`;
-  return url.replace(/\/+$/, '');
+// ---------- helpers de base/origin ----------
+function envBase(): string {
+  const env =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    process.env.CF_PAGES_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL ||
+    '';
+  if (!env) return '';
+  const u = env.startsWith('http') ? env : `https://${env}`;
+  return u.replace(/\/+$/, '');
+}
+
+function siteOriginFromHeaders(): string {
+  try {
+    const h = headers();
+    const proto = h.get('x-forwarded-proto') || 'https';
+    const host = h.get('x-forwarded-host') || h.get('host') || '';
+    if (!host) return envBase();
+    return `${proto}://${host}`;
+  } catch {
+    return envBase();
+  }
 }
 
 function absUrl(u?: string | null) {
   if (!u) return undefined;
-  if (/^https?:\/\//i.test(u)) return u;
-  const b = baseUrl();
+  if (u.startsWith('http')) return u;
+  const b = siteOriginFromHeaders() || envBase();
   if (!b) return undefined;
   return u.startsWith('/') ? `${b}${u}` : `${b}/${u}`;
 }
 
-// ---------- Data fetching con fallback (relativa -> absoluta) ----------
+// ---------- Data fetching robusto ----------
 async function fetchJSON(url: string) {
-  return fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } });
+  return fetch(url, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+    next: { revalidate: 0 },
+  });
 }
 
 async function getProduct(slug: string): Promise<Product | null> {
   const rel = `/api/public/producto/${encodeURIComponent(slug)}`;
+  const origin = siteOriginFromHeaders();
+  const env = envBase();
 
-  // 1) Intento relativo
-  try {
-    const r1 = await fetchJSON(rel);
-    if (r1.status === 404) return null;
-    if (r1.ok) {
-      const j = (await r1.json()) as any;
-      return (j?.item ?? j ?? null) as Product | null;
-    }
-  } catch {
-    // paso al fallback
-  }
+  // Probamos varias variantes en este orden:
+  const candidates = Array.from(
+    new Set(
+      [
+        origin ? `${origin}${rel}` : null,
+        env ? `${env}${rel}` : null,
+        rel, // relativa como último intento
+      ].filter(Boolean) as string[],
+    ),
+  );
 
-  // 2) Fallback absoluto (por si el fetch relativo no resuelve en ese entorno)
-  const b = baseUrl();
-  if (b) {
+  for (const url of candidates) {
     try {
-      const r2 = await fetchJSON(`${b}${rel}`);
-      if (r2.status === 404) return null;
-      if (r2.ok) {
-        const j = (await r2.json()) as any;
+      const res = await fetchJSON(url);
+      if (res.status === 404) return null;
+      if (res.ok) {
+        const j = (await res.json()) as any;
         return (j?.item ?? j ?? null) as Product | null;
       }
     } catch {
-      // nada
+      // intentamos con el siguiente candidato
     }
   }
-
   return null;
 }
 
-// Versión segura para metadata (no rompe el render si falla)
+// Versión segura para metadata
 async function getProductSafe(slug: string): Promise<Product | null> {
   try {
     return await getProduct(slug);
@@ -110,8 +131,10 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 
   const firstImg = item.coverUrl || item.images?.[0]?.url || '/placeholder.jpg';
   const ogImage = absUrl(firstImg);
-  const b = baseUrl();
-  const canonical = b ? `${b}/productos/${item.slug}` : `/productos/${item.slug}`;
+  const canonicalBase = siteOriginFromHeaders() || envBase();
+  const canonical = canonicalBase
+    ? `${canonicalBase}/productos/${item.slug}`
+    : `/productos/${item.slug}`;
 
   return {
     title,
@@ -129,7 +152,12 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 
 export default async function ProductPage({ params }: any) {
   const item = await getProduct(params.slug);
-  if (!item) notFound();
+
+  // Si el API devolvió 404 realmente, devolvemos 404.
+  if (!item) {
+    // Mostramos 404 sólo si no existe; en fallos de red ya probamos varias variantes arriba.
+    notFound();
+  }
 
   const firstImg = item.coverUrl || item.images?.[0]?.url || '/placeholder.jpg';
   const imgSrc =
