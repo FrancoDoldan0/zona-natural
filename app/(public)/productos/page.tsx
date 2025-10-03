@@ -2,6 +2,7 @@
 import ProductGrid from './ProductGrid';
 
 export const runtime = 'edge';
+export const dynamic = 'force-dynamic'; // evita que se prerenderice vacío en build
 export const revalidate = 60;
 
 export type ProductImage = { url: string; alt?: string | null; sortOrder?: number | null };
@@ -55,6 +56,7 @@ type ProductsApiResp = {
   products?: any[];
   results?: any[];
   total?: number;
+  filteredTotal?: number;
   page?: number;
   perPage?: number;
 };
@@ -66,46 +68,60 @@ function api(path: string) {
   return base ? `${base}${path}` : path;
 }
 
+async function fetchCatalog(url: string) {
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+    next: { revalidate: 0 },
+  });
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as ProductsApiResp;
+  const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
+  const items: Product[] = rawItems.map(normalizeProduct);
+  const total: number =
+    typeof data.filteredTotal === 'number'
+      ? data.filteredTotal
+      : typeof data.total === 'number'
+      ? data.total
+      : items.length;
+
+  return {
+    items,
+    total,
+    page: typeof data.page === 'number' ? data.page : 1,
+    perPage: typeof data.perPage === 'number' ? data.perPage : 12,
+  };
+}
+
 async function getData(page = 1, perPage = 12): Promise<{
   items: Product[];
   total: number;
   page: number;
   perPage: number;
 }> {
-  const qs = new URLSearchParams({
+  const common = new URLSearchParams({
     page: String(page),
     perPage: String(perPage),
     sort: '-id',
     _ts: String(Date.now()),
-  });
-  const url = api(`/api/public/catalogo?${qs.toString()}`);
+  }).toString();
 
+  // 1) Intento normal (status=all: todos menos ARCHIVED)
+  const urlAll = api(`/api/public/catalogo?status=all&${common}`);
   try {
-    const res = await fetch(url, {
-      cache: 'no-store',
-      headers: { Accept: 'application/json' },
-      next: { revalidate: 0 },
-    });
-    if (!res.ok) {
-      console.error('[productos] catálogo HTTP', res.status, res.statusText);
-      return { items: [], total: 0, page, perPage };
-    }
+    const r1 = await fetchCatalog(urlAll);
+    if (r1 && r1.items.length) return r1;
 
-    const data = (await res.json()) as ProductsApiResp;
-    const rawItems: any[] = data.items ?? data.data ?? data.products ?? data.results ?? [];
-    const items: Product[] = rawItems.map(normalizeProduct);
-    const total: number = typeof data.total === 'number' ? data.total : items.length;
-
-    return {
-      items,
-      total,
-      page: typeof data.page === 'number' ? data.page : page,
-      perPage: typeof data.perPage === 'number' ? data.perPage : perPage,
-    };
+    // 2) Fallback defensivo por si el filtro de estado falla en runtime
+    const urlRaw = api(`/api/public/catalogo?status=raw&${common}`);
+    const r2 = await fetchCatalog(urlRaw);
+    if (r2) return r2;
   } catch (e) {
     console.error('[productos] fetch catálogo falló:', e);
-    return { items: [], total: 0, page, perPage };
   }
+
+  return { items: [], total: 0, page, perPage };
 }
 
 export default async function ProductosPage(props: any) {
