@@ -1,11 +1,11 @@
 // app/(public)/productos/[slug]/page.tsx
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, headers } from 'next/navigation';
+import { notFound } from 'next/navigation';
+import { headers } from 'next/headers';
 
 export const runtime = 'edge';
 export const revalidate = 60;
-// Fuerza dinámico para evitar prerender 404 en entornos edge
 export const dynamic = 'force-dynamic';
 
 type ProductImage = { url: string; alt?: string | null; sortOrder?: number | null };
@@ -25,8 +25,8 @@ type Product = {
   status?: Status;
 };
 
-// ---------- helpers de base/origin ----------
-function envBase(): string {
+// ---------- Helpers de base URL ----------
+function baseFromEnv(): string {
   const env =
     process.env.NEXT_PUBLIC_BASE_URL ||
     process.env.CF_PAGES_URL ||
@@ -34,67 +34,75 @@ function envBase(): string {
     process.env.VERCEL_URL ||
     '';
   if (!env) return '';
-  const u = env.startsWith('http') ? env : `https://${env}`;
-  return u.replace(/\/+$/, '');
+  const url = env.startsWith('http') ? env : `https://${env}`;
+  return url.replace(/\/+$/, '');
 }
 
-function siteOriginFromHeaders(): string {
-  try {
-    const h = headers();
-    const proto = h.get('x-forwarded-proto') || 'https';
-    const host = h.get('x-forwarded-host') || h.get('host') || '';
-    if (!host) return envBase();
-    return `${proto}://${host}`;
-  } catch {
-    return envBase();
-  }
+function baseFromHeaders(): string {
+  const h = headers();
+  const host = h.get('x-forwarded-host') || h.get('host') || '';
+  const proto = h.get('x-forwarded-proto') || 'https';
+  return host ? `${proto}://${host}` : '';
 }
 
 function absUrl(u?: string | null) {
   if (!u) return undefined;
-  if (u.startsWith('http')) return u;
-  const b = siteOriginFromHeaders() || envBase();
+  if (/^https?:\/\//i.test(u)) return u;
+  const b = baseFromHeaders() || baseFromEnv();
   if (!b) return undefined;
   return u.startsWith('/') ? `${b}${u}` : `${b}/${u}`;
 }
 
-// ---------- Data fetching robusto ----------
+// ---------- Data fetching con fallback (relativa -> absoluta actual -> absoluta env) ----------
 async function fetchJSON(url: string) {
-  return fetch(url, {
-    cache: 'no-store',
-    headers: { Accept: 'application/json' },
-    next: { revalidate: 0 },
-  });
+  return fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } });
 }
 
 async function getProduct(slug: string): Promise<Product | null> {
   const rel = `/api/public/producto/${encodeURIComponent(slug)}`;
-  const origin = siteOriginFromHeaders();
-  const env = envBase();
 
-  // Probamos varias variantes en este orden:
-  const candidates = Array.from(
-    new Set(
-      [
-        origin ? `${origin}${rel}` : null,
-        env ? `${env}${rel}` : null,
-        rel, // relativa como último intento
-      ].filter(Boolean) as string[],
-    ),
-  );
+  // 1) Intento relativo
+  try {
+    const r1 = await fetchJSON(rel);
+    if (r1.status === 404) return null;
+    if (r1.ok) {
+      const j = (await r1.json()) as any;
+      return (j?.item ?? j ?? null) as Product | null;
+    }
+  } catch {
+    // sigue fallback
+  }
 
-  for (const url of candidates) {
+  // 2) Fallback con base detectada de la request (Host/Proto)
+  const bReq = baseFromHeaders();
+  if (bReq) {
     try {
-      const res = await fetchJSON(url);
-      if (res.status === 404) return null;
-      if (res.ok) {
-        const j = (await res.json()) as any;
+      const r2 = await fetchJSON(`${bReq}${rel}`);
+      if (r2.status === 404) return null;
+      if (r2.ok) {
+        const j = (await r2.json()) as any;
         return (j?.item ?? j ?? null) as Product | null;
       }
     } catch {
-      // intentamos con el siguiente candidato
+      // sigue fallback
     }
   }
+
+  // 3) Fallback con base de entorno (NEXT_PUBLIC_BASE_URL, etc.)
+  const bEnv = baseFromEnv();
+  if (bEnv) {
+    try {
+      const r3 = await fetchJSON(`${bEnv}${rel}`);
+      if (r3.status === 404) return null;
+      if (r3.ok) {
+        const j = (await r3.json()) as any;
+        return (j?.item ?? j ?? null) as Product | null;
+      }
+    } catch {
+      // nada más
+    }
+  }
+
   return null;
 }
 
@@ -126,15 +134,12 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 
   const title = `${item.name} | Zona Natural`;
   const description =
-    (item.description && item.description.slice(0, 160)) ||
-    `Compra ${item.name} en Zona Natural.`;
+    (item.description && item.description.slice(0, 160)) || `Compra ${item.name} en Zona Natural.`;
 
   const firstImg = item.coverUrl || item.images?.[0]?.url || '/placeholder.jpg';
   const ogImage = absUrl(firstImg);
-  const canonicalBase = siteOriginFromHeaders() || envBase();
-  const canonical = canonicalBase
-    ? `${canonicalBase}/productos/${item.slug}`
-    : `/productos/${item.slug}`;
+  const b = baseFromHeaders() || baseFromEnv();
+  const canonical = (b ? `${b}` : '') + `/productos/${item.slug}`;
 
   return {
     title,
@@ -152,16 +157,13 @@ export async function generateMetadata({ params }: any): Promise<Metadata> {
 
 export default async function ProductPage({ params }: any) {
   const item = await getProduct(params.slug);
-
-  // Si el API devolvió 404 realmente, devolvemos 404.
-  if (!item) {
-    // Mostramos 404 sólo si no existe; en fallos de red ya probamos varias variantes arriba.
-    notFound();
-  }
+  if (!item) notFound();
 
   const firstImg = item.coverUrl || item.images?.[0]?.url || '/placeholder.jpg';
   const imgSrc =
-    firstImg?.startsWith('http') || firstImg?.startsWith('/') ? String(firstImg) : `/${firstImg}`;
+    /^https?:\/\//i.test(String(firstImg)) || String(firstImg).startsWith('/')
+      ? String(firstImg)
+      : `/${String(firstImg)}`;
 
   const canonicalPath = `/productos/${item.slug}`;
   const jsonLd: any = {
@@ -187,10 +189,7 @@ export default async function ProductPage({ params }: any) {
 
   return (
     <main style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         <div>
@@ -228,18 +227,10 @@ export default async function ProductPage({ params }: any) {
           </div>
 
           {(item.images?.length ?? 0) > 1 && (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-                gap: 8,
-              }}
-            >
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8 }}>
               {item.images!.slice(1).map((im, i) => {
                 const thumb =
-                  im.url?.startsWith('http') || im.url?.startsWith('/')
-                    ? String(im.url)
-                    : `/${im.url}`;
+                  im.url && (/^https?:\/\//i.test(im.url) || im.url.startsWith('/')) ? im.url : `/${im.url}`;
                 return (
                   <div key={`${im.url}-${i}`} style={{ width: '100%', aspectRatio: '4/3' }}>
                     <img
@@ -285,9 +276,7 @@ export default async function ProductPage({ params }: any) {
           {item.category?.slug ? (
             <div style={{ marginBottom: 12, opacity: 0.8 }}>
               Categoría:{' '}
-              <Link href={`/categoria/${item.category.slug}`}>
-                {item.category.name || item.category.slug}
-              </Link>
+              <Link href={`/categoria/${item.category.slug}`}>{item.category.name || item.category.slug}</Link>
             </div>
           ) : null}
 
@@ -303,9 +292,7 @@ export default async function ProductPage({ params }: any) {
 
           {item.sku && <div style={{ marginBottom: 12, opacity: 0.8 }}>SKU: {item.sku}</div>}
 
-          {item.description && (
-            <p style={{ lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{item.description}</p>
-          )}
+          {item.description && <p style={{ lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{item.description}</p>}
         </div>
       </div>
     </main>
