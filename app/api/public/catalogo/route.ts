@@ -47,48 +47,48 @@ export async function GET(req: NextRequest) {
     // ─────────────────────────────────────────────────────────────
     // Filtro de estado (ajustable por querystring)
     // status=active  → ACTIVE + AGOTADO
-    // status=all     → todos excepto ARCHIVED **e incluye status NULL**  (DEFAULT)
+    // status=all     → todos excepto ARCHIVED  (DEFAULT)
     // status=raw     → sin filtro de status (debug)
     // ─────────────────────────────────────────────────────────────
     const statusParam = (url.searchParams.get('status') || 'all').toLowerCase();
 
-    const where: any = {};
+    const where: Prisma.ProductWhereInput = {};
     if (statusParam === 'active') {
       where.status = { in: ['ACTIVE', 'AGOTADO'] };
     } else if (statusParam === 'raw') {
       // sin filtro
     } else {
-      // default "all": incluir no ARCHIVED + status NULL
-      where.OR = [
-        { status: { in: ['ACTIVE', 'INACTIVE', 'DRAFT', 'AGOTADO'] } },
-        { status: null },
-      ];
+      // default: all (todo menos ARCHIVED) — ¡sin intentar status: null!
+      where.status = { not: 'ARCHIVED' };
     }
 
+    // Búsqueda de texto (AND con el filtro de estado)
     if (q) {
-      // si ya hay OR por status, lo extendemos; si no, lo creamos
-      const textOR = [
+      const textOR: Prisma.ProductWhereInput['OR'] = [
         { name: { contains: q, mode: 'insensitive' } },
         { slug: { contains: q, mode: 'insensitive' } },
         { description: { contains: q, mode: 'insensitive' } },
         { sku: { contains: q, mode: 'insensitive' } },
       ];
-      if (where.OR) where.OR = [...where.OR, ...textOR];
-      else where.OR = textOR;
+      where.AND = [...(where.AND || []), { OR: textOR }];
     }
+
     if (Number.isFinite(categoryId)) where.categoryId = categoryId;
     if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
 
+    // Tags
     if (tagIds.length) {
       if (match === 'all') {
-        where.AND = (where.AND || []).concat(
-          tagIds.map((id) => ({ productTags: { some: { tagId: id } } })),
-        );
+        // requiere que tenga TODOS los tags
+        const allConds = tagIds.map((id) => ({ productTags: { some: { tagId: id } } }));
+        where.AND = [...(where.AND || []), ...allConds];
       } else {
+        // cualquiera de los tags
         where.productTags = { some: { tagId: { in: tagIds } } };
       }
     }
 
+    // Precio base (pre-discount)
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
       where.price = {};
       if (Number.isFinite(minPrice)) where.price.gte = minPrice;
@@ -143,11 +143,11 @@ export async function GET(req: NextRequest) {
     ]);
 
     // Precios: tolerar fallas en computePricesBatch
-    const bare = itemsRaw.map((p: any) => ({
+    const bare = itemsRaw.map((p) => ({
       id: p.id,
-      price: p.price,
-      categoryId: p.categoryId,
-      tags: (p.productTags || []).map((t: any) => t.tagId),
+      price: p.price as number | null,
+      categoryId: p.categoryId as number | null,
+      tags: (p.productTags || []).map((t) => t.tagId as number),
     }));
 
     let priced: Map<number, { priceOriginal: number | null; priceFinal: number | null; offer?: any }>;
@@ -163,11 +163,11 @@ export async function GET(req: NextRequest) {
     }
 
     // Resolver cover: DB o, si no hay, listar en R2
-    async function resolveCoverKey(p: any): Promise<string | null> {
+    async function resolveCoverKey(p: { id: number; images?: { key: string | null }[] }) {
       const keysFromDb = (Array.isArray(p.images) ? p.images : [])
-        .map((i: any) => i?.key)
-        .filter(Boolean);
-      if (keysFromDb.length > 0) return String(keysFromDb[0]);
+        .map((i) => i?.key)
+        .filter(Boolean) as string[];
+      if (keysFromDb.length > 0) return keysFromDb[0];
 
       try {
         const prefix = `products/${p.id}/`;
@@ -183,7 +183,7 @@ export async function GET(req: NextRequest) {
     }
 
     const items = await Promise.all(
-      itemsRaw.map(async (p: any) => {
+      itemsRaw.map(async (p) => {
         const pr = priced.get(p.id);
         const priceOriginal = pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
         const priceFinal = pr?.priceFinal ?? priceOriginal;
@@ -225,14 +225,14 @@ export async function GET(req: NextRequest) {
       filtered = filtered
         .slice()
         .sort(
-          (a: any, b: any) =>
+          (a, b) =>
             (a.priceFinal ?? Number.POSITIVE_INFINITY) - (b.priceFinal ?? Number.POSITIVE_INFINITY),
         );
     } else if (sortParam === '-final') {
       filtered = filtered
         .slice()
         .sort(
-          (a: any, b: any) =>
+          (a, b) =>
             (b.priceFinal ?? Number.NEGATIVE_INFINITY) - (a.priceFinal ?? Number.NEGATIVE_INFINITY),
         );
     }
