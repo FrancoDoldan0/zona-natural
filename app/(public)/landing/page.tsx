@@ -1,3 +1,4 @@
+// app/(public)/landing/page.tsx
 export const dynamic = 'force-dynamic';
 export const revalidate = 60;
 
@@ -6,8 +7,8 @@ import BannerSlider from '@/components/public/BannerSlider';
 type PublicBanner = {
   id: number;
   title: string;
-  url: string;             // viene de la API pública
-  linkUrl: string | null;  // viene de la API pública
+  url: string;            // viene del API
+  linkUrl: string | null; // viene del API
 };
 
 type PublicOffer = {
@@ -28,29 +29,45 @@ function api(path: string) {
 }
 
 async function getBanners(): Promise<PublicBanner[]> {
-  const r = await fetch(api('/api/public/banners?placement=home'), { next: { revalidate: 60 } });
-  const j = (await r.json().catch(() => ({ items: [] as any[] }))) as { items?: any[] };
+  try {
+    const r = await fetch(api('/api/public/banners?placement=home'), {
+      next: { revalidate: 60 },
+      headers: { Accept: 'application/json' },
+    });
+    if (!r.ok) return [];
+    const j = (await r.json()) as { items?: any[] };
 
-  const items = (j.items ?? []).map((b: any): PublicBanner => ({
-    id: Number(b?.id),
-    title: String(b?.title ?? ''),
-    url: String(b?.url ?? b?.imageUrl ?? ''),               // fallback legacy
-    linkUrl: b?.linkUrl ?? b?.link ?? null,                 // fallback legacy
-  }));
+    const items = (j.items ?? []).map((b: any): PublicBanner => ({
+      id: Number(b?.id),
+      title: String(b?.title ?? ''),
+      url: String(b?.url ?? b?.imageUrl ?? ''),       // fallback legacy
+      linkUrl: (b?.linkUrl ?? b?.link ?? null) as string | null, // fallback legacy
+    }));
 
-  return items.filter((b) => b.url);
+    return items.filter((b) => !!b.url);
+  } catch {
+    return [];
+  }
 }
 
 async function getOffers(): Promise<PublicOffer[]> {
-  const r = await fetch(api('/api/public/offers'), { next: { revalidate: 60 } });
-  const j = (await r.json().catch(() => ({ items: [] as PublicOffer[] }))) as { items?: PublicOffer[] };
-  return j.items || [];
+  try {
+    const r = await fetch(api('/api/public/offers'), {
+      next: { revalidate: 60 },
+      headers: { Accept: 'application/json' },
+    });
+    if (!r.ok) return [];
+    const j = (await r.json()) as { items?: PublicOffer[] };
+    return j.items ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export default async function HomePage() {
   const [banners, offers] = await Promise.all([getBanners(), getOffers()]);
 
-  // 🔧 Mapeo a la forma que espera <BannerSlider />: { imageUrl, link }
+  // Adaptamos al shape que acepta BannerSlider también ({ imageUrl, link })
   const sliderItems = banners.map((b) => ({
     id: b.id,
     title: b.title,
@@ -68,7 +85,7 @@ export default async function HomePage() {
       {!!sliderItems.length && (
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">Destacados</h2>
-          <BannerSlider items={sliderItems} />
+          <BannerSlider items={sliderItems as any} />
         </section>
       )}
 
@@ -80,7 +97,9 @@ export default async function HomePage() {
               <li key={o.id} className="border rounded p-3">
                 <div className="font-medium">{o.title}</div>
                 <div className="text-sm opacity-80">
-                  {o.discountType === 'PERCENT' ? `${o.discountVal}%` : `$ ${o.discountVal.toFixed(2)}`}
+                  {o.discountType === 'PERCENT'
+                    ? `${o.discountVal}%`
+                    : `$ ${o.discountVal.toFixed(2)}`}
                   {' · '}
                   {o.product
                     ? `Producto: ${o.product.name}`
