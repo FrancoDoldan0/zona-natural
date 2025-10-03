@@ -2,7 +2,7 @@
 import ProductGrid from './ProductGrid';
 
 export const runtime = 'edge';
-export const dynamic = 'force-dynamic'; // evita que se prerenderice vacío en build
+export const dynamic = 'force-dynamic'; // evita prerender en build
 export const revalidate = 60;
 
 export type ProductImage = { url: string; alt?: string | null; sortOrder?: number | null };
@@ -61,11 +61,11 @@ type ProductsApiResp = {
   perPage?: number;
 };
 
-function api(path: string) {
-  // Si definís NEXT_PUBLIC_BASE_URL la usamos; si no, usamos ruta relativa (recomendado en Pages)
-  const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
-  const base = raw ? raw.replace(/\/+$/, '') : '';
-  return base ? `${base}${path}` : path;
+// Base absoluta en Cloudflare (CF_PAGES_URL) o NEXT_PUBLIC_BASE_URL; si no hay, queda relativa
+function baseUrl() {
+  const a = process.env.CF_PAGES_URL?.replace(/\/+$/, '');
+  const b = process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/+$/, '');
+  return a || b || '';
 }
 
 async function fetchCatalog(url: string) {
@@ -100,6 +100,7 @@ async function getData(page = 1, perPage = 12): Promise<{
   page: number;
   perPage: number;
 }> {
+  const base = baseUrl();
   const common = new URLSearchParams({
     page: String(page),
     perPage: String(perPage),
@@ -107,14 +108,14 @@ async function getData(page = 1, perPage = 12): Promise<{
     _ts: String(Date.now()),
   }).toString();
 
-  // 1) Intento normal (status=all: todos menos ARCHIVED)
-  const urlAll = api(`/api/public/catalogo?status=all&${common}`);
+  // 1) Intento normal (status=all)
+  const urlAll = `${base}/api/public/catalogo?status=all&${common}`;
   try {
     const r1 = await fetchCatalog(urlAll);
     if (r1 && r1.items.length) return r1;
 
-    // 2) Fallback defensivo por si el filtro de estado falla en runtime
-    const urlRaw = api(`/api/public/catalogo?status=raw&${common}`);
+    // 2) Fallback si el filtro de estado falla en runtime (Accelerate/enum)
+    const urlRaw = `${base}/api/public/catalogo?status=raw&${common}`;
     const r2 = await fetchCatalog(urlRaw);
     if (r2) return r2;
   } catch (e) {
