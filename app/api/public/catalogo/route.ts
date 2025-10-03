@@ -32,6 +32,11 @@ function appendAND(
   }
 }
 
+// Helper: construye un OR con los estados permitidos (evita usar `in`/`not` sobre enum)
+function statusOR(statuses: Array<'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'AGOTADO' | 'ARCHIVED'>) {
+  return { OR: statuses.map((s) => ({ status: s })) } as Prisma.ProductWhereInput;
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const debug = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
@@ -63,19 +68,20 @@ export async function GET(req: NextRequest) {
     // ─────────────────────────────────────────────────────────────
     // Filtro de estado (ajustable por querystring)
     // status=active  → ACTIVE + AGOTADO
-    // status=all     → todos excepto ARCHIVED  (DEFAULT)
+    // status=all     → ACTIVE + INACTIVE + DRAFT + AGOTADO (DEFAULT)  [excluye ARCHIVED]
     // status=raw     → sin filtro de status (debug)
     // ─────────────────────────────────────────────────────────────
     const statusParam = (url.searchParams.get('status') || 'all').toLowerCase();
 
     const where: Prisma.ProductWhereInput = {};
+
     if (statusParam === 'active') {
-      where.status = { in: ['ACTIVE', 'AGOTADO'] };
+      appendAND(where, statusOR(['ACTIVE', 'AGOTADO']));
     } else if (statusParam === 'raw') {
       // sin filtro
     } else {
       // default: all (todo menos ARCHIVED)
-      where.status = { not: 'ARCHIVED' };
+      appendAND(where, statusOR(['ACTIVE', 'INACTIVE', 'DRAFT', 'AGOTADO']));
     }
 
     // Búsqueda de texto (AND con el filtro de estado)
