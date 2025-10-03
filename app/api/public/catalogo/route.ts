@@ -39,6 +39,20 @@ function statusOR(
   return { OR: statuses.map((s) => ({ status: s })) };
 }
 
+// Tipos auxiliares para lo que seleccionamos de Prisma
+type ProductTagRow = { tagId: number };
+type ProductImageRow = { key: string | null };
+type ProductRow = {
+  id: number;
+  name: string;
+  slug: string;
+  status?: string | null;
+  price?: number | null;
+  categoryId?: number | null;
+  images?: ProductImageRow[];
+  productTags?: ProductTagRow[];
+};
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const debug = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
@@ -160,7 +174,7 @@ export async function GET(req: NextRequest) {
           },
         }),
       ]);
-      return { total, itemsRaw };
+      return { total, itemsRaw: itemsRaw as ProductRow[] };
     }
 
     // Construyo el where con estado (si corresponde)
@@ -177,7 +191,7 @@ export async function GET(req: NextRequest) {
     }
 
     let total = 0;
-    let itemsRaw: Array<any> = [];
+    let itemsRaw: ProductRow[] = [];
     let usedFallbackRaw = false;
 
     try {
@@ -195,9 +209,9 @@ export async function GET(req: NextRequest) {
     // Precios: tolerar fallas en computePricesBatch
     const bare = itemsRaw.map((p) => ({
       id: p.id,
-      price: p.price as number | null,
-      categoryId: p.categoryId as number | null,
-      tags: (p.productTags || []).map((t) => t.tagId as number),
+      price: (p.price ?? null) as number | null,
+      categoryId: (p.categoryId ?? null) as number | null,
+      tags: (p.productTags ?? []).map((t: ProductTagRow) => t.tagId),
     }));
 
     let priced: Map<number, { priceOriginal: number | null; priceFinal: number | null; offer?: any }>;
@@ -213,7 +227,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Resolver cover: DB o, si no hay, listar en R2
-    async function resolveCoverKey(p: { id: number; images?: { key: string | null }[] }) {
+    async function resolveCoverKey(p: { id: number; images?: ProductImageRow[] }) {
       const keysFromDb = (Array.isArray(p.images) ? p.images : [])
         .map((i) => i?.key)
         .filter(Boolean) as string[];
@@ -312,8 +326,8 @@ export async function GET(req: NextRequest) {
         onSale,
         sort: sortParam,
         status: statusParam,
-        effectiveStatus: effectiveStatus,   // <- muestra el status realmente aplicado
-        fallbackRaw: usedFallbackRaw,       // <- true si falló el filtro y usamos raw
+        effectiveStatus: effectiveStatus,
+        fallbackRaw: usedFallbackRaw,
       },
       items: filtered,
     });
