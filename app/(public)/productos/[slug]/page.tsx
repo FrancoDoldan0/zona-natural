@@ -25,20 +25,15 @@ type Product = {
 
 // ---------- Base pública solo para canonical/OG ----------
 function baseUrl(): string {
-  const env =
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    process.env.CF_PAGES_URL ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    process.env.VERCEL_URL ||
-    '';
-  if (!env) return '';
-  const url = env.startsWith('http') ? env : `https://${env}`;
+  const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+  if (!raw) return '';
+  const url = raw.startsWith('http') ? raw : `https://${raw}`;
   return url.replace(/\/+$/, '');
 }
 
 function absUrl(u?: string | null) {
   if (!u) return undefined;
-  if (u.startsWith('http')) return u;
+  if (/^https?:\/\//i.test(u)) return u;
   const b = baseUrl();
   if (!b) return undefined;
   return u.startsWith('/') ? `${b}${u}` : `${b}/${u}`;
@@ -46,8 +41,7 @@ function absUrl(u?: string | null) {
 
 // ---------- Data fetching con fallback (relativa -> absoluta) ----------
 async function fetchJSON(url: string) {
-  const res = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } });
-  return res;
+  return fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } });
 }
 
 async function getProduct(slug: string): Promise<Product | null> {
@@ -61,7 +55,6 @@ async function getProduct(slug: string): Promise<Product | null> {
       const j = (await r1.json()) as any;
       return (j?.item ?? j ?? null) as Product | null;
     }
-    // si no ok, sigo al fallback
   } catch {
     // paso al fallback
   }
