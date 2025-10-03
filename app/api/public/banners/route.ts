@@ -30,12 +30,13 @@ function toPlacement(p: string | null):
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const wantDebug = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
+
   const placement = toPlacement(url.searchParams.get('placement'));
   const categoryIdRaw = url.searchParams.get('categoryId');
   const categoryId = categoryIdRaw ? Number(categoryIdRaw) : undefined;
   const now = new Date();
 
-  // base: activos dentro de la ventana temporal
   const baseWhere: any = {
     isActive: true,
     AND: [
@@ -44,61 +45,77 @@ export async function GET(req: Request) {
     ],
   };
 
-  // construimos el where completo (incluye placement si viene)
-  const where: any = { ...baseWhere };
-  if (placement) where.placement = placement;
+  // Construimos el where con filtros (si corresponden)
+  const whereWithFilters: any = { ...baseWhere };
+  if (placement) whereWithFilters.placement = placement;
   if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
-    where.categoryId = Number(categoryId);
+    whereWithFilters.categoryId = Number(categoryId);
   }
 
-  // select mínimo y orden estable
+  // Orden y select mínimos
+  const orderBy = [{ sortOrder: 'asc' as const }, { id: 'asc' as const }];
   const select = {
     id: true,
     title: true,
     imageUrl: true,
     imageKey: true,
-    linkUrl: true, // si en tu schema está mapeado a "link", Prisma ya lo expone como linkUrl
+    linkUrl: true, // si tu schema usa "link", Prisma lo puede mapear a linkUrl
     placement: true,
     categoryId: true,
     sortOrder: true,
-  } as const;
+  };
 
-  let rows: any[] = [];
-  try {
-    // intento 1: con placement
-    rows = await prisma.banner.findMany({
-      where,
-      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-      select,
-    });
-  } catch (err) {
-    // fallback: sin filtro de placement (algunas combos enum/accelerate fallan)
-    console.error('[banners] fallo con placement, reintento sin placement:', err);
-    const whereFallback = { ...baseWhere };
-    if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
-      (whereFallback as any).categoryId = Number(categoryId);
+  const debug: any = { tried: [] as any[] };
+
+  async function safeQuery(where: any, note: string) {
+    try {
+      const rows = await prisma.banner.findMany({ where, orderBy, select });
+      debug.tried.push({ note, where, ok: true, count: rows.length });
+      return { rows, err: null as any };
+    } catch (e: any) {
+      debug.tried.push({ note, where, ok: false, error: String(e?.message || e) });
+      return { rows: [] as any[], err: e };
     }
-    rows = await prisma.banner.findMany({
-      where: whereFallback,
-      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-      select,
-    });
   }
 
-  const items = rows.map((b: any) => ({
-    id: b.id,
-    title: b.title ?? '',
-    // priorizamos R2 (imageKey), si no, legacy imageUrl
-    url: b.imageKey ? publicR2Url(b.imageKey) : b.imageUrl || '',
-    // aceptamos linkUrl o (por si acaso) link legacy
-    linkUrl: b.linkUrl ?? (b as any).link ?? null,
-    placement: b.placement ?? null,
-    categoryId: b.categoryId ?? null,
-    sortOrder: b.sortOrder ?? 0,
-  })).filter((x: any) => x.url);
+  // 1) con filtros
+  let { rows, err } = await safeQuery(whereWithFilters, 'with-filters');
 
-  return NextResponse.json(
-    { ok: true, items },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
+  // 2) fallback sin placement ni categoryId
+  if (err) {
+    const { rows: r2, err: e2 } = await safeQuery(baseWhere, 'base-where');
+    rows = r2;
+    err = e2;
+  }
+
+  // 3) último fallback: sin where (solo activos si algo del enum rompió el parseo)
+  if (err) {
+    const { rows: r3, err: e3 } = await safeQuery({}, 'no-where');
+    rows = r3;
+    err = e3;
+  }
+
+  // si aún falló todo, devolvemos vacío pero sin 500 (para no romper el front)
+  if (err) {
+    const payload: any = { ok: true, items: [] as any[] };
+    if (wantDebug) payload.debug = debug;
+    return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
+  }
+
+  const items = rows
+    .map((b: any) => ({
+      id: b.id,
+      title: b.title ?? '',
+      url: b.imageKey ? publicR2Url(b.imageKey) : (b.imageUrl || ''),
+      linkUrl: b.linkUrl ?? (b as any).link ?? null,
+      placement: b.placement ?? null,
+      categoryId: b.categoryId ?? null,
+      sortOrder: b.sortOrder ?? 0,
+    }))
+    .filter((x) => x.url);
+
+  const payload: any = { ok: true, items };
+  if (wantDebug) payload.debug = debug;
+
+  return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
 }
