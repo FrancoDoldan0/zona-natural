@@ -16,6 +16,22 @@ function parseBool(v?: string | null) {
   return s === '1' || s === 'true' || s === 'yes' || s === 'on';
 }
 
+// Normaliza where.AND para poder ir agregando condiciones sin romper tipos
+function appendAND(
+  where: Prisma.ProductWhereInput,
+  clause: Prisma.ProductWhereInput | Prisma.ProductWhereInput[],
+) {
+  const cur = where.AND;
+  const add = Array.isArray(clause) ? clause : [clause];
+  if (!cur) {
+    where.AND = add;
+  } else if (Array.isArray(cur)) {
+    where.AND = [...cur, ...add];
+  } else {
+    where.AND = [cur, ...add];
+  }
+}
+
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const debug = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
@@ -58,7 +74,7 @@ export async function GET(req: NextRequest) {
     } else if (statusParam === 'raw') {
       // sin filtro
     } else {
-      // default: all (todo menos ARCHIVED) — ¡sin intentar status: null!
+      // default: all (todo menos ARCHIVED)
       where.status = { not: 'ARCHIVED' };
     }
 
@@ -70,7 +86,7 @@ export async function GET(req: NextRequest) {
         { description: { contains: q, mode: 'insensitive' } },
         { sku: { contains: q, mode: 'insensitive' } },
       ];
-      where.AND = [...(where.AND || []), { OR: textOR }];
+      appendAND(where, { OR: textOR || [] });
     }
 
     if (Number.isFinite(categoryId)) where.categoryId = categoryId;
@@ -80,8 +96,10 @@ export async function GET(req: NextRequest) {
     if (tagIds.length) {
       if (match === 'all') {
         // requiere que tenga TODOS los tags
-        const allConds = tagIds.map((id) => ({ productTags: { some: { tagId: id } } }));
-        where.AND = [...(where.AND || []), ...allConds];
+        const allConds: Prisma.ProductWhereInput[] = tagIds.map((id) => ({
+          productTags: { some: { tagId: id } },
+        }));
+        appendAND(where, allConds);
       } else {
         // cualquiera de los tags
         where.productTags = { some: { tagId: { in: tagIds } } };
