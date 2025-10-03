@@ -1,3 +1,4 @@
+// app/api/public/banners/route.ts
 export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
@@ -6,7 +7,12 @@ import { publicR2Url } from '@/lib/storage';
 
 const prisma = createPrisma();
 
-function toPlacement(p: string | null): 'HOME' | 'PRODUCTS' | 'CATEGORY' | 'CHECKOUT' | undefined {
+function toPlacement(p: string | null):
+  | 'HOME'
+  | 'PRODUCTS'
+  | 'CATEGORY'
+  | 'CHECKOUT'
+  | undefined {
   if (!p) return undefined;
   switch (p.toLowerCase()) {
     case 'home':
@@ -29,6 +35,7 @@ export async function GET(req: Request) {
   const categoryId = categoryIdRaw ? Number(categoryIdRaw) : undefined;
   const now = new Date();
 
+  // Activos + dentro de ventana [startAt, endAt]
   const where: any = {
     isActive: true,
     AND: [
@@ -38,7 +45,7 @@ export async function GET(req: Request) {
   };
 
   if (placement) where.placement = placement;
-  // Solo filtramos por categoría si mandan el id y el placement es CATEGORY
+  // Solo filtramos por categoría si el placement es CATEGORY y manda id válido
   if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
     where.categoryId = Number(categoryId);
   }
@@ -51,22 +58,33 @@ export async function GET(req: Request) {
       title: true,
       imageUrl: true,
       imageKey: true,
-      linkUrl: true, // <- ya mapeado a columna "link" en el schema
+      linkUrl: true, // en DB puede llamarse linkUrl; el front espera "link"
       placement: true,
       categoryId: true,
       sortOrder: true,
     },
   });
 
-  const items = rows.map((b) => ({
-    id: b.id,
-    title: b.title,
-    url: b.imageKey ? publicR2Url(b.imageKey) : b.imageUrl, // R2 primero, legacy fallback
-    linkUrl: b.linkUrl ?? null,
-    placement: b.placement,
-    categoryId: b.categoryId ?? null,
-    sortOrder: b.sortOrder,
-  }));
+  // Front espera: { id, title, imageUrl, link, placement?, categoryId?, sortOrder? }
+  const items = rows
+    .map((b) => {
+      const img =
+        (b.imageKey ? publicR2Url(b.imageKey) : b.imageUrl) || ''; // string (no null)
+      if (!img) return null; // sin imagen, lo omitimos
+      return {
+        id: b.id,
+        title: b.title,
+        imageUrl: img,
+        link: b.linkUrl ?? null,
+        placement: b.placement,
+        categoryId: b.categoryId ?? null,
+        sortOrder: b.sortOrder,
+      };
+    })
+    .filter(Boolean);
 
-  return NextResponse.json({ ok: true, items }, { headers: { 'Cache-Control': 'no-store' } });
+  return NextResponse.json(
+    { ok: true, items },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }
