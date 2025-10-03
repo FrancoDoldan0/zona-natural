@@ -14,7 +14,7 @@ function toPlacement(p: string | null):
   | 'CHECKOUT'
   | undefined {
   if (!p) return undefined;
-  switch (p.toLowerCase()) {
+  switch (p.trim().toLowerCase()) {
     case 'home':
       return 'HOME';
     case 'products':
@@ -35,8 +35,8 @@ export async function GET(req: Request) {
   const categoryId = categoryIdRaw ? Number(categoryIdRaw) : undefined;
   const now = new Date();
 
-  // Activos + dentro de ventana [startAt, endAt]
-  const where: any = {
+  // base: activos dentro de la ventana temporal
+  const baseWhere: any = {
     isActive: true,
     AND: [
       { OR: [{ startAt: null }, { startAt: { lte: now } }] },
@@ -44,44 +44,58 @@ export async function GET(req: Request) {
     ],
   };
 
+  // construimos el where completo (incluye placement si viene)
+  const where: any = { ...baseWhere };
   if (placement) where.placement = placement;
-  // Solo filtramos por categoría si el placement es CATEGORY y manda id válido
   if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
     where.categoryId = Number(categoryId);
   }
 
-  const rows = await prisma.banner.findMany({
-    where,
-    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-    select: {
-      id: true,
-      title: true,
-      imageUrl: true,
-      imageKey: true,
-      linkUrl: true, // en DB puede llamarse linkUrl; el front espera "link"
-      placement: true,
-      categoryId: true,
-      sortOrder: true,
-    },
-  });
+  // select mínimo y orden estable
+  const select = {
+    id: true,
+    title: true,
+    imageUrl: true,
+    imageKey: true,
+    linkUrl: true, // si en tu schema está mapeado a "link", Prisma ya lo expone como linkUrl
+    placement: true,
+    categoryId: true,
+    sortOrder: true,
+  } as const;
 
-  // Front espera: { id, title, imageUrl, link, placement?, categoryId?, sortOrder? }
-  const items = rows
-    .map((b) => {
-      const img =
-        (b.imageKey ? publicR2Url(b.imageKey) : b.imageUrl) || ''; // string (no null)
-      if (!img) return null; // sin imagen, lo omitimos
-      return {
-        id: b.id,
-        title: b.title,
-        imageUrl: img,
-        link: b.linkUrl ?? null,
-        placement: b.placement,
-        categoryId: b.categoryId ?? null,
-        sortOrder: b.sortOrder,
-      };
-    })
-    .filter(Boolean);
+  let rows: any[] = [];
+  try {
+    // intento 1: con placement
+    rows = await prisma.banner.findMany({
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      select,
+    });
+  } catch (err) {
+    // fallback: sin filtro de placement (algunas combos enum/accelerate fallan)
+    console.error('[banners] fallo con placement, reintento sin placement:', err);
+    const whereFallback = { ...baseWhere };
+    if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
+      (whereFallback as any).categoryId = Number(categoryId);
+    }
+    rows = await prisma.banner.findMany({
+      where: whereFallback,
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      select,
+    });
+  }
+
+  const items = rows.map((b: any) => ({
+    id: b.id,
+    title: b.title ?? '',
+    // priorizamos R2 (imageKey), si no, legacy imageUrl
+    url: b.imageKey ? publicR2Url(b.imageKey) : b.imageUrl || '',
+    // aceptamos linkUrl o (por si acaso) link legacy
+    linkUrl: b.linkUrl ?? (b as any).link ?? null,
+    placement: b.placement ?? null,
+    categoryId: b.categoryId ?? null,
+    sortOrder: b.sortOrder ?? 0,
+  })).filter((x: any) => x.url);
 
   return NextResponse.json(
     { ok: true, items },
