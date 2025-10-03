@@ -33,8 +33,10 @@ function appendAND(
 }
 
 // Helper: construye un OR con los estados permitidos (evita usar `in`/`not` sobre enum)
-function statusOR(statuses: Array<'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'AGOTADO' | 'ARCHIVED'>) {
-  return { OR: statuses.map((s) => ({ status: s })) } as Prisma.ProductWhereInput;
+function statusOR(
+  statuses: Array<'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'AGOTADO' | 'ARCHIVED'>,
+): Prisma.ProductWhereInput {
+  return { OR: statuses.map((s) => ({ status: s })) };
 }
 
 export async function GET(req: NextRequest) {
@@ -73,18 +75,10 @@ export async function GET(req: NextRequest) {
     // ─────────────────────────────────────────────────────────────
     const statusParam = (url.searchParams.get('status') || 'all').toLowerCase();
 
-    const where: Prisma.ProductWhereInput = {};
+    // Base del WHERE sin estado (para poder hacer fallback a raw)
+    const baseWhere: Prisma.ProductWhereInput = {};
 
-    if (statusParam === 'active') {
-      appendAND(where, statusOR(['ACTIVE', 'AGOTADO']));
-    } else if (statusParam === 'raw') {
-      // sin filtro
-    } else {
-      // default: all (todo menos ARCHIVED)
-      appendAND(where, statusOR(['ACTIVE', 'INACTIVE', 'DRAFT', 'AGOTADO']));
-    }
-
-    // Búsqueda de texto (AND con el filtro de estado)
+    // Búsqueda de texto
     if (q) {
       const textOR: Prisma.ProductWhereInput['OR'] = [
         { name: { contains: q, mode: 'insensitive' } },
@@ -92,11 +86,11 @@ export async function GET(req: NextRequest) {
         { description: { contains: q, mode: 'insensitive' } },
         { sku: { contains: q, mode: 'insensitive' } },
       ];
-      appendAND(where, { OR: textOR || [] });
+      appendAND(baseWhere, { OR: textOR || [] });
     }
 
-    if (Number.isFinite(categoryId)) where.categoryId = categoryId;
-    if (Number.isFinite(subcategoryId)) where.subcategoryId = subcategoryId;
+    if (Number.isFinite(categoryId)) baseWhere.categoryId = categoryId;
+    if (Number.isFinite(subcategoryId)) baseWhere.subcategoryId = subcategoryId;
 
     // Tags
     if (tagIds.length) {
@@ -105,18 +99,18 @@ export async function GET(req: NextRequest) {
         const allConds: Prisma.ProductWhereInput[] = tagIds.map((id) => ({
           productTags: { some: { tagId: id } },
         }));
-        appendAND(where, allConds);
+        appendAND(baseWhere, allConds);
       } else {
         // cualquiera de los tags
-        where.productTags = { some: { tagId: { in: tagIds } } };
+        baseWhere.productTags = { some: { tagId: { in: tagIds } } };
       }
     }
 
     // Precio base (pre-discount)
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
-      where.price = {};
-      if (Number.isFinite(minPrice)) where.price.gte = minPrice;
-      if (Number.isFinite(maxPrice)) where.price.lte = maxPrice;
+      baseWhere.price = {};
+      if (Number.isFinite(minPrice)) baseWhere.price.gte = minPrice;
+      if (Number.isFinite(maxPrice)) baseWhere.price.lte = maxPrice;
     }
 
     // Orden principal
@@ -151,20 +145,52 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * perPage;
 
-    // Seleccionamos solo lo necesario
-    const [total, itemsRaw] = await Promise.all([
-      prisma.product.count({ where }),
-      prisma.product.findMany({
-        where,
-        skip,
-        take: perPage,
-        orderBy,
-        include: {
-          images: { select: { key: true } },
-          productTags: { select: { tagId: true } },
-        },
-      }),
-    ]);
+    // Función que ejecuta la query con un where dado
+    async function fetchWithWhere(where: Prisma.ProductWhereInput) {
+      const [total, itemsRaw] = await Promise.all([
+        prisma.product.count({ where }),
+        prisma.product.findMany({
+          where,
+          skip,
+          take: perPage,
+          orderBy,
+          include: {
+            images: { select: { key: true } },
+            productTags: { select: { tagId: true } },
+          },
+        }),
+      ]);
+      return { total, itemsRaw };
+    }
+
+    // Construyo el where con estado (si corresponde)
+    let effectiveStatus: 'active' | 'all' | 'raw' = statusParam as any;
+    let statusClause: Prisma.ProductWhereInput | null = null;
+    if (statusParam === 'active') {
+      statusClause = statusOR(['ACTIVE', 'AGOTADO']);
+    } else if (statusParam === 'raw') {
+      statusClause = null; // sin filtro
+    } else {
+      // default: all -> excluye ARCHIVED
+      statusClause = statusOR(['ACTIVE', 'INACTIVE', 'DRAFT', 'AGOTADO']);
+      effectiveStatus = 'all';
+    }
+
+    let total = 0;
+    let itemsRaw: Array<any> = [];
+    let usedFallbackRaw = false;
+
+    try {
+      const whereWithStatus: Prisma.ProductWhereInput = { ...baseWhere };
+      if (statusClause) appendAND(whereWithStatus, statusClause);
+      ({ total, itemsRaw } = await fetchWithWhere(whereWithStatus));
+    } catch (e) {
+      console.error('[public/catalogo] fallo con filtro de estado, fallback a raw:', e);
+      // Fallback a RAW (sin filtro por status)
+      ({ total, itemsRaw } = await fetchWithWhere(baseWhere));
+      effectiveStatus = 'raw';
+      usedFallbackRaw = true;
+    }
 
     // Precios: tolerar fallas en computePricesBatch
     const bare = itemsRaw.map((p) => ({
@@ -286,6 +312,8 @@ export async function GET(req: NextRequest) {
         onSale,
         sort: sortParam,
         status: statusParam,
+        effectiveStatus: effectiveStatus,   // <- muestra el status realmente aplicado
+        fallbackRaw: usedFallbackRaw,       // <- true si falló el filtro y usamos raw
       },
       items: filtered,
     });
