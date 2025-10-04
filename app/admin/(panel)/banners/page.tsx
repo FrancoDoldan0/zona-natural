@@ -23,29 +23,41 @@ type BannerView = {
   imageUrl: string;
   link: string | null;
   sortOrder: number;
-  status: BannerStatus;  // normalizado para la UI
+  status: BannerStatus; // normalizado para la UI
 };
 
 type ApiList<T> = { ok: true; items: T[] } | { ok: false; error: string };
 type ApiItem<T> = { ok: true; item: T } | { ok: false; error: string };
 type ApiOk = { ok: true } | { ok: false; error: string };
 
+type UploadRespOk = { ok: true; imageKey?: string; imageUrl: string };
+type UploadRespErr = { ok: false; error: string; detail?: string };
+type UploadResp = UploadRespOk | UploadRespErr;
+
 // Helpers
 const statusToBadge = (s: BannerStatus) => {
   switch (s) {
-    case 'ACTIVE': return 'bg-green-600 text-white';
-    case 'INACTIVE': return 'bg-gray-300 text-gray-800';
-    case 'DRAFT': return 'bg-yellow-500 text-black';
-    case 'ARCHIVED': return 'bg-zinc-500 text-white';
-    default: return 'bg-gray-300 text-gray-800';
+    case 'ACTIVE':
+      return 'bg-green-600 text-white';
+    case 'INACTIVE':
+      return 'bg-gray-300 text-gray-800';
+    case 'DRAFT':
+      return 'bg-yellow-500 text-black';
+    case 'ARCHIVED':
+      return 'bg-zinc-500 text-white';
+    default:
+      return 'bg-gray-300 text-gray-800';
   }
 };
 
 const normalizeStatus = (b: BannerApi): BannerStatus => {
   if (b.status) return b.status;
-  const act = typeof b.isActive === 'boolean' ? b.isActive
-            : typeof b.active === 'boolean' ? b.active
-            : true;
+  const act =
+    typeof b.isActive === 'boolean'
+      ? b.isActive
+      : typeof b.active === 'boolean'
+      ? b.active
+      : true;
   return act ? 'ACTIVE' : 'INACTIVE';
 };
 
@@ -62,19 +74,23 @@ export default function BannersPage() {
   const [busyUp, setBusyUp] = useState(false);
 
   async function load(all = true) {
-    const res = await fetch('/api/admin/banners?all=' + (all ? 1 : 0), { cache: 'no-store' });
-    const data = (await res.json()) as ApiList<BannerApi>;
-    if (data.ok) {
-      const mapped: BannerView[] = data.items.map((b) => ({
-        id: b.id,
-        title: b.title,
-        imageUrl: b.imageUrl,
-        link: b.link ?? null,
-        sortOrder: b.sortOrder ?? 0,
-        status: normalizeStatus(b),
-      }));
-      setItems(mapped);
-    } else {
+    try {
+      const res = await fetch('/api/admin/banners?all=' + (all ? 1 : 0), { cache: 'no-store' });
+      const data = (await res.json()) as ApiList<BannerApi>;
+      if ('ok' in data && data.ok) {
+        const mapped: BannerView[] = data.items.map((b) => ({
+          id: b.id,
+          title: b.title,
+          imageUrl: b.imageUrl,
+          link: b.link ?? null,
+          sortOrder: b.sortOrder ?? 0,
+          status: normalizeStatus(b),
+        }));
+        setItems(mapped);
+      } else {
+        setItems([]);
+      }
+    } catch {
       setItems([]);
     }
   }
@@ -89,15 +105,15 @@ export default function BannersPage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      // endpoint que agregaremos luego: devuelve { ok, imageUrl, imageKey? }
       const res = await fetch('/api/admin/banners/upload', { method: 'POST', body: fd });
-      const data = await res.json();
-      if (data?.ok && data?.imageUrl) {
+      const data = (await res.json()) as UploadResp;
+
+      if ('ok' in data && data.ok && data.imageUrl) {
         setImageUrl(String(data.imageUrl));
       } else {
-        alert(data?.error || 'Error al subir imagen');
+        alert((data as UploadRespErr)?.error || 'Error al subir imagen');
       }
-    } catch (e) {
+    } catch {
       alert('Error al subir imagen');
     } finally {
       setBusyUp(false);
@@ -111,70 +127,82 @@ export default function BannersPage() {
       imageUrl,
       link: link.trim() || null,
       sortOrder: Number(sortOrder || 0),
-      status,                           // NUEVO: status como fuente de verdad
-      // compat: enviamos también booleans
+      status, // NUEVO: status como fuente de verdad (si el backend lo ignora, no rompe)
+      // compat: también booleans
       isActive: status === 'ACTIVE',
       active: status === 'ACTIVE',
     };
-    const res = await fetch('/api/admin/banners', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const data = (await res.json()) as ApiOk;
-    if (data.ok) {
-      setTitle('');
-      setImageUrl('');
-      setFile(null);
-      setLink('');
-      setSortOrder('0');
-      setStatus('ACTIVE');
-      load(true);
-    } else {
-      alert(data.error || 'Error');
+    try {
+      const res = await fetch('/api/admin/banners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json()) as ApiOk;
+      if ('ok' in data && data.ok) {
+        setTitle('');
+        setImageUrl('');
+        setFile(null);
+        setLink('');
+        setSortOrder('0');
+        setStatus('ACTIVE');
+        load(true);
+      } else {
+        alert((data as any)?.error || 'Error');
+      }
+    } catch {
+      alert('Error de red al crear el banner');
     }
   }
 
   async function onToggleActive(b: BannerView) {
     const newStatus: BannerStatus = b.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-    const res = await fetch(`/api/admin/banners/${b.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: newStatus,
-        isActive: newStatus === 'ACTIVE',   // compat
-        active: newStatus === 'ACTIVE',     // compat
-      }),
-    });
-    const data = (await res.json()) as ApiItem<BannerApi>;
-    if (data.ok) {
-      setItems((prev) =>
-        prev.map((x) =>
-          x.id === b.id
-            ? {
-                id: data.item.id,
-                title: data.item.title,
-                imageUrl: data.item.imageUrl,
-                link: data.item.link ?? null,
-                sortOrder: data.item.sortOrder ?? 0,
-                status: normalizeStatus(data.item),
-              }
-            : x,
-        ),
-      );
-    } else {
-      alert(data.error || 'Error al actualizar');
+    try {
+      const res = await fetch(`/api/admin/banners/${b.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: newStatus,
+          isActive: newStatus === 'ACTIVE', // compat
+          active: newStatus === 'ACTIVE', // compat
+        }),
+      });
+      const data = (await res.json()) as ApiItem<BannerApi>;
+      if ('ok' in data && data.ok) {
+        setItems((prev) =>
+          prev.map((x) =>
+            x.id === b.id
+              ? {
+                  id: data.item.id,
+                  title: data.item.title,
+                  imageUrl: data.item.imageUrl,
+                  link: data.item.link ?? null,
+                  sortOrder: data.item.sortOrder ?? 0,
+                  status: normalizeStatus(data.item),
+                }
+              : x,
+          ),
+        );
+      } else {
+        alert((data as any)?.error || 'Error al actualizar');
+      }
+    } catch {
+      alert('Error de red al actualizar');
     }
   }
 
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar banner?')) return;
-    const res = await fetch(`/api/admin/banners/${id}`, { method: 'DELETE' });
-    const data = (await res.json()) as ApiOk;
-    if (data.ok) {
-      setItems((prev) => prev.filter((x) => x.id !== id));
-    } else {
-      alert(data.error || 'Error al eliminar');
+    try {
+      const res = await fetch(`/api/admin/banners/${id}`, { method: 'DELETE' });
+      const data = (await res.json()) as ApiOk;
+      if ('ok' in data && data.ok) {
+        setItems((prev) => prev.filter((x) => x.id !== id));
+      } else {
+        alert((data as any)?.error || 'Error al eliminar');
+      }
+    } catch {
+      alert('Error de red al eliminar');
     }
   }
 
@@ -199,6 +227,7 @@ export default function BannersPage() {
           placeholder="URL de la imagen (https…)"
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
+          required={!file}
         />
 
         {/* Subir archivo → setea imageUrl cuando el endpoint responde */}
@@ -236,7 +265,7 @@ export default function BannersPage() {
           title="Orden"
         />
 
-        {/* NUEVO: status como productos */}
+        {/* Estado como productos */}
         <select
           className="border rounded p-2 md:col-span-2"
           value={status}
@@ -249,7 +278,7 @@ export default function BannersPage() {
           <option value="ARCHIVED">ARCHIVED</option>
         </select>
 
-        <button className="border rounded px-4 md:col-span-1" type="submit">
+        <button className="border rounded px-4 md:col-span-1" type="submit" disabled={!imageUrl && !file}>
           Crear
         </button>
 
@@ -296,11 +325,9 @@ export default function BannersPage() {
                 </td>
                 <td className="p-2 border">{b.title}</td>
                 <td className="p-2 border">{b.sortOrder}</td>
-                <td className="p-2 border">{b.link || '-'}</td>
+                <td className="p-2 border break-all">{b.link || '-'}</td>
                 <td className="p-2 border">
-                  <span className={'px-2 py-1 rounded text-xs ' + statusToBadge(b.status)}>
-                    {b.status}
-                  </span>
+                  <span className={'px-2 py-1 rounded text-xs ' + statusToBadge(b.status)}>{b.status}</span>
                 </td>
                 <td className="p-2 border">
                   <div className="flex gap-2">
