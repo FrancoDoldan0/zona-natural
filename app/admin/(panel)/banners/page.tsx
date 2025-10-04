@@ -1,92 +1,180 @@
+// app/admin/(panel)/banners/page.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import type React from 'react';
 
-type Banner = {
+type BannerStatus = 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED';
+
+type BannerApi = {
   id: number;
   title: string;
   imageUrl: string;
   link: string | null;
-  active: boolean;
   sortOrder: number;
+  // el backend puede devolver cualquiera de estos:
+  isActive?: boolean;
+  active?: boolean;
+  status?: BannerStatus;
 };
 
-type ApiList<T> =
-  | { ok: true; items: T[] }
-  | { ok: false; error: string };
+type BannerView = {
+  id: number;
+  title: string;
+  imageUrl: string;
+  link: string | null;
+  sortOrder: number;
+  status: BannerStatus;  // normalizado para la UI
+};
 
-type ApiItem<T> =
-  | { ok: true; item: T }
-  | { ok: false; error: string };
+type ApiList<T> = { ok: true; items: T[] } | { ok: false; error: string };
+type ApiItem<T> = { ok: true; item: T } | { ok: false; error: string };
+type ApiOk = { ok: true } | { ok: false; error: string };
 
-type ApiOk =
-  | { ok: true }
-  | { ok: false; error: string };
+// Helpers
+const statusToBadge = (s: BannerStatus) => {
+  switch (s) {
+    case 'ACTIVE': return 'bg-green-600 text-white';
+    case 'INACTIVE': return 'bg-gray-300 text-gray-800';
+    case 'DRAFT': return 'bg-yellow-500 text-black';
+    case 'ARCHIVED': return 'bg-zinc-500 text-white';
+    default: return 'bg-gray-300 text-gray-800';
+  }
+};
+
+const normalizeStatus = (b: BannerApi): BannerStatus => {
+  if (b.status) return b.status;
+  const act = typeof b.isActive === 'boolean' ? b.isActive
+            : typeof b.active === 'boolean' ? b.active
+            : true;
+  return act ? 'ACTIVE' : 'INACTIVE';
+};
 
 export default function BannersPage() {
-  const [items, setItems] = useState<Banner[]>([]);
+  const [items, setItems] = useState<BannerView[]>([]);
+
   const [title, setTitle] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [file, setFile] = useState<File | null>(null);
   const [link, setLink] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
-  const [active, setActive] = useState(true);
+  const [status, setStatus] = useState<BannerStatus>('ACTIVE');
   const [q, setQ] = useState('');
+  const [busyUp, setBusyUp] = useState(false);
 
-  async function load(all = false) {
+  async function load(all = true) {
     const res = await fetch('/api/admin/banners?all=' + (all ? 1 : 0), { cache: 'no-store' });
-    const data = await res.json<ApiList<Banner>>();
-    if (data.ok) setItems(data.items);
-    else setItems([]);
+    const data = (await res.json()) as ApiList<BannerApi>;
+    if (data.ok) {
+      const mapped: BannerView[] = data.items.map((b) => ({
+        id: b.id,
+        title: b.title,
+        imageUrl: b.imageUrl,
+        link: b.link ?? null,
+        sortOrder: b.sortOrder ?? 0,
+        status: normalizeStatus(b),
+      }));
+      setItems(mapped);
+    } else {
+      setItems([]);
+    }
   }
 
   useEffect(() => {
     load(true);
   }, []);
 
+  async function handleUpload() {
+    if (!file) return;
+    setBusyUp(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      // endpoint que agregaremos luego: devuelve { ok, imageUrl, imageKey? }
+      const res = await fetch('/api/admin/banners/upload', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data?.ok && data?.imageUrl) {
+        setImageUrl(String(data.imageUrl));
+      } else {
+        alert(data?.error || 'Error al subir imagen');
+      }
+    } catch (e) {
+      alert('Error al subir imagen');
+    } finally {
+      setBusyUp(false);
+    }
+  }
+
   async function onCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const payload = {
+      title,
+      imageUrl,
+      link: link.trim() || null,
+      sortOrder: Number(sortOrder || 0),
+      status,                           // NUEVO: status como fuente de verdad
+      // compat: enviamos también booleans
+      isActive: status === 'ACTIVE',
+      active: status === 'ACTIVE',
+    };
     const res = await fetch('/api/admin/banners', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        imageUrl,
-        link: link.trim() || null,
-        active,
-        sortOrder: Number(sortOrder || 0),
-      }),
+      body: JSON.stringify(payload),
     });
-    const data = await res.json<ApiOk>();
+    const data = (await res.json()) as ApiOk;
     if (data.ok) {
       setTitle('');
       setImageUrl('');
+      setFile(null);
       setLink('');
       setSortOrder('0');
-      setActive(true);
+      setStatus('ACTIVE');
       load(true);
     } else {
       alert(data.error || 'Error');
     }
   }
 
-  async function onToggleActive(b: Banner) {
+  async function onToggleActive(b: BannerView) {
+    const newStatus: BannerStatus = b.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     const res = await fetch(`/api/admin/banners/${b.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active: !b.active }),
+      body: JSON.stringify({
+        status: newStatus,
+        isActive: newStatus === 'ACTIVE',   // compat
+        active: newStatus === 'ACTIVE',     // compat
+      }),
     });
-    const data = await res.json<ApiItem<Banner>>();
+    const data = (await res.json()) as ApiItem<BannerApi>;
     if (data.ok) {
-      setItems((prev) => prev.map((x) => (x.id === b.id ? data.item : x)));
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === b.id
+            ? {
+                id: data.item.id,
+                title: data.item.title,
+                imageUrl: data.item.imageUrl,
+                link: data.item.link ?? null,
+                sortOrder: data.item.sortOrder ?? 0,
+                status: normalizeStatus(data.item),
+              }
+            : x,
+        ),
+      );
+    } else {
+      alert(data.error || 'Error al actualizar');
     }
   }
 
   async function onDelete(id: number) {
     if (!confirm('¿Eliminar banner?')) return;
     const res = await fetch(`/api/admin/banners/${id}`, { method: 'DELETE' });
-    const data = await res.json<ApiOk>();
+    const data = (await res.json()) as ApiOk;
     if (data.ok) {
       setItems((prev) => prev.filter((x) => x.id !== id));
+    } else {
+      alert(data.error || 'Error al eliminar');
     }
   }
 
@@ -96,39 +184,82 @@ export default function BannersPage() {
     <main className="max-w-6xl mx-auto p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Banners</h1>
 
-      <form onSubmit={onCreate} className="border rounded p-4 grid gap-2 md:grid-cols-6">
+      <form onSubmit={onCreate} className="border rounded p-4 grid gap-2 md:grid-cols-12">
         <input
-          className="border rounded p-2 md:col-span-2"
+          className="border rounded p-2 md:col-span-3"
           placeholder="Título"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          required
         />
+
+        {/* Cargar por URL (fallback) */}
         <input
-          className="border rounded p-2 md:col-span-2"
+          className="border rounded p-2 md:col-span-3"
           placeholder="URL de la imagen (https…)"
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
         />
+
+        {/* Subir archivo → setea imageUrl cuando el endpoint responde */}
+        <div className="md:col-span-3 flex items-center gap-2">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="border rounded p-2 w-full"
+          />
+          <button
+            type="button"
+            onClick={handleUpload}
+            className="border rounded px-3 whitespace-nowrap"
+            disabled={!file || busyUp}
+            title="Subir imagen a R2"
+          >
+            {busyUp ? 'Subiendo…' : 'Subir'}
+          </button>
+        </div>
+
         <input
-          className="border rounded p-2"
+          className="border rounded p-2 md:col-span-2"
           placeholder="Link (opcional)"
           value={link}
           onChange={(e) => setLink(e.target.value)}
         />
+
         <input
-          className="border rounded p-2"
+          className="border rounded p-2 md:col-span-1"
           type="number"
           min={0}
           value={sortOrder}
           onChange={(e) => setSortOrder(e.target.value)}
+          title="Orden"
         />
-        <label className="flex items-center gap-2 md:col-span-5">
-          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />{' '}
-          Activo
-        </label>
+
+        {/* NUEVO: status como productos */}
+        <select
+          className="border rounded p-2 md:col-span-2"
+          value={status}
+          onChange={(e) => setStatus(e.target.value as BannerStatus)}
+          title="Estado"
+        >
+          <option value="ACTIVE">ACTIVE</option>
+          <option value="INACTIVE">INACTIVE</option>
+          <option value="DRAFT">DRAFT</option>
+          <option value="ARCHIVED">ARCHIVED</option>
+        </select>
+
         <button className="border rounded px-4 md:col-span-1" type="submit">
           Crear
         </button>
+
+        {/* Previsualización mínima si hay imagen */}
+        {imageUrl && (
+          <div className="md:col-span-12 flex items-center gap-3 mt-2">
+            <span className="text-sm opacity-70">Preview:</span>
+            <img src={imageUrl} alt={title || 'preview'} className="h-10 rounded border" />
+          </div>
+        )}
       </form>
 
       <div className="flex gap-2">
@@ -152,8 +283,8 @@ export default function BannersPage() {
               <th className="p-2 border">Título</th>
               <th className="p-2 border">Orden</th>
               <th className="p-2 border">Link</th>
-              <th className="p-2 border">Activo</th>
-              <th className="p-2 border w-28">Acciones</th>
+              <th className="p-2 border">Estado</th>
+              <th className="p-2 border w-36">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -161,25 +292,29 @@ export default function BannersPage() {
               <tr key={b.id}>
                 <td className="p-2 border">{b.id}</td>
                 <td className="p-2 border">
-                  <img src={b.imageUrl} alt={b.title} className="h-10 w-20 object-cover" />
+                  <img src={b.imageUrl} alt={b.title} className="h-10 w-20 object-cover rounded" />
                 </td>
                 <td className="p-2 border">{b.title}</td>
                 <td className="p-2 border">{b.sortOrder}</td>
                 <td className="p-2 border">{b.link || '-'}</td>
                 <td className="p-2 border">
-                  <button
-                    className={
-                      'px-2 rounded ' + (b.active ? 'bg-green-600 text-white' : 'bg-gray-300')
-                    }
-                    onClick={() => onToggleActive(b)}
-                  >
-                    {b.active ? 'Activo' : 'Inactivo'}
-                  </button>
+                  <span className={'px-2 py-1 rounded text-xs ' + statusToBadge(b.status)}>
+                    {b.status}
+                  </span>
                 </td>
                 <td className="p-2 border">
-                  <button className="text-red-600" onClick={() => onDelete(b.id)}>
-                    Eliminar
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      className="px-2 rounded border"
+                      onClick={() => onToggleActive(b)}
+                      title={b.status === 'ACTIVE' ? 'Pasar a INACTIVE' : 'Pasar a ACTIVE'}
+                    >
+                      {b.status === 'ACTIVE' ? 'Desactivar' : 'Activar'}
+                    </button>
+                    <button className="text-red-600" onClick={() => onDelete(b.id)}>
+                      Eliminar
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
