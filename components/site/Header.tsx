@@ -1,7 +1,5 @@
-// components/site/Header.tsx
 import Link from "next/link";
-
-export const runtime = "edge";
+import CategoriesChips from "./CategoriesChips";
 
 export default function Header() {
   return (
@@ -18,19 +16,15 @@ export default function Header() {
         </form>
 
         <nav className="hidden md:flex items-center gap-4">
-          <Link href="/productos" className="hover:text-brand">Productos</Link>
-          <Link href="/ofertas" className="hover:text-brand">Ofertas</Link>
-          <Link href="/catalogo" className="hover:text-brand">Catálogo</Link>
+          <Link href="/productos">Productos</Link>
+          <Link href="/ofertas">Ofertas</Link>
+          <Link href="/catalogo">Catálogo</Link>
         </nav>
       </div>
 
       <div className="border-t">
-        <div className="container py-2 flex gap-2 overflow-x-auto">
-          {/* chips de categorías */}
-          <Link className="px-3 py-1 rounded-full border text-sm hover:bg-brand/10" href="/categoria/almacen">Almacén</Link>
-          <Link className="px-3 py-1 rounded-full border text-sm hover:bg-brand/10" href="/categoria/frutos-secos">Frutos secos</Link>
-          {/* … */}
-        </div>
+        {/* Si la API devuelve vacío, el componente no renderiza nada */}
+        <CategoriesChips />
       </div>
     </header>
   );
