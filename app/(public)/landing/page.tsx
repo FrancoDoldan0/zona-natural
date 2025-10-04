@@ -21,19 +21,17 @@ type PublicOffer = {
   category?: { id: number; name: string; slug: string } | null;
 };
 
-function api(path: string) {
-  const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
-  const base = raw ? raw.replace(/\/+$/, '') : '';
-  return base ? `${base}${path}` : path;
-}
-
 async function safeJson<T>(res: Response): Promise<T | null> {
   try { return (await res.json()) as T; } catch { return null; }
 }
 
-async function fetchBanners(path: string): Promise<PublicBanner[]> {
+async function getBanners(): Promise<PublicBanner[]> {
   try {
-    const r = await fetch(api(path), { cache: 'no-store', headers: { Accept: 'application/json' } });
+    // ✅ sin placement, y ruta relativa para usar el mismo host del deploy
+    const r = await fetch('/api/public/banners', {
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
     if (!r.ok) return [];
     const j = (await safeJson<{ items?: any[] }>(r)) ?? { items: [] };
     const items = (j.items ?? []).map((b: any): PublicBanner => ({
@@ -48,15 +46,9 @@ async function fetchBanners(path: string): Promise<PublicBanner[]> {
   }
 }
 
-async function getBanners(): Promise<PublicBanner[]> {
-  const home = await fetchBanners('/api/public/banners?placement=home');
-  if (home.length) return home;
-  return fetchBanners('/api/public/banners'); // fallback sin filtro
-}
-
 async function getOffers(): Promise<PublicOffer[]> {
   try {
-    const r = await fetch(api('/api/public/offers'), {
+    const r = await fetch('/api/public/offers', {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
@@ -69,6 +61,7 @@ async function getOffers(): Promise<PublicOffer[]> {
 }
 
 export default async function HomePage() {
+  // si algo explota, devolvemos una UI mínima (evita 1101)
   try {
     const [banners, offers] = await Promise.all([getBanners(), getOffers()]);
 
@@ -86,12 +79,14 @@ export default async function HomePage() {
           <p className="opacity-70">Catálogo y ofertas</p>
         </section>
 
-        {!!sliderItems.length && (
-          <section className="space-y-3">
-            <h2 className="text-xl font-semibold">Destacados</h2>
+        <section className="space-y-3">
+          <h2 className="text-xl font-semibold">Destacados</h2>
+          {sliderItems.length ? (
             <BannerSlider items={sliderItems as any} />
-          </section>
-        )}
+          ) : (
+            <p className="opacity-70 text-sm">No hay banners para mostrar.</p>
+          )}
+        </section>
 
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">Ofertas activas</h2>
@@ -124,14 +119,13 @@ export default async function HomePage() {
       </main>
     );
   } catch {
-    // fallback ultra defensivo para evitar error en producción
     return (
       <main className="max-w-6xl mx-auto p-6 space-y-8">
         <section className="space-y-3">
           <h1 className="text-2xl font-semibold">Zona Natural</h1>
           <p className="opacity-70">Catálogo y ofertas</p>
         </section>
-        <p className="opacity-70">No pudimos cargar el contenido en este momento.</p>
+        <p className="opacity-70">No pudimos cargar el contenido.</p>
       </main>
     );
   }
