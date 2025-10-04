@@ -2,6 +2,7 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+import { headers } from 'next/headers';
 import BannerSlider from '@/components/public/BannerSlider';
 
 type PublicBanner = {
@@ -21,14 +22,24 @@ type PublicOffer = {
   category?: { id: number; name: string; slug: string } | null;
 };
 
+// URL absoluta segura para CF Pages / proxies
+function abs(path: string) {
+  const h = headers();
+  const proto = h.get('x-forwarded-proto') ?? 'https';
+  const host =
+    h.get('x-forwarded-host') ??
+    h.get('host') ??
+    process.env.NEXT_PUBLIC_BASE_URL?.replace(/^https?:\/\//, '');
+  return host ? `${proto}://${host}${path}` : path;
+}
+
 async function safeJson<T>(res: Response): Promise<T | null> {
   try { return (await res.json()) as T; } catch { return null; }
 }
 
 async function getBanners(): Promise<PublicBanner[]> {
   try {
-    // ✅ sin placement, y ruta relativa para usar el mismo host del deploy
-    const r = await fetch('/api/public/banners', {
+    const r = await fetch(abs('/api/public/banners'), {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
@@ -48,7 +59,7 @@ async function getBanners(): Promise<PublicBanner[]> {
 
 async function getOffers(): Promise<PublicOffer[]> {
   try {
-    const r = await fetch('/api/public/offers', {
+    const r = await fetch(abs('/api/public/offers'), {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
@@ -61,7 +72,6 @@ async function getOffers(): Promise<PublicOffer[]> {
 }
 
 export default async function HomePage() {
-  // si algo explota, devolvemos una UI mínima (evita 1101)
   try {
     const [banners, offers] = await Promise.all([getBanners(), getOffers()]);
 
