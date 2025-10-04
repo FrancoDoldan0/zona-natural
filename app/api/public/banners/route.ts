@@ -3,28 +3,50 @@ export const runtime = 'edge';
 
 import { NextResponse } from 'next/server';
 import { createPrisma } from '@/lib/prisma-edge';
-import { publicR2Url } from '@/lib/storage';
 
 const prisma = createPrisma();
+
+// ───────────────── helpers ─────────────────
+const esc = (s: string) => s.replace(/'/g, "''");
 
 function toPlacement(
   p: string | null,
 ): 'HOME' | 'PRODUCTS' | 'CATEGORY' | 'CHECKOUT' | undefined {
   if (!p) return undefined;
   switch (p.trim().toLowerCase()) {
-    case 'home':
-      return 'HOME';
-    case 'products':
-      return 'PRODUCTS';
-    case 'category':
-      return 'CATEGORY';
-    case 'checkout':
-      return 'CHECKOUT';
-    default:
-      return undefined;
+    case 'home': return 'HOME';
+    case 'products': return 'PRODUCTS';
+    case 'category': return 'CATEGORY';
+    case 'checkout': return 'CHECKOUT';
+    default: return undefined;
   }
 }
 
+async function getBannerTableName(): Promise<string> {
+  // Soporta "banner" o "Banner"
+  const rows: Array<{ table_name: string }> = await prisma.$queryRawUnsafe(`
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = current_schema()
+      AND lower(table_name) = 'banner'
+    LIMIT 1
+  `);
+  const name = rows?.[0]?.table_name ?? 'Banner';
+  return `"${name}"`;
+}
+
+async function getBannerColumns(tblQuoted: string): Promise<Set<string>> {
+  const tbl = tblQuoted.replace(/^"+|"+$/g, '');
+  const rows: Array<{ column_name: string }> = await prisma.$queryRawUnsafe(`
+    SELECT "column_name"
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = '${esc(tbl)}'
+  `);
+  return new Set(rows.map((r) => r.column_name));
+}
+
+// ───────────────── GET ─────────────────
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const wantDebug =
@@ -33,168 +55,96 @@ export async function GET(req: Request) {
   const placement = toPlacement(url.searchParams.get('placement'));
   const categoryIdRaw = url.searchParams.get('categoryId');
   const categoryId = categoryIdRaw ? Number(categoryIdRaw) : undefined;
-  const now = new Date();
 
-  // Filtros base (vigencia + activo)
-  const baseWhere: any = {
-    isActive: true,
-    AND: [
-      { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-      { OR: [{ endAt: null }, { endAt: { gte: now } }] },
-    ],
-  };
+  const debug: any = { sqlBuilt: null, cols: null, note: [] as any[] };
 
-  const whereWithFilters: any = { ...baseWhere };
-  if (placement) whereWithFilters.placement = placement;
-  if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
-    whereWithFilters.categoryId = Number(categoryId);
-  }
+  try {
+    const tbl = await getBannerTableName();
+    const cols = await getBannerColumns(tbl);
+    debug.cols = Array.from(cols);
 
-  const debug: any = { tried: [] as any[] };
+    // SELECT con alias para soportar esquemas legacy
+    const sel: string[] = ['id', `"title"`];
 
-  // Helpers
-  const mapRows = (rows: any[]) =>
-    rows
-      .map((b: any) => ({
-        id: Number(b.id),
-        title: String(b.title ?? ''),
-        url: String(b.imageUrl ?? ''), // usamos imageUrl (evitamos imageKey)
-        linkUrl: (b.linkUrl ?? null) as string | null,
-        placement: b.placement ?? null,
-        categoryId: b.categoryId ?? null,
-        sortOrder: b.sortOrder ?? 0,
+    // imagen: preferimos imageUrl; si existe solo "image", lo exponemos como imageUrl
+    if (cols.has('imageUrl')) sel.push(`"imageUrl"`);
+    else if (cols.has('image')) sel.push(`"image" AS "imageUrl"`);
+    else sel.push(`NULL AS "imageUrl"`);
+
+    // link: linkUrl o link
+    if (cols.has('linkUrl')) sel.push(`"linkUrl"`);
+    else if (cols.has('link')) sel.push(`"link" AS "linkUrl"`);
+    else sel.push(`NULL AS "linkUrl"`);
+
+    // columnas opcionales
+    if (cols.has('placement')) sel.push(`"placement"`);
+    else sel.push(`NULL AS "placement"`);
+
+    if (cols.has('categoryId')) sel.push(`"categoryId"`);
+    else sel.push(`NULL AS "categoryId"`);
+
+    if (cols.has('sortOrder')) sel.push(`"sortOrder"`);
+    else sel.push(`0 AS "sortOrder"`);
+
+    // WHERE dinámico (solo agregamos condiciones si la columna existe)
+    const where: string[] = [];
+
+    if (cols.has('isActive')) where.push(`"isActive" = TRUE`);
+    else if (cols.has('active')) where.push(`"active" = TRUE`);
+
+    if (cols.has('startAt')) where.push(`("startAt" IS NULL OR "startAt" <= CURRENT_TIMESTAMP)`);
+    if (cols.has('endAt')) where.push(`("endAt" IS NULL OR "endAt" >= CURRENT_TIMESTAMP)`);
+
+    if (placement && cols.has('placement')) {
+      where.push(`"placement" = '${placement}'`);
+    }
+    if (
+      placement === 'CATEGORY' &&
+      Number.isFinite(categoryId) &&
+      cols.has('categoryId')
+    ) {
+      where.push(`"categoryId" = ${Number(categoryId)}`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    // ORDER BY seguro
+    const order = cols.has('sortOrder')
+      ? `"sortOrder" ASC NULLS FIRST, id ASC`
+      : `id ASC`;
+
+    const sql = `
+      SELECT ${sel.join(', ')}
+      FROM ${tbl}
+      ${whereSql}
+      ORDER BY ${order}
+    `;
+    debug.sqlBuilt = sql;
+
+    const rows: any[] = await prisma.$queryRawUnsafe(sql);
+
+    const items = (rows || [])
+      .map((r) => ({
+        id: Number(r.id),
+        title: String(r.title ?? ''),
+        url: String(r.imageUrl ?? ''),    // siempre exponemos imageUrl
+        linkUrl: r.linkUrl ?? null,
+        placement: r.placement ?? null,
+        categoryId: r.categoryId ?? null,
+        sortOrder: r.sortOrder ?? 0,
       }))
       .filter((x) => x.url);
 
-  // 1) Prisma SELECT mínimo (sin imageKey)
-  try {
-    const runPrisma = async (where: any, note: string) => {
-      const rows = await prisma.banner.findMany({
-        where,
-        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-        select: {
-          id: true,
-          title: true,
-          imageUrl: true,
-          linkUrl: true, // en tu schema está mapeada a la columna `link`
-          placement: true,
-          categoryId: true,
-          sortOrder: true,
-        },
-      });
-      debug.tried.push({ note, where, ok: true, count: rows.length });
-      return rows;
-    };
-
-    // a) con filtros
-    let rows = await runPrisma(whereWithFilters, 'prisma/select-with-filters');
-
-    // b) fallback SIN placement si no hubo resultados y se pidió placement
-    if (rows.length === 0 && placement) {
-      rows = await runPrisma(baseWhere, 'prisma/select-base-fallback');
-    }
-
-    const items = mapRows(rows);
     return NextResponse.json(
       { ok: true, items, ...(wantDebug ? { debug } : null) },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (e: any) {
-    debug.tried.push({
-      note: 'prisma/select-failed',
-      where: whereWithFilters,
-      ok: false,
-      error: String(e?.message || e),
-    });
-  }
-
-  // 2) Fallback: SQL crudo (evita cualquier mapeo problemático)
-  try {
-    const conds: string[] = [
-      `"isActive" = TRUE`,
-      `("startAt" IS NULL OR "startAt" <= CURRENT_TIMESTAMP)`,
-      `("endAt" IS NULL OR "endAt" >= CURRENT_TIMESTAMP)`,
-    ];
-    if (placement) conds.push(`"placement" = '${placement}'`);
-    if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
-      conds.push(`"categoryId" = ${Number(categoryId)}`);
-    }
-    const whereSql = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-
-    // Variante con columna `link` → la exponemos como linkUrl
-    let sql = `
-      SELECT id, title, "imageUrl", "link" AS "linkUrl", "placement", "categoryId", "sortOrder"
-      FROM "Banner"
-      ${whereSql}
-      ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
-    `;
-    let rows: any[] = await prisma.$queryRawUnsafe(sql);
-    debug.tried.push({ note: 'raw/link', sql, ok: true, count: rows?.length ?? 0 });
-
-    // Fallback sin placement si no hubo resultados y se había pedido
-    if ((rows?.length ?? 0) === 0 && placement) {
-      const condsNoPlacement = conds.filter((c) => !c.startsWith(`"placement"`));
-      const whereSql2 = condsNoPlacement.length ? `WHERE ${condsNoPlacement.join(' AND ')}` : '';
-      sql = `
-        SELECT id, title, "imageUrl", "link" AS "linkUrl", "placement", "categoryId", "sortOrder"
-        FROM "Banner"
-        ${whereSql2}
-        ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
-      `;
-      rows = await prisma.$queryRawUnsafe(sql);
-      debug.tried.push({
-        note: 'raw/link-base-fallback',
-        sql,
-        ok: true,
-        count: rows?.length ?? 0,
-      });
-    }
-
-    // Si tu tabla no tiene `link`, intento con `linkUrl`
-    if ((rows?.length ?? 0) === 0) {
-      const whereSql3 = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-      sql = `
-        SELECT id, title, "imageUrl", "linkUrl", "placement", "categoryId", "sortOrder"
-        FROM "Banner"
-        ${whereSql3}
-        ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
-      `;
-      rows = await prisma.$queryRawUnsafe(sql);
-      debug.tried.push({ note: 'raw/linkUrl', sql, ok: true, count: rows?.length ?? 0 });
-
-      if ((rows?.length ?? 0) === 0 && placement) {
-        const condsNoPlacement2 = conds.filter((c) => !c.startsWith(`"placement"`));
-        const whereSql4 = condsNoPlacement2.length
-          ? `WHERE ${condsNoPlacement2.join(' AND ')}`
-          : '';
-        sql = `
-          SELECT id, title, "imageUrl", "linkUrl", "placement", "categoryId", "sortOrder"
-          FROM "Banner"
-          ${whereSql4}
-          ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
-        `;
-        rows = await prisma.$queryRawUnsafe(sql);
-        debug.tried.push({
-          note: 'raw/linkUrl-base-fallback',
-          sql,
-          ok: true,
-          count: rows?.length ?? 0,
-        });
-      }
-    }
-
-    const items = mapRows(rows || []);
+    debug.note.push({ ok: false, error: String(e?.message || e) });
+    // No rompemos el front si el esquema es diferente
     return NextResponse.json(
-      { ok: true, items, ...(wantDebug ? { debug } : null) },
+      { ok: true, items: [], ...(wantDebug ? { debug } : null) },
       { headers: { 'Cache-Control': 'no-store' } },
     );
-  } catch (e: any) {
-    debug.tried.push({ note: 'raw-failed', ok: false, error: String(e?.message || e) });
   }
-
-  // 3) Último recurso: vacío (no rompemos el front)
-  return NextResponse.json(
-    { ok: true, items: [], ...(wantDebug ? { debug } : null) },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
 }
