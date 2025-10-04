@@ -22,35 +22,48 @@ type PublicOffer = {
   category?: { id: number; name: string; slug: string } | null;
 };
 
-// URL absoluta segura para CF Pages / proxies
-function abs(path: string) {
-  const h = headers();
-  const proto = h.get('x-forwarded-proto') ?? 'https';
+// Construye URL absoluta usando headers, soportando adaptadores donde headers() es Promise
+async function abs(path: string) {
+  const maybe = headers() as any; // puede ser ReadonlyHeaders o Promise<ReadonlyHeaders>
+  const h: any = typeof maybe?.get === 'function' ? maybe : await maybe;
+
+  const proto =
+    h?.get?.('x-forwarded-proto') ??
+    process.env.NEXT_PUBLIC_BASE_URL?.startsWith('http:') ? 'http' : 'https';
+
   const host =
-    h.get('x-forwarded-host') ??
-    h.get('host') ??
+    h?.get?.('x-forwarded-host') ??
+    h?.get?.('host') ??
     process.env.NEXT_PUBLIC_BASE_URL?.replace(/^https?:\/\//, '');
+
   return host ? `${proto}://${host}${path}` : path;
 }
 
 async function safeJson<T>(res: Response): Promise<T | null> {
-  try { return (await res.json()) as T; } catch { return null; }
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
 }
 
 async function getBanners(): Promise<PublicBanner[]> {
   try {
-    const r = await fetch(abs('/api/public/banners'), {
+    const url = await abs('/api/public/banners'); // sin placement, el API ya filtra por active/fechas
+    const r = await fetch(url, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
     if (!r.ok) return [];
     const j = (await safeJson<{ items?: any[] }>(r)) ?? { items: [] };
+
     const items = (j.items ?? []).map((b: any): PublicBanner => ({
       id: Number(b?.id),
       title: String(b?.title ?? ''),
-      url: String(b?.url ?? b?.imageUrl ?? ''),
-      linkUrl: (b?.linkUrl ?? b?.link ?? null) as string | null,
+      url: String(b?.url ?? b?.imageUrl ?? ''), // fallback legacy
+      linkUrl: (b?.linkUrl ?? b?.link ?? null) as string | null, // fallback legacy
     }));
+
     return items.filter((b) => !!b.url);
   } catch {
     return [];
@@ -59,7 +72,8 @@ async function getBanners(): Promise<PublicBanner[]> {
 
 async function getOffers(): Promise<PublicOffer[]> {
   try {
-    const r = await fetch(abs('/api/public/offers'), {
+    const url = await abs('/api/public/offers');
+    const r = await fetch(url, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
     });
