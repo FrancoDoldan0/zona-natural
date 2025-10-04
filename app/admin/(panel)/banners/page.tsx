@@ -1,6 +1,6 @@
 // app/admin/(panel)/banners/page.tsx
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
 
 type BannerStatus = 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED';
@@ -11,7 +11,6 @@ type BannerApi = {
   imageUrl: string;
   link: string | null;
   sortOrder: number;
-  // el backend puede devolver cualquiera de estos:
   isActive?: boolean;
   active?: boolean;
   status?: BannerStatus;
@@ -23,7 +22,7 @@ type BannerView = {
   imageUrl: string;
   link: string | null;
   sortOrder: number;
-  status: BannerStatus; // normalizado para la UI
+  status: BannerStatus;
 };
 
 type ApiList<T> = { ok: true; items: T[] } | { ok: false; error: string };
@@ -34,45 +33,42 @@ type UploadRespOk = { ok: true; imageKey?: string; imageUrl: string };
 type UploadRespErr = { ok: false; error: string; detail?: string };
 type UploadResp = UploadRespOk | UploadRespErr;
 
-// Helpers
+// helpers
 const statusToBadge = (s: BannerStatus) => {
   switch (s) {
-    case 'ACTIVE':
-      return 'bg-green-600 text-white';
-    case 'INACTIVE':
-      return 'bg-gray-300 text-gray-800';
-    case 'DRAFT':
-      return 'bg-yellow-500 text-black';
-    case 'ARCHIVED':
-      return 'bg-zinc-500 text-white';
-    default:
-      return 'bg-gray-300 text-gray-800';
+    case 'ACTIVE': return 'bg-green-600 text-white';
+    case 'INACTIVE': return 'bg-gray-300 text-gray-800';
+    case 'DRAFT': return 'bg-yellow-500 text-black';
+    case 'ARCHIVED': return 'bg-zinc-500 text-white';
+    default: return 'bg-gray-300 text-gray-800';
   }
 };
 
 const normalizeStatus = (b: BannerApi): BannerStatus => {
   if (b.status) return b.status;
-  const act =
-    typeof b.isActive === 'boolean'
-      ? b.isActive
-      : typeof b.active === 'boolean'
-      ? b.active
-      : true;
+  const act = typeof b.isActive === 'boolean' ? b.isActive
+            : typeof b.active === 'boolean' ? b.active
+            : true;
   return act ? 'ACTIVE' : 'INACTIVE';
 };
 
 export default function BannersPage() {
   const [items, setItems] = useState<BannerView[]>([]);
 
+  // form state
   const [title, setTitle] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState(''); // se setea tras subir a R2
   const [link, setLink] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
   const [status, setStatus] = useState<BannerStatus>('ACTIVE');
   const [q, setQ] = useState('');
-  const [busyUp, setBusyUp] = useState(false);
 
+  // upload state (dropzone-style)
+  const [busyUp, setBusyUp] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ------- data -------
   async function load(all = true) {
     try {
       const res = await fetch('/api/admin/banners?all=' + (all ? 1 : 0), { cache: 'no-store' });
@@ -99,15 +95,16 @@ export default function BannersPage() {
     load(true);
   }, []);
 
-  async function handleUpload() {
-    if (!file) return;
+  // ------- upload a R2 (auto) -------
+  async function uploadFiles(files?: FileList | File[]) {
+    const f = files?.[0];
+    if (!f) return;
     setBusyUp(true);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', f);
       const res = await fetch('/api/admin/banners/upload', { method: 'POST', body: fd });
       const data = (await res.json()) as UploadResp;
-
       if ('ok' in data && data.ok && data.imageUrl) {
         setImageUrl(String(data.imageUrl));
       } else {
@@ -120,17 +117,36 @@ export default function BannersPage() {
     }
   }
 
+  function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files?.length) uploadFiles(e.target.files);
+  }
+  function onDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault(); e.stopPropagation();
+    setDragOver(false);
+    if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
+  }
+  function onDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault(); e.stopPropagation(); if (!dragOver) setDragOver(true);
+  }
+  function onDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault(); e.stopPropagation(); if (dragOver) setDragOver(false);
+  }
+
+  // ------- create -------
   async function onCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!imageUrl) {
+      alert('Subí la imagen del banner antes de crear.');
+      return;
+    }
     const payload = {
       title,
       imageUrl,
       link: link.trim() || null,
       sortOrder: Number(sortOrder || 0),
-      status, // NUEVO: status como fuente de verdad (si el backend lo ignora, no rompe)
-      // compat: también booleans
-      isActive: status === 'ACTIVE',
-      active: status === 'ACTIVE',
+      status,                 // si el backend lo ignora, no rompe
+      isActive: status === 'ACTIVE', // compat
+      active: status === 'ACTIVE',   // compat
     };
     try {
       const res = await fetch('/api/admin/banners', {
@@ -142,10 +158,10 @@ export default function BannersPage() {
       if ('ok' in data && data.ok) {
         setTitle('');
         setImageUrl('');
-        setFile(null);
         setLink('');
         setSortOrder('0');
         setStatus('ACTIVE');
+        if (fileInputRef.current) fileInputRef.current.value = '';
         load(true);
       } else {
         alert((data as any)?.error || 'Error');
@@ -155,6 +171,7 @@ export default function BannersPage() {
     }
   }
 
+  // ------- actions -------
   async function onToggleActive(b: BannerView) {
     const newStatus: BannerStatus = b.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     try {
@@ -163,8 +180,8 @@ export default function BannersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: newStatus,
-          isActive: newStatus === 'ACTIVE', // compat
-          active: newStatus === 'ACTIVE', // compat
+          isActive: newStatus === 'ACTIVE',
+          active: newStatus === 'ACTIVE',
         }),
       });
       const data = (await res.json()) as ApiItem<BannerApi>;
@@ -212,52 +229,60 @@ export default function BannersPage() {
     <main className="max-w-6xl mx-auto p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Banners</h1>
 
-      <form onSubmit={onCreate} className="border rounded p-4 grid gap-2 md:grid-cols-12">
+      {/* Form estilo productos: dropzone + campos */}
+      <form onSubmit={onCreate} className="border rounded p-4 grid gap-3 md:grid-cols-12">
+        {/* DROPZONE */}
+        <div
+          className={
+            'md:col-span-12 border-2 border-dashed rounded p-6 text-center transition ' +
+            (dragOver ? 'border-green-500 bg-green-50' : 'border-gray-300 bg-gray-50/40')
+          }
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+        >
+          <div className="space-y-3">
+            <div className="opacity-80">Arrastrá y soltá la imagen aquí</div>
+            <div className="text-sm opacity-60">o seleccioná desde tu equipo</div>
+            <div className="flex justify-center">
+              <label className="border rounded px-3 py-1 cursor-pointer">
+                Elegir archivo
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={onPickFile}
+                />
+              </label>
+            </div>
+            {busyUp && <div className="text-sm opacity-70">Subiendo…</div>}
+            {imageUrl && (
+              <div className="flex items-center justify-center gap-3">
+                <span className="text-sm opacity-70">Preview:</span>
+                <img src={imageUrl} alt="preview" className="h-12 rounded border" />
+              </div>
+            )}
+          </div>
+        </div>
+
         <input
-          className="border rounded p-2 md:col-span-3"
+          className="border rounded p-2 md:col-span-4"
           placeholder="Título"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
         />
 
-        {/* Cargar por URL (fallback) */}
         <input
-          className="border rounded p-2 md:col-span-3"
-          placeholder="URL de la imagen (https…)"
-          value={imageUrl}
-          onChange={(e) => setImageUrl(e.target.value)}
-          required={!file}
-        />
-
-        {/* Subir archivo → setea imageUrl cuando el endpoint responde */}
-        <div className="md:col-span-3 flex items-center gap-2">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="border rounded p-2 w-full"
-          />
-          <button
-            type="button"
-            onClick={handleUpload}
-            className="border rounded px-3 whitespace-nowrap"
-            disabled={!file || busyUp}
-            title="Subir imagen a R2"
-          >
-            {busyUp ? 'Subiendo…' : 'Subir'}
-          </button>
-        </div>
-
-        <input
-          className="border rounded p-2 md:col-span-2"
+          className="border rounded p-2 md:col-span-4"
           placeholder="Link (opcional)"
           value={link}
           onChange={(e) => setLink(e.target.value)}
         />
 
         <input
-          className="border rounded p-2 md:col-span-1"
+          className="border rounded p-2 md:col-span-2"
           type="number"
           min={0}
           value={sortOrder}
@@ -265,7 +290,6 @@ export default function BannersPage() {
           title="Orden"
         />
 
-        {/* Estado como productos */}
         <select
           className="border rounded p-2 md:col-span-2"
           value={status}
@@ -278,17 +302,14 @@ export default function BannersPage() {
           <option value="ARCHIVED">ARCHIVED</option>
         </select>
 
-        <button className="border rounded px-4 md:col-span-1" type="submit" disabled={!imageUrl && !file}>
+        <button
+          className="border rounded px-4 md:col-span-2"
+          type="submit"
+          disabled={!imageUrl || busyUp}
+          title={!imageUrl ? 'Subí una imagen primero' : 'Crear banner'}
+        >
           Crear
         </button>
-
-        {/* Previsualización mínima si hay imagen */}
-        {imageUrl && (
-          <div className="md:col-span-12 flex items-center gap-3 mt-2">
-            <span className="text-sm opacity-70">Preview:</span>
-            <img src={imageUrl} alt={title || 'preview'} className="h-10 rounded border" />
-          </div>
-        )}
       </form>
 
       <div className="flex gap-2">
