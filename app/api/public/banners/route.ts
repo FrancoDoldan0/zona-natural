@@ -7,194 +7,108 @@ import { publicR2Url } from '@/lib/storage';
 
 const prisma = createPrisma();
 
-function toPlacement(
-  p: string | null,
-): 'HOME' | 'PRODUCTS' | 'CATEGORY' | 'CHECKOUT' | undefined {
-  if (!p) return undefined;
-  switch (p.trim().toLowerCase()) {
-    case 'home':
-      return 'HOME';
-    case 'products':
-      return 'PRODUCTS';
-    case 'category':
-      return 'CATEGORY';
-    case 'checkout':
-      return 'CHECKOUT';
-    default:
-      return undefined;
-  }
+// ---------- helpers ----------
+const esc = (s: string) => s.replace(/'/g, "''");
+
+async function getBannerTableName(): Promise<string> {
+  const rows: Array<{ table_name: string }> = await prisma.$queryRawUnsafe(`
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = current_schema()
+      AND lower(table_name) = 'banner'
+    LIMIT 1
+  `);
+  const name = rows?.[0]?.table_name ?? 'Banner';
+  return `"${name}"`;
 }
 
+async function getBannerColumns(tblQuoted: string): Promise<Set<string>> {
+  const tbl = tblQuoted.replace(/^"+|"+$/g, '');
+  const rows: Array<{ column_name: string }> = await prisma.$queryRawUnsafe(`
+    SELECT "column_name"
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = '${esc(tbl)}'
+  `);
+  return new Set(rows.map((r) => r.column_name));
+}
+
+// ---------- GET ----------
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const wantDebug =
-    url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
+  const dbg = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
 
-  const placement = toPlacement(url.searchParams.get('placement'));
-  const categoryIdRaw = url.searchParams.get('categoryId');
-  const categoryId = categoryIdRaw ? Number(categoryIdRaw) : undefined;
-  const now = new Date();
-
-  // Filtros base (vigencia + activo)
-  const baseWhere: any = {
-    isActive: true,
-    AND: [
-      { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-      { OR: [{ endAt: null }, { endAt: { gte: now } }] },
-    ],
-  };
-
-  const whereWithFilters: any = { ...baseWhere };
-  if (placement) whereWithFilters.placement = placement;
-  if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
-    whereWithFilters.categoryId = Number(categoryId);
-  }
-
-  const debug: any = { tried: [] as any[] };
-
-  // Helpers
-  const mapRows = (rows: any[]) =>
-    rows
-      .map((b: any) => ({
-        id: Number(b.id),
-        title: String(b.title ?? ''),
-        url: String(b.imageUrl ?? ''), // usamos imageUrl (evitamos imageKey)
-        linkUrl: (b.linkUrl ?? null) as string | null,
-        placement: b.placement ?? null,
-        categoryId: b.categoryId ?? null,
-        sortOrder: b.sortOrder ?? 0,
-      }))
-      .filter((x) => x.url);
-
-  // 1) Prisma SELECT mínimo (sin imageKey)
   try {
-    const runPrisma = async (where: any, note: string) => {
-      const rows = await prisma.banner.findMany({
-        where,
-        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-        select: {
-          id: true,
-          title: true,
-          imageUrl: true,
-          linkUrl: true, // en tu schema está mapeada a la columna `link`
-          placement: true,
-          categoryId: true,
-          sortOrder: true,
-        },
-      });
-      debug.tried.push({ note, where, ok: true, count: rows.length });
-      return rows;
-    };
+    const placementWanted = (url.searchParams.get('placement') || '').trim().toUpperCase();
+    const categoryId = url.searchParams.get('categoryId');
 
-    // a) con filtros
-    let rows = await runPrisma(whereWithFilters, 'prisma/select-with-filters');
+    const tbl = await getBannerTableName();
+    const cols = await getBannerColumns(tbl);
 
-    // b) fallback SIN placement si no hubo resultados y se pidió placement
-    if (rows.length === 0 && placement) {
-      rows = await runPrisma(baseWhere, 'prisma/select-base-fallback');
+    // SELECT seguro (solo columnas existentes)
+    const select: string[] = ['id', `"title"`];
+    if (cols.has('imageKey')) select.push(`"imageKey"`);
+    if (cols.has('imageUrl')) select.push(`"imageUrl"`);
+    if (cols.has('linkUrl'))  select.push(`"linkUrl"`);
+    if (cols.has('link'))     select.push(`"link"`);
+    if (cols.has('placement')) select.push(`"placement"`);
+    if (cols.has('categoryId')) select.push(`"categoryId"`);
+    if (cols.has('sortOrder'))  select.push(`"sortOrder"`);
+
+    // WHERE: activo + ventanas de fecha (si existen)
+    const whereParts: string[] = [];
+    if (cols.has('isActive')) whereParts.push(`"isActive" = TRUE`);
+    else if (cols.has('active')) whereParts.push(`"active" = TRUE`);
+
+    if (cols.has('startAt')) whereParts.push(`("startAt" IS NULL OR "startAt" <= NOW())`);
+    if (cols.has('endAt'))   whereParts.push(`("endAt"   IS NULL OR "endAt"   >= NOW())`);
+
+    if (placementWanted && cols.has('placement')) {
+      whereParts.push(`"placement" = '${esc(placementWanted)}'`);
+    }
+    if (categoryId && cols.has('categoryId')) {
+      whereParts.push(`"categoryId" = ${Number(categoryId)}`);
     }
 
-    const items = mapRows(rows);
-    return NextResponse.json(
-      { ok: true, items, ...(wantDebug ? { debug } : null) },
-      { headers: { 'Cache-Control': 'no-store' } },
-    );
-  } catch (e: any) {
-    debug.tried.push({
-      note: 'prisma/select-failed',
-      where: whereWithFilters,
-      ok: false,
-      error: String(e?.message || e),
-    });
-  }
+    const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
 
-  // 2) Fallback: SQL crudo (evita cualquier mapeo problemático)
-  try {
-    const conds: string[] = [
-      `"isActive" = TRUE`,
-      `("startAt" IS NULL OR "startAt" <= CURRENT_TIMESTAMP)`,
-      `("endAt" IS NULL OR "endAt" >= CURRENT_TIMESTAMP)`,
-    ];
-    if (placement) conds.push(`"placement" = '${placement}'`);
-    if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
-      conds.push(`"categoryId" = ${Number(categoryId)}`);
-    }
-    const whereSql = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    const orderSql = cols.has('sortOrder')
+      ? `"sortOrder" ASC NULLS FIRST, id ASC`
+      : `id ASC`;
 
-    // Variante con columna `link` → la exponemos como linkUrl
-    let sql = `
-      SELECT id, title, "imageUrl", "link" AS "linkUrl", "placement", "categoryId", "sortOrder"
-      FROM "Banner"
+    const sql = `
+      SELECT ${select.join(', ')}
+      FROM ${tbl}
       ${whereSql}
-      ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
+      ORDER BY ${orderSql}
     `;
-    let rows: any[] = await prisma.$queryRawUnsafe(sql);
-    debug.tried.push({ note: 'raw/link', sql, ok: true, count: rows?.length ?? 0 });
 
-    // Fallback sin placement si no hubo resultados y se había pedido
-    if ((rows?.length ?? 0) === 0 && placement) {
-      const condsNoPlacement = conds.filter((c) => !c.startsWith(`"placement"`));
-      const whereSql2 = condsNoPlacement.length ? `WHERE ${condsNoPlacement.join(' AND ')}` : '';
-      sql = `
-        SELECT id, title, "imageUrl", "link" AS "linkUrl", "placement", "categoryId", "sortOrder"
-        FROM "Banner"
-        ${whereSql2}
-        ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
-      `;
-      rows = await prisma.$queryRawUnsafe(sql);
-      debug.tried.push({
-        note: 'raw/link-base-fallback',
-        sql,
-        ok: true,
-        count: rows?.length ?? 0,
-      });
-    }
+    const rows: any[] = await prisma.$queryRawUnsafe(sql);
 
-    // Si tu tabla no tiene `link`, intento con `linkUrl`
-    if ((rows?.length ?? 0) === 0) {
-      const whereSql3 = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-      sql = `
-        SELECT id, title, "imageUrl", "linkUrl", "placement", "categoryId", "sortOrder"
-        FROM "Banner"
-        ${whereSql3}
-        ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
-      `;
-      rows = await prisma.$queryRawUnsafe(sql);
-      debug.tried.push({ note: 'raw/linkUrl', sql, ok: true, count: rows?.length ?? 0 });
+    const items = rows
+      .map((b) => {
+        const key: string | null = b.imageKey ?? null;
+        const imageUrl: string | null = b.imageUrl ?? null;
+        const urlOut = key ? publicR2Url(key) : imageUrl ?? '';
+        const linkOut = b.linkUrl ?? b.link ?? null;
 
-      if ((rows?.length ?? 0) === 0 && placement) {
-        const condsNoPlacement2 = conds.filter((c) => !c.startsWith(`"placement"`));
-        const whereSql4 = condsNoPlacement2.length
-          ? `WHERE ${condsNoPlacement2.join(' AND ')}`
-          : '';
-        sql = `
-          SELECT id, title, "imageUrl", "linkUrl", "placement", "categoryId", "sortOrder"
-          FROM "Banner"
-          ${whereSql4}
-          ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
-        `;
-        rows = await prisma.$queryRawUnsafe(sql);
-        debug.tried.push({
-          note: 'raw/linkUrl-base-fallback',
-          sql,
-          ok: true,
-          count: rows?.length ?? 0,
-        });
-      }
-    }
+        return {
+          id: b.id,
+          title: b.title ?? '',
+          url: urlOut,
+          linkUrl: linkOut,
+          placement: b.placement ?? null,
+          categoryId: b.categoryId ?? null,
+          sortOrder: b.sortOrder ?? 0,
+        };
+      })
+      .filter((x) => !!x.url);
 
-    const items = mapRows(rows || []);
-    return NextResponse.json(
-      { ok: true, items, ...(wantDebug ? { debug } : null) },
-      { headers: { 'Cache-Control': 'no-store' } },
-    );
+    const payload: any = { ok: true, items };
+    if (dbg) payload.debug = { select, whereParts, sql };
+    return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e: any) {
-    debug.tried.push({ note: 'raw-failed', ok: false, error: String(e?.message || e) });
+    console.error('[public/banners] error:', e);
+    return NextResponse.json({ ok: true, items: [] });
   }
-
-  // 3) Último recurso: vacío (no rompemos el front)
-  return NextResponse.json(
-    { ok: true, items: [], ...(wantDebug ? { debug } : null) },
-    { headers: { 'Cache-Control': 'no-store' } },
-  );
 }
