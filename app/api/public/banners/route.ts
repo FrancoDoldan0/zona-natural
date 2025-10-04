@@ -33,10 +33,9 @@ export async function GET(req: Request) {
   const placement = toPlacement(url.searchParams.get('placement'));
   const categoryIdRaw = url.searchParams.get('categoryId');
   const categoryId = categoryIdRaw ? Number(categoryIdRaw) : undefined;
-
   const now = new Date();
 
-  // Filtros base (fechas vigentes + activo)
+  // Filtros base (vigencia + activo)
   const baseWhere: any = {
     isActive: true,
     AND: [
@@ -53,33 +52,13 @@ export async function GET(req: Request) {
 
   const debug: any = { tried: [] as any[] };
 
-  // ─────────────────────────────────────────────────────────────
-  // 1) Intento con Prisma seleccionando SOLO columnas existentes
-  //    (no pedimos imageKey para evitar el error de columna inexistente)
-  // ─────────────────────────────────────────────────────────────
-  try {
-    const rows = await prisma.banner.findMany({
-      where: whereWithFilters,
-      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-      select: {
-        id: true,
-        title: true,
-        imageUrl: true, // existe en tu DB
-        linkUrl: true, // mapeada a columna "link" en tu schema
-        placement: true,
-        categoryId: true,
-        sortOrder: true,
-        // NO seleccionar imageKey aquí
-      },
-    });
-
-    debug.tried.push({ note: 'prisma/select', where: whereWithFilters, ok: true, count: rows.length });
-
-    const items = rows
-      .map((b) => ({
-        id: b.id,
-        title: b.title ?? '',
-        url: String(b.imageUrl ?? ''), // usamos imageUrl directo
+  // Helpers
+  const mapRows = (rows: any[]) =>
+    rows
+      .map((b: any) => ({
+        id: Number(b.id),
+        title: String(b.title ?? ''),
+        url: String(b.imageUrl ?? ''), // usamos imageUrl (evitamos imageKey)
         linkUrl: (b.linkUrl ?? null) as string | null,
         placement: b.placement ?? null,
         categoryId: b.categoryId ?? null,
@@ -87,6 +66,35 @@ export async function GET(req: Request) {
       }))
       .filter((x) => x.url);
 
+  // 1) Prisma SELECT mínimo (sin imageKey)
+  try {
+    const runPrisma = async (where: any, note: string) => {
+      const rows = await prisma.banner.findMany({
+        where,
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          title: true,
+          imageUrl: true,
+          linkUrl: true, // en tu schema está mapeada a la columna `link`
+          placement: true,
+          categoryId: true,
+          sortOrder: true,
+        },
+      });
+      debug.tried.push({ note, where, ok: true, count: rows.length });
+      return rows;
+    };
+
+    // a) con filtros
+    let rows = await runPrisma(whereWithFilters, 'prisma/select-with-filters');
+
+    // b) fallback SIN placement si no hubo resultados y se pidió placement
+    if (rows.length === 0 && placement) {
+      rows = await runPrisma(baseWhere, 'prisma/select-base-fallback');
+    }
+
+    const items = mapRows(rows);
     return NextResponse.json(
       { ok: true, items, ...(wantDebug ? { debug } : null) },
       { headers: { 'Cache-Control': 'no-store' } },
@@ -100,10 +108,7 @@ export async function GET(req: Request) {
     });
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // 2) Fallback: SQL crudo para esquivar por completo imageKey
-  //    (selecciona sólo columnas existentes; aplica mismos filtros)
-  // ─────────────────────────────────────────────────────────────
+  // 2) Fallback: SQL crudo (evita cualquier mapeo problemático)
   try {
     const conds: string[] = [
       `"isActive" = TRUE`,
@@ -116,41 +121,69 @@ export async function GET(req: Request) {
     }
     const whereSql = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
-    // Variante 2a: DB con columna "link" (lo más común) → la exponemos como linkUrl
+    // Variante con columna `link` → la exponemos como linkUrl
     let sql = `
       SELECT id, title, "imageUrl", "link" AS "linkUrl", "placement", "categoryId", "sortOrder"
       FROM "Banner"
       ${whereSql}
       ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
     `;
-
     let rows: any[] = await prisma.$queryRawUnsafe(sql);
     debug.tried.push({ note: 'raw/link', sql, ok: true, count: rows?.length ?? 0 });
 
-    // Si no trajo datos (o si tu tabla no tiene "link"), intento con "linkUrl" directo
-    if (!Array.isArray(rows) || rows.length === 0) {
+    // Fallback sin placement si no hubo resultados y se había pedido
+    if ((rows?.length ?? 0) === 0 && placement) {
+      const condsNoPlacement = conds.filter((c) => !c.startsWith(`"placement"`));
+      const whereSql2 = condsNoPlacement.length ? `WHERE ${condsNoPlacement.join(' AND ')}` : '';
+      sql = `
+        SELECT id, title, "imageUrl", "link" AS "linkUrl", "placement", "categoryId", "sortOrder"
+        FROM "Banner"
+        ${whereSql2}
+        ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
+      `;
+      rows = await prisma.$queryRawUnsafe(sql);
+      debug.tried.push({
+        note: 'raw/link-base-fallback',
+        sql,
+        ok: true,
+        count: rows?.length ?? 0,
+      });
+    }
+
+    // Si tu tabla no tiene `link`, intento con `linkUrl`
+    if ((rows?.length ?? 0) === 0) {
+      const whereSql3 = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       sql = `
         SELECT id, title, "imageUrl", "linkUrl", "placement", "categoryId", "sortOrder"
         FROM "Banner"
-        ${whereSql}
+        ${whereSql3}
         ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
       `;
       rows = await prisma.$queryRawUnsafe(sql);
       debug.tried.push({ note: 'raw/linkUrl', sql, ok: true, count: rows?.length ?? 0 });
+
+      if ((rows?.length ?? 0) === 0 && placement) {
+        const condsNoPlacement2 = conds.filter((c) => !c.startsWith(`"placement"`));
+        const whereSql4 = condsNoPlacement2.length
+          ? `WHERE ${condsNoPlacement2.join(' AND ')}`
+          : '';
+        sql = `
+          SELECT id, title, "imageUrl", "linkUrl", "placement", "categoryId", "sortOrder"
+          FROM "Banner"
+          ${whereSql4}
+          ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
+        `;
+        rows = await prisma.$queryRawUnsafe(sql);
+        debug.tried.push({
+          note: 'raw/linkUrl-base-fallback',
+          sql,
+          ok: true,
+          count: rows?.length ?? 0,
+        });
+      }
     }
 
-    const items = (rows || [])
-      .map((b: any) => ({
-        id: Number(b.id),
-        title: String(b.title ?? ''),
-        url: String(b.imageUrl ?? ''), // sin R2 key
-        linkUrl: (b.linkUrl ?? null) as string | null,
-        placement: b.placement ?? null,
-        categoryId: b.categoryId ?? null,
-        sortOrder: b.sortOrder ?? 0,
-      }))
-      .filter((x) => x.url);
-
+    const items = mapRows(rows || []);
     return NextResponse.json(
       { ok: true, items, ...(wantDebug ? { debug } : null) },
       { headers: { 'Cache-Control': 'no-store' } },
@@ -159,9 +192,7 @@ export async function GET(req: Request) {
     debug.tried.push({ note: 'raw-failed', ok: false, error: String(e?.message || e) });
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // 3) Último recurso: responder vacío para no romper el front
-  // ─────────────────────────────────────────────────────────────
+  // 3) Último recurso: vacío (no rompemos el front)
   return NextResponse.json(
     { ok: true, items: [], ...(wantDebug ? { debug } : null) },
     { headers: { 'Cache-Control': 'no-store' } },
