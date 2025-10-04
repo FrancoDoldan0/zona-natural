@@ -7,9 +7,11 @@ import { z } from 'zod';
 
 const prisma = createPrisma();
 
+// ───────────────── helpers ─────────────────
 const esc = (s: string) => s.replace(/'/g, "''");
 
 async function getBannerTableName(): Promise<string> {
+  // Busca “banner” en el catálogo, sea "banner" o "Banner"
   const rows: Array<{ table_name: string }> = await prisma.$queryRawUnsafe(`
     SELECT table_name
     FROM information_schema.tables
@@ -34,29 +36,21 @@ async function getBannerColumns(tblQuoted: string): Promise<Set<string>> {
 
 const schema = z.object({
   title: z.string().min(1),
-  imageUrl: z.string().url(),
-
-  // link compat
+  imageUrl: z.string().url(),               // En UI hoy mandás imageUrl
+  // Compat nombres
   linkUrl: z.string().url().optional().nullable(),
   link: z.string().url().optional().nullable(),
-
-  // status (como productos); lo mapeamos a boolean interno
-  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
-
-  // compat con checkbox Activo
   isActive: z.coerce.boolean().optional(),
   active: z.coerce.boolean().optional(),
-
   sortOrder: z.coerce.number().int().min(0).optional(),
-
+  // Campos “nuevos” que quizá NO existan en tu DB
   placement: z.enum(['HOME', 'PRODUCTS', 'CATEGORY', 'CHECKOUT']).optional(),
   categoryId: z.coerce.number().int().positive().optional().nullable(),
-
   startAt: z.coerce.date().optional().nullable(),
   endAt: z.coerce.date().optional().nullable(),
 });
 
-// ---------- GET ----------
+// ───────────────── GET ─────────────────
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
@@ -65,16 +59,26 @@ export async function GET(req: NextRequest) {
     const tbl = await getBannerTableName();
     const cols = await getBannerColumns(tbl);
 
-    const select: string[] = ['id', `"title"`, `"imageUrl"`];
-    if (cols.has('link')) select.push(`"link"`);
-    if (cols.has('linkUrl')) select.push(`"linkUrl"`);
-    if (cols.has('placement')) select.push(`"placement"`);
-    if (cols.has('categoryId')) select.push(`"categoryId"`);
-    if (cols.has('sortOrder')) select.push(`"sortOrder"`);
-    if (cols.has('isActive')) select.push(`"isActive"`);
-    else if (cols.has('active')) select.push(`"active"`);
-    if (cols.has('startAt')) select.push(`"startAt"`);
-    if (cols.has('endAt')) select.push(`"endAt"`);
+    // selecciona con alias para soportar columnas legacy (image/link/active)
+    const sel: string[] = ['id', `"title"`];
+
+    if (cols.has('imageUrl')) sel.push(`"imageUrl"`);
+    else if (cols.has('image')) sel.push(`"image" AS "imageUrl"`);
+    else sel.push(`NULL AS "imageUrl"`);
+
+    if (cols.has('linkUrl')) sel.push(`"linkUrl"`);
+    else if (cols.has('link')) sel.push(`"link" AS "linkUrl"`);
+    else sel.push(`NULL AS "linkUrl"`);
+
+    if (cols.has('placement')) sel.push(`"placement"`);
+    if (cols.has('categoryId')) sel.push(`"categoryId"`);
+    if (cols.has('sortOrder')) sel.push(`"sortOrder"`);
+
+    if (cols.has('isActive')) sel.push(`"isActive"`);
+    else if (cols.has('active')) sel.push(`"active" AS "isActive"`);
+
+    if (cols.has('startAt')) sel.push(`"startAt"`);
+    if (cols.has('endAt')) sel.push(`"endAt"`);
 
     const where = all
       ? ''
@@ -87,31 +91,25 @@ export async function GET(req: NextRequest) {
     const order = cols.has('sortOrder') ? `"sortOrder" ASC NULLS FIRST, id ASC` : `id ASC`;
 
     const sql = `
-      SELECT ${select.join(', ')}
+      SELECT ${sel.join(', ')}
       FROM ${tbl}
       ${where}
       ORDER BY ${order}
     `;
     const rows: any[] = await prisma.$queryRawUnsafe(sql);
 
-    const items = rows.map((r) => {
-      const isAct = typeof r.isActive === 'boolean' ? r.isActive
-                  : typeof r.active === 'boolean' ? r.active
-                  : false;
-      const status = isAct ? 'ACTIVE' : 'INACTIVE';
-      return {
-        id: r.id,
-        title: r.title ?? '',
-        imageUrl: r.imageUrl ?? '',
-        link: r.link ?? r.linkUrl ?? null,
-        placement: r.placement ?? null,
-        categoryId: r.categoryId ?? null,
-        sortOrder: r.sortOrder ?? 0,
-        status,
-        startAt: r.startAt ?? null,
-        endAt: r.endAt ?? null,
-      };
-    });
+    const items = rows.map((r) => ({
+      id: r.id,
+      title: r.title ?? '',
+      imageUrl: r.imageUrl ?? '',
+      link: r.linkUrl ?? null,             // ya normalizado con alias
+      placement: r.placement ?? null,
+      categoryId: r.categoryId ?? null,
+      sortOrder: r.sortOrder ?? 0,
+      isActive: typeof r.isActive === 'boolean' ? r.isActive : true,
+      startAt: r.startAt ?? null,
+      endAt: r.endAt ?? null,
+    }));
 
     return NextResponse.json({ ok: true, items }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) {
@@ -120,7 +118,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ---------- POST ----------
+// ───────────────── POST ─────────────────
 export async function POST(req: NextRequest) {
   const url = new URL(req.url);
   const referer = req.headers.get('referer') || '';
@@ -133,38 +131,55 @@ export async function POST(req: NextRequest) {
     const cols = await getBannerColumns(tbl);
 
     const title = body.title.trim();
-    const imageUrl = body.imageUrl.trim();
+    const imageUrlIn = body.imageUrl.trim();
 
-    // status -> boolean interno
-    const fromStatus =
-      body.status === 'ACTIVE' ? true :
-      body.status === 'INACTIVE' || body.status === 'DRAFT' || body.status === 'ARCHIVED' ? false :
-      undefined;
+    // map link[key] → linkUrl (normalizado)
+    const linkVal =
+      (typeof body.linkUrl === 'string' && body.linkUrl.trim())
+        ? body.linkUrl.trim()
+        : (typeof body.link === 'string' && body.link.trim())
+        ? body.link.trim()
+        : null;
 
     const activeBool =
-      typeof fromStatus === 'boolean' ? fromStatus :
-      typeof body.isActive === 'boolean' ? body.isActive :
-      typeof body.active === 'boolean' ? body.active :
-      true;
+      typeof body.isActive === 'boolean' ? body.isActive
+      : typeof body.active === 'boolean' ? body.active
+      : true;
 
-    const linkVal =
-      (typeof body.linkUrl === 'string' && body.linkUrl.trim()) ? body.linkUrl.trim()
-      : (typeof body.link === 'string' && body.link.trim()) ? body.link.trim()
-      : null;
+    // Build dinámico con columnas disponibles
+    const names: string[] = [`"title"`];
+    const values: string[] = [`'${esc(title)}'`];
 
-    const names: string[] = [`"title"`, `"imageUrl"`];
-    const values: string[] = [`'${esc(title)}'`, `'${esc(imageUrl)}'`];
+    // imageUrl o image (legacy)
+    if (cols.has('imageUrl')) {
+      names.push(`"imageUrl"`);
+      values.push(`'${esc(imageUrlIn)}'`);
+    } else if (cols.has('image')) {
+      names.push(`"image"`);
+      values.push(`'${esc(imageUrlIn)}'`);
+    } else {
+      // si no hay ninguno, no podemos crear un banner útil
+      const msg = 'No se encontró columna imageUrl/image en la tabla Banner';
+      if (wantDebug) return NextResponse.json({ ok: false, error: 'internal_error', detail: msg }, { status: 500 });
+      return NextResponse.json({ ok: false, error: 'internal_error' }, { status: 500 });
+    }
 
+    // linkUrl / link
     if (linkVal) {
       if (cols.has('linkUrl')) { names.push(`"linkUrl"`); values.push(`'${esc(linkVal)}'`); }
       else if (cols.has('link')) { names.push(`"link"`); values.push(`'${esc(linkVal)}'`); }
     }
+
+    // active/isActive
     if (cols.has('isActive')) { names.push(`"isActive"`); values.push(activeBool ? 'TRUE' : 'FALSE'); }
     else if (cols.has('active')) { names.push(`"active"`); values.push(activeBool ? 'TRUE' : 'FALSE'); }
 
+    // sortOrder
     if (typeof body.sortOrder === 'number' && cols.has('sortOrder')) {
       names.push(`"sortOrder"`); values.push(String(body.sortOrder));
     }
+
+    // Campos nuevos: solo si existen en la tabla
     if (body.placement && cols.has('placement')) {
       names.push(`"placement"`); values.push(`'${body.placement}'`);
     }
@@ -178,12 +193,46 @@ export async function POST(req: NextRequest) {
       names.push(`"endAt"`); values.push(`'${body.endAt.toISOString()}'`);
     }
 
-    const sql = `
+    // createdAt/updatedAt si existen y no tienen default (por las dudas)
+    const nowIso = new Date().toISOString();
+    if (cols.has('createdAt')) { names.push(`"createdAt"`); values.push(`'${nowIso}'`); }
+    if (cols.has('updatedAt')) { names.push(`"updatedAt"`); values.push(`'${nowIso}'`); }
+
+    const sqlFull = `
       INSERT INTO ${tbl} (${names.join(', ')})
       VALUES (${values.join(', ')})
       RETURNING id
     `;
-    const created: any[] = await prisma.$queryRawUnsafe(sql);
+
+    let created: any[];
+    try {
+      created = await prisma.$queryRawUnsafe(sqlFull);
+    } catch (eFull: any) {
+      // Fallback mínimo: solo columnas 100% seguras
+      const minNames: string[] = [`"title"`];
+      const minValues: string[] = [`'${esc(title)}'`];
+
+      if (cols.has('imageUrl')) { minNames.push(`"imageUrl"`); minValues.push(`'${esc(imageUrlIn)}'`); }
+      else if (cols.has('image')) { minNames.push(`"image"`); minValues.push(`'${esc(imageUrlIn)}'`); }
+
+      if (cols.has('isActive')) { minNames.push(`"isActive"`); minValues.push(activeBool ? 'TRUE' : 'FALSE'); }
+      else if (cols.has('active')) { minNames.push(`"active"`); minValues.push(activeBool ? 'TRUE' : 'FALSE'); }
+
+      const sqlMin = `
+        INSERT INTO ${tbl} (${minNames.join(', ')})
+        VALUES (${minValues.join(', ')})
+        RETURNING id
+      `;
+      try {
+        created = await prisma.$queryRawUnsafe(sqlMin);
+      } catch (eMin: any) {
+        const detail = `fullErr=${String(eFull?.message || eFull)}; minErr=${String(eMin?.message || eMin)}`;
+        if (wantDebug) {
+          return NextResponse.json({ ok: false, error: 'internal_error', detail }, { status: 500 });
+        }
+        throw eMin;
+      }
+    }
 
     const id = Number(created?.[0]?.id ?? 0);
     return NextResponse.json({ ok: true, id });
