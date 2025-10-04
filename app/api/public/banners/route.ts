@@ -7,32 +7,36 @@ import { publicR2Url } from '@/lib/storage';
 
 const prisma = createPrisma();
 
-function toPlacement(p: string | null):
-  | 'HOME'
-  | 'PRODUCTS'
-  | 'CATEGORY'
-  | 'CHECKOUT'
-  | undefined {
+function toPlacement(
+  p: string | null,
+): 'HOME' | 'PRODUCTS' | 'CATEGORY' | 'CHECKOUT' | undefined {
   if (!p) return undefined;
   switch (p.trim().toLowerCase()) {
-    case 'home': return 'HOME';
-    case 'products': return 'PRODUCTS';
-    case 'category': return 'CATEGORY';
-    case 'checkout': return 'CHECKOUT';
-    default: return undefined;
+    case 'home':
+      return 'HOME';
+    case 'products':
+      return 'PRODUCTS';
+    case 'category':
+      return 'CATEGORY';
+    case 'checkout':
+      return 'CHECKOUT';
+    default:
+      return undefined;
   }
 }
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const wantDebug = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
+  const wantDebug =
+    url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
 
   const placement = toPlacement(url.searchParams.get('placement'));
   const categoryIdRaw = url.searchParams.get('categoryId');
   const categoryId = categoryIdRaw ? Number(categoryIdRaw) : undefined;
+
   const now = new Date();
 
-  // where base (fechas activas)
+  // Filtros base (fechas vigentes + activo)
   const baseWhere: any = {
     isActive: true,
     AND: [
@@ -41,7 +45,6 @@ export async function GET(req: Request) {
     ],
   };
 
-  // with filters
   const whereWithFilters: any = { ...baseWhere };
   if (placement) whereWithFilters.placement = placement;
   if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
@@ -50,65 +53,117 @@ export async function GET(req: Request) {
 
   const debug: any = { tried: [] as any[] };
 
-  async function safeQuery(where: any, note: string) {
-    try {
-      // ⚠️ sin `select` y orden seguro por `id` (evita fallos si sortOrder no existe)
-      const rows = await prisma.banner.findMany({
-        where,
-        orderBy: { id: 'asc' },
-      });
-      debug.tried.push({ note, where, ok: true, count: rows.length });
-      return { rows, err: null as any };
-    } catch (e: any) {
-      debug.tried.push({ note, where, ok: false, error: String(e?.message || e) });
-      return { rows: [] as any[], err: e };
-    }
-  }
+  // ─────────────────────────────────────────────────────────────
+  // 1) Intento con Prisma seleccionando SOLO columnas existentes
+  //    (no pedimos imageKey para evitar el error de columna inexistente)
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const rows = await prisma.banner.findMany({
+      where: whereWithFilters,
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        title: true,
+        imageUrl: true, // existe en tu DB
+        linkUrl: true, // mapeada a columna "link" en tu schema
+        placement: true,
+        categoryId: true,
+        sortOrder: true,
+        // NO seleccionar imageKey aquí
+      },
+    });
 
-  // 1) con filtros
-  let { rows, err } = await safeQuery(whereWithFilters, 'with-filters');
+    debug.tried.push({ note: 'prisma/select', where: whereWithFilters, ok: true, count: rows.length });
 
-  // 2) fallback a baseWhere
-  if (err) {
-    const r2 = await safeQuery(baseWhere, 'base-where');
-    rows = r2.rows; err = r2.err;
-  }
-
-  // 3) último fallback sin where (evita 500 por enums/columns)
-  if (err) {
-    const r3 = await safeQuery({}, 'no-where');
-    rows = r3.rows; err = r3.err;
-  }
-
-  // Si aún falló algo, no romper el front
-  if (err) {
-    const payload: any = { ok: true, items: [] as any[] };
-    if (wantDebug) payload.debug = debug;
-    return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
-  }
-
-  // Map robusto: preferimos imageKey→R2; si no, imageUrl; linkUrl o link (legacy)
-  const items = rows
-    .map((b: any) => {
-      const key = b?.imageKey ?? null;          // podría no existir en tu DB
-      const imageUrl = b?.imageUrl ?? '';
-      const urlOut = key ? publicR2Url(key) : imageUrl;
-      const linkOut = b?.linkUrl ?? b?.link ?? null;
-
-      return {
+    const items = rows
+      .map((b) => ({
         id: b.id,
         title: b.title ?? '',
-        url: urlOut,
-        linkUrl: linkOut,
-        placement: b?.placement ?? null,
-        categoryId: b?.categoryId ?? null,
-        sortOrder: b?.sortOrder ?? 0,
-      };
-    })
-    .filter((x: any) => x.url); // solo con URL
+        url: String(b.imageUrl ?? ''), // usamos imageUrl directo
+        linkUrl: (b.linkUrl ?? null) as string | null,
+        placement: b.placement ?? null,
+        categoryId: b.categoryId ?? null,
+        sortOrder: b.sortOrder ?? 0,
+      }))
+      .filter((x) => x.url);
 
-  const payload: any = { ok: true, items };
-  if (wantDebug) payload.debug = debug;
+    return NextResponse.json(
+      { ok: true, items, ...(wantDebug ? { debug } : null) },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (e: any) {
+    debug.tried.push({
+      note: 'prisma/select-failed',
+      where: whereWithFilters,
+      ok: false,
+      error: String(e?.message || e),
+    });
+  }
 
-  return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
+  // ─────────────────────────────────────────────────────────────
+  // 2) Fallback: SQL crudo para esquivar por completo imageKey
+  //    (selecciona sólo columnas existentes; aplica mismos filtros)
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const conds: string[] = [
+      `"isActive" = TRUE`,
+      `("startAt" IS NULL OR "startAt" <= CURRENT_TIMESTAMP)`,
+      `("endAt" IS NULL OR "endAt" >= CURRENT_TIMESTAMP)`,
+    ];
+    if (placement) conds.push(`"placement" = '${placement}'`);
+    if (placement === 'CATEGORY' && Number.isFinite(categoryId)) {
+      conds.push(`"categoryId" = ${Number(categoryId)}`);
+    }
+    const whereSql = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+
+    // Variante 2a: DB con columna "link" (lo más común) → la exponemos como linkUrl
+    let sql = `
+      SELECT id, title, "imageUrl", "link" AS "linkUrl", "placement", "categoryId", "sortOrder"
+      FROM "Banner"
+      ${whereSql}
+      ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
+    `;
+
+    let rows: any[] = await prisma.$queryRawUnsafe(sql);
+    debug.tried.push({ note: 'raw/link', sql, ok: true, count: rows?.length ?? 0 });
+
+    // Si no trajo datos (o si tu tabla no tiene "link"), intento con "linkUrl" directo
+    if (!Array.isArray(rows) || rows.length === 0) {
+      sql = `
+        SELECT id, title, "imageUrl", "linkUrl", "placement", "categoryId", "sortOrder"
+        FROM "Banner"
+        ${whereSql}
+        ORDER BY "sortOrder" ASC NULLS FIRST, id ASC
+      `;
+      rows = await prisma.$queryRawUnsafe(sql);
+      debug.tried.push({ note: 'raw/linkUrl', sql, ok: true, count: rows?.length ?? 0 });
+    }
+
+    const items = (rows || [])
+      .map((b: any) => ({
+        id: Number(b.id),
+        title: String(b.title ?? ''),
+        url: String(b.imageUrl ?? ''), // sin R2 key
+        linkUrl: (b.linkUrl ?? null) as string | null,
+        placement: b.placement ?? null,
+        categoryId: b.categoryId ?? null,
+        sortOrder: b.sortOrder ?? 0,
+      }))
+      .filter((x) => x.url);
+
+    return NextResponse.json(
+      { ok: true, items, ...(wantDebug ? { debug } : null) },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+  } catch (e: any) {
+    debug.tried.push({ note: 'raw-failed', ok: false, error: String(e?.message || e) });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 3) Último recurso: responder vacío para no romper el front
+  // ─────────────────────────────────────────────────────────────
+  return NextResponse.json(
+    { ok: true, items: [], ...(wantDebug ? { debug } : null) },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }
