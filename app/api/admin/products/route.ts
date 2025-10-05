@@ -36,6 +36,19 @@ const UpdateSchema = z.object({
 // ✅ set de estados válidos (incluye AGOTADO)
 const STATUS_VALUES = new Set(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE', 'AGOTADO'] as const);
 
+// ────────────────────────────────────────────────────────────────────────────
+// OPTIONS — útil para preflights/robots raros en CF Pages y dejar claro Allow
+// ────────────────────────────────────────────────────────────────────────────
+export function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Allow': 'GET,POST,PUT,OPTIONS',
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
 // GET /api/admin/products
 // - Sin id: listado -> { ok, items, total }
 // - Con ?id=: detalle -> { ok, item }
@@ -68,7 +81,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!item) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
-    return NextResponse.json({ ok: true, item });
+    return NextResponse.json({ ok: true, item }, { headers: { 'Cache-Control': 'no-store' } });
   }
 
   // --------- Listado ----------
@@ -153,7 +166,10 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  return NextResponse.json({ ok: true, items, total });
+  return NextResponse.json(
+    { ok: true, items, total },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }
 
 // POST /api/admin/products
