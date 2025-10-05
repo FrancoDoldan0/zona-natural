@@ -14,31 +14,36 @@ export default function OffersCarousel({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState(false);
-  const [perView, setPerView] = useState(4);
   const totalItems = useMemo(() => React.Children.count(children), [children]);
-  const reduceMotionRef = useRef(false);
 
-  // Responsivo: 1 / 2 / 4 por vista
+  // Items por "pantalla"
+  const [perView, setPerView] = useState(4);
+
+  // Si el contenido es más chico que el contenedor, centramos y ocultamos flechas/dots
+  const [centerLine, setCenterLine] = useState(false);
+  const recalcCenter = () => {
+    const c = ref.current;
+    if (!c) return;
+    // +1 px de tolerancia por subpíxeles
+    setCenterLine(c.scrollWidth <= c.clientWidth + 1);
+  };
+
   useEffect(() => {
     const update = () => {
       const w = window.innerWidth;
       setPerView(w < 640 ? 1 : w < 1024 ? 2 : 4);
+      recalcCenter();
     };
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalItems]);
 
-  // Respeta prefers-reduced-motion
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    reduceMotionRef.current = mq.matches;
-    const onChange = (e: MediaQueryListEvent) => {
-      reduceMotionRef.current = e.matches;
-    };
-    mq.addEventListener?.("change", onChange);
-    return () => mq.removeEventListener?.("change", onChange);
-  }, []);
+    recalcCenter();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [children]);
 
   const pageCount = Math.max(1, Math.ceil(totalItems / perView));
   const [page, setPage] = useState(0);
@@ -47,48 +52,44 @@ export default function OffersCarousel({
     const c = ref.current;
     if (!c) return;
     const clamped = ((idx % pageCount) + pageCount) % pageCount;
-    c.scrollTo({
-      left: clamped * c.clientWidth,
-      behavior: reduceMotionRef.current ? "auto" : "smooth",
-    });
+    c.scrollTo({ left: clamped * c.clientWidth, behavior: "smooth" });
     setPage(clamped);
   };
 
-  // Autoplay por “pantallas”, se pausa en hover, en tab inactiva o con reduced motion
+  // Autoplay por “pantallas”
   useEffect(() => {
-    if (!autoPlayMs) return;
+    if (!autoPlayMs || centerLine) return;
     const id = window.setInterval(() => {
-      if (
-        !hover &&
-        !reduceMotionRef.current &&
-        document.visibilityState === "visible"
-      ) {
-        goTo(page + 1);
-      }
+      if (!hover) goTo(page + 1);
     }, autoPlayMs);
     return () => window.clearInterval(id);
-  }, [page, autoPlayMs, hover, pageCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, autoPlayMs, hover, centerLine, pageCount]);
 
-  // Sincroniza el índice cuando se scrollea manualmente
+  // Sincroniza página cuando se hace scroll manual
   const onScroll = () => {
     const c = ref.current;
     if (!c) return;
     const p = Math.round(c.scrollLeft / c.clientWidth);
     setPage(Math.max(0, Math.min(pageCount - 1, p)));
+    recalcCenter();
   };
+
+  const scrollable = !centerLine && pageCount > 1;
 
   return (
     <div
-      className="relative overflow-hidden"
+      className="relative"
       aria-label={ariaLabel}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{ touchAction: "pan-y" }} // mejor gesto en mobile
     >
       <div
         ref={ref}
         onScroll={onScroll}
-        className="flex overflow-x-auto snap-x snap-mandatory scroll-smooth gap-6 px-1 overscroll-x-contain"
+        className={`flex overflow-x-auto snap-x snap-mandatory scroll-smooth gap-6 px-1 ${
+          centerLine ? "justify-center" : ""
+        }`}
         style={{ scrollbarWidth: "none" }}
       >
         {React.Children.map(children, (child) => (
@@ -96,32 +97,37 @@ export default function OffersCarousel({
         ))}
       </div>
 
-      {/* Flechas (tap target >=44px en mobile) */}
+      {/* Flechas (ocultas si no hace falta scroll) */}
       <button
         type="button"
         aria-label="Anterior"
         onClick={() => goTo(page - 1)}
-        className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-3 md:p-2 shadow-md hover:bg-white
-                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/60 focus-visible:ring-offset-2"
+        className={`absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow-md hover:bg-white transition
+          ${scrollable ? "" : "opacity-0 pointer-events-none"}`}
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
           <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" />
         </svg>
       </button>
+
       <button
         type="button"
         aria-label="Siguiente"
         onClick={() => goTo(page + 1)}
-        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-3 md:p-2 shadow-md hover:bg-white
-                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/60 focus-visible:ring-offset-2"
+        className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow-md hover:bg-white transition
+          ${scrollable ? "" : "opacity-0 pointer-events-none"}`}
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
           <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" />
         </svg>
       </button>
 
-      {/* Dots */}
-      <div className="mt-3 flex justify-center gap-2">
+      {/* Dots (ocultos si no hace falta scroll) */}
+      <div
+        className={`mt-3 flex justify-center gap-2 transition ${
+          scrollable ? "" : "opacity-0 pointer-events-none"
+        }`}
+      >
         {Array.from({ length: pageCount }).map((_, i) => (
           <button
             key={i}
@@ -129,7 +135,7 @@ export default function OffersCarousel({
             onClick={() => goTo(i)}
             className={`h-1.5 w-4 rounded-full transition-all ${
               i === page ? "bg-gray-900" : "bg-gray-300"
-            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/60 focus-visible:ring-offset-2`}
+            }`}
           />
         ))}
       </div>
