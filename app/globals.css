@@ -6,3 +6,30 @@
 :root {
   color-scheme: light;
 }
+
+/* Tap highlight más limpio en mobile */
+body {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Focus visible accesible por defecto para controles interactivos */
+:where(a, button, [role="button"], input, select, textarea):focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.6),
+    0 0 0 4px rgba(255, 255, 255, 0.9);
+  border-radius: 0.5rem; /* queda bien con los botones redondeados */
+}
+
+/* Smooth scroll por defecto, excepto si el usuario pide reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -16,6 +16,7 @@ export default function OffersCarousel({
   const [hover, setHover] = useState(false);
   const [perView, setPerView] = useState(4);
   const totalItems = useMemo(() => React.Children.count(children), [children]);
+  const reduceMotionRef = useRef(false);
 
   // Responsivo: 1 / 2 / 4 por vista
   useEffect(() => {
@@ -28,6 +29,17 @@ export default function OffersCarousel({
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  // Respeta prefers-reduced-motion
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    reduceMotionRef.current = mq.matches;
+    const onChange = (e: MediaQueryListEvent) => {
+      reduceMotionRef.current = e.matches;
+    };
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+
   const pageCount = Math.max(1, Math.ceil(totalItems / perView));
   const [page, setPage] = useState(0);
 
@@ -35,15 +47,24 @@ export default function OffersCarousel({
     const c = ref.current;
     if (!c) return;
     const clamped = ((idx % pageCount) + pageCount) % pageCount;
-    c.scrollTo({ left: clamped * c.clientWidth, behavior: "smooth" });
+    c.scrollTo({
+      left: clamped * c.clientWidth,
+      behavior: reduceMotionRef.current ? "auto" : "smooth",
+    });
     setPage(clamped);
   };
 
-  // Autoplay por "pantallas"
+  // Autoplay por “pantallas”, se pausa en hover, en tab inactiva o con reduced motion
   useEffect(() => {
     if (!autoPlayMs) return;
     const id = window.setInterval(() => {
-      if (!hover) goTo(page + 1);
+      if (
+        !hover &&
+        !reduceMotionRef.current &&
+        document.visibilityState === "visible"
+      ) {
+        goTo(page + 1);
+      }
     }, autoPlayMs);
     return () => window.clearInterval(id);
   }, [page, autoPlayMs, hover, pageCount]);
@@ -58,31 +79,32 @@ export default function OffersCarousel({
 
   return (
     <div
-      className="relative"
+      className="relative overflow-hidden"
       aria-label={ariaLabel}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      style={{ touchAction: "pan-y" }} // mejor gesto en mobile
     >
       <div
         ref={ref}
         onScroll={onScroll}
-        className="flex overflow-x-auto snap-x snap-mandatory scroll-smooth gap-6 px-1"
+        className="flex overflow-x-auto snap-x snap-mandatory scroll-smooth gap-6 px-1 overscroll-x-contain"
         style={{ scrollbarWidth: "none" }}
       >
-        {/* Cada hijo ocupa un “slide” */}
         {React.Children.map(children, (child) => (
-          <div className="snap-start">{child}</div>
+          <div className="snap-start shrink-0">{child}</div>
         ))}
       </div>
 
-      {/* Flechas */}
+      {/* Flechas (tap target >=44px en mobile) */}
       <button
         type="button"
         aria-label="Anterior"
         onClick={() => goTo(page - 1)}
-        className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow-md hover:bg-white"
+        className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-3 md:p-2 shadow-md hover:bg-white
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/60 focus-visible:ring-offset-2"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" />
         </svg>
       </button>
@@ -90,9 +112,10 @@ export default function OffersCarousel({
         type="button"
         aria-label="Siguiente"
         onClick={() => goTo(page + 1)}
-        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-2 shadow-md hover:bg-white"
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-3 md:p-2 shadow-md hover:bg-white
+                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/60 focus-visible:ring-offset-2"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" />
         </svg>
       </button>
@@ -106,7 +129,7 @@ export default function OffersCarousel({
             onClick={() => goTo(i)}
             className={`h-1.5 w-4 rounded-full transition-all ${
               i === page ? "bg-gray-900" : "bg-gray-300"
-            }`}
+            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/60 focus-visible:ring-offset-2`}
           />
         ))}
       </div>
