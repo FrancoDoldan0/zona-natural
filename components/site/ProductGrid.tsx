@@ -4,15 +4,42 @@ export const runtime = "edge";
 import ProductCard from "@/components/ui/ProductCard";
 import { headers } from "next/headers";
 
-/** Tipo laxo para lo que venga del API */
-type Product = Record<string, any>;
+/** Tipos lazos según tus APIs públicas */
+type OfferItem = {
+  id: number;
+  title: string | null;
+  description: string | null;
+  discountType: "PERCENT" | "AMOUNT";
+  discountVal: number;
+  startAt: string | null;
+  endAt: string | null;
+  productId: number | null;
+  categoryId: number | null;
+  tagId: number | null;
+  product?: { id: number; name: string; slug: string } | null;
+};
 
-/**
- * Construye una URL absoluta válida en Edge/Cloudflare.
- * - Si NEXT_PUBLIC_BASE_URL está definida, la usa.
- * - Si el path ya es absoluto (http/https), lo devuelve tal cual.
- * - Si no, arma proto://host usando x-forwarded-* (fallback a host).
- */
+type CatalogProduct = {
+  id: number;
+  name: string;
+  slug: string;
+  cover?: string;
+  image?: string;
+  images?: Array<{ url?: string; src?: string } | string> | null;
+  status?: "ACTIVE" | "AGOTADO" | string;
+  priceOriginal?: number | null;
+  priceFinal?: number | null;
+};
+
+type ProductCardProps = {
+  title: string;
+  slug?: string;
+  image?: string;
+  price?: number;
+  outOfStock?: boolean;
+};
+
+/** URL absoluto en Edge/Cloudflare */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
 
@@ -25,85 +52,116 @@ async function abs(path: string) {
   return `${proto}://${host}${path}`;
 }
 
-async function fetchOffers(): Promise<Product[]> {
+/** Trae ofertas activas */
+async function fetchOffers(): Promise<OfferItem[]> {
   try {
     const res = await fetch(await abs("/api/public/offers"), { cache: "no-store" });
-    const payload: any = await res.json();
-
-    let list: any =
-      Array.isArray(payload)
-        ? payload
-        : payload?.products ?? payload?.items ?? payload?.data ?? [];
-
-    // Fallback: si vino vacío, probamos el catálogo filtrado (si tu API lo soporta)
-    if (!Array.isArray(list) || list.length === 0) {
-      try {
-        const res2 = await fetch(await abs("/api/public/catalogo?offers=active"), {
-          cache: "no-store",
-        });
-        if (res2.ok) {
-          const p2: any = await res2.json();
-          list = Array.isArray(p2) ? p2 : p2?.items ?? p2?.data ?? [];
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    return Array.isArray(list) ? list : [];
+    if (!res.ok) return [];
+    const data: any = await res.json();
+    const list: any[] = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
+    return list as OfferItem[];
   } catch {
     return [];
   }
 }
 
-/** Mapea un item del API a las props que espera <ProductCard /> */
-function toCardProps(p: Product, idx: number) {
-  const title: string =
-    p.name ?? p.title ?? (p.product?.name ?? p.product?.title) ?? `Producto ${idx + 1}`;
+/** Trae catálogo (1 llamada grande) y lo indexa por id y slug */
+async function fetchCatalogMap(): Promise<{
+  byId: Map<number, CatalogProduct>;
+  bySlug: Map<string, CatalogProduct>;
+}> {
+  const byId = new Map<number, CatalogProduct>();
+  const bySlug = new Map<string, CatalogProduct>();
 
-  const slug: string | undefined =
-    p.slug ?? p.product?.slug ?? (typeof p.id !== "undefined" ? String(p.id) : undefined);
+  try {
+    const res = await fetch(await abs("/api/public/catalogo?page=1&perPage=200&sort=-id"), {
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return { byId, bySlug };
+    const data: any = await res.json();
+    const items: any[] = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
+    for (const it of items) {
+      const p: CatalogProduct = it as CatalogProduct;
+      byId.set(p.id, p);
+      if (p.slug) bySlug.set(p.slug, p);
+    }
+  } catch {
+    // ignore
+  }
+  return { byId, bySlug };
+}
 
-  // Elige un precio razonable según lo que exponga el API
-  const price: number | undefined =
-    (typeof p.priceFinal === "number" ? p.priceFinal : undefined) ??
-    (typeof p.price === "number" ? p.price : undefined) ??
-    (typeof p.finalPrice === "number" ? p.finalPrice : undefined) ??
-    (typeof p.priceOriginal === "number" ? p.priceOriginal : undefined);
+/** Aplica el descuento de la oferta al precio base */
+function applyOfferPrice(base: number | null | undefined, off?: OfferItem): number | undefined {
+  if (typeof base !== "number" || !off) return base ?? undefined;
+  if (off.discountType === "AMOUNT") {
+    return Math.max(0, base - off.discountVal);
+  }
+  if (off.discountType === "PERCENT") {
+    return Math.max(0, Math.round((base * (100 - off.discountVal)) / 100));
+  }
+  return base;
+}
 
-  // Primer imagen disponible
+/** Resuelve URL de imagen del producto */
+function resolveProductImage(p: CatalogProduct): string | undefined {
   const imgFromArray =
     Array.isArray(p.images) && p.images.length > 0
-      ? p.images[0]?.url ?? p.images[0]?.src ?? p.images[0]
+      ? (typeof p.images[0] === "string"
+          ? (p.images[0] as string)
+          : (p.images[0] as any)?.url ?? (p.images[0] as any)?.src)
       : undefined;
 
-  const image: string | undefined =
-    p.image ?? p.cover ?? p.thumbnail ?? imgFromArray ?? p.product?.image ?? undefined;
+  return p.cover || p.image || imgFromArray || undefined;
+}
 
-  const outOfStock: boolean | undefined =
-    typeof p.outOfStock === "boolean"
-      ? p.outOfStock
-      : typeof p.inStock === "boolean"
-      ? !p.inStock
-      : typeof p.stock === "number"
-      ? p.stock <= 0
-      : undefined;
+/** Convierte oferta + producto a props de <ProductCard/> */
+function toCardProps(off: OfferItem, prod: CatalogProduct): ProductCardProps {
+  const title = prod.name || off.title || "Producto en oferta";
+  const slug = prod.slug || off.product?.slug;
+  const image = resolveProductImage(prod);
 
-  return { title, slug, price, image, outOfStock };
+  const basePrice = typeof prod.priceOriginal === "number" ? prod.priceOriginal : prod.priceFinal;
+  const price = applyOfferPrice(basePrice, off);
+
+  const outOfStock =
+    typeof prod.status === "string" ? prod.status.toUpperCase() === "AGOTADO" : undefined;
+
+  return { title, slug, image, price, outOfStock };
 }
 
 export default async function ProductGrid() {
-  const items = await fetchOffers();
+  // 1) Ofertas
+  const offers = await fetchOffers();
+  if (!offers.length) {
+    return <p className="text-sm text-ink-500">No hay ofertas activas.</p>;
+  }
 
-  if (!items.length) {
+  // 2) Catálogo indexado
+  const { byId, bySlug } = await fetchCatalogMap();
+
+  // 3) Combinar: tomamos solo ofertas con producto resoluble (por id o slug)
+  const cards: ProductCardProps[] = [];
+  for (const off of offers) {
+    const pid = off.productId ?? off.product?.id ?? null;
+    const pslug = off.product?.slug ?? null;
+
+    let prod: CatalogProduct | undefined =
+      (pid != null ? byId.get(pid) : undefined) || (pslug ? bySlug.get(pslug) : undefined);
+
+    if (!prod) continue; // si no encontramos el producto en catálogo, lo salteamos
+
+    cards.push(toCardProps(off, prod));
+  }
+
+  if (!cards.length) {
     return <p className="text-sm text-ink-500">No hay ofertas activas.</p>;
   }
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-      {items.slice(0, 8).map((p, idx) => {
-        const props = toCardProps(p, idx);
-        const key = (p.id ?? p.slug ?? idx).toString();
+      {cards.slice(0, 8).map((props, idx) => {
+        const key = (props.slug ?? idx.toString());
         return <ProductCard key={key} {...props} />;
       })}
     </div>
