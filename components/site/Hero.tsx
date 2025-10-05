@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export type Slide = {
   id: string | number;
-  image: string;
+  image?: string;
   href?: string;
   title?: string;
 };
@@ -22,25 +22,31 @@ export default function Hero({
   return (
     <section className="relative">
       <div className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth gap-3">
-        {slides.map((s) => {
+        {slides.map((s, idx) => {
+          const inner = s.image ? (
+            <Image
+              src={s.image}
+              alt={s.title ?? ""}
+              fill
+              sizes="100vw"
+              className="object-cover rounded-2xl"
+            />
+          ) : (
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-brand to-emerald-400/80" />
+          );
+
           const frame = (
             <div className={`relative w-full shrink-0 snap-center ${ratio}`}>
-              <Image
-                src={s.image}
-                alt={s.title ?? ""}
-                fill
-                sizes="100vw"
-                className="object-cover rounded-2xl"
-              />
+              {inner}
             </div>
           );
 
           return s.href ? (
-            <Link key={String(s.id)} href={s.href} className="block w-full">
+            <Link key={String(s.id ?? idx)} href={s.href} className="block w-full">
               {frame}
             </Link>
           ) : (
-            <div key={String(s.id)} className="w-full">
+            <div key={String(s.id ?? idx)} className="w-full">
               {frame}
             </div>
           );
