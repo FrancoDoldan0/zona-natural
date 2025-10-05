@@ -8,8 +8,8 @@ import { headers } from "next/headers";
 /**
  * Construye una URL absoluta válida en Edge/Cloudflare.
  * - Si NEXT_PUBLIC_BASE_URL está definida, la usa.
- * - Si el path ya es absoluto, lo devuelve tal cual.
- * - Si no, arma proto://host a partir de x-forwarded-* (fallback a host).
+ * - Si el path ya es absoluto (http/https), lo devuelve tal cual.
+ * - Si no, arma proto://host usando x-forwarded-* (fallback a host).
  */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
@@ -17,8 +17,7 @@ async function abs(path: string) {
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   if (base) return `${base}${path}`;
 
-  // En Cloudflare Pages (next-on-pages) headers() puede ser Promise<ReadonlyHeaders>
-  const h = await headers();
+  const h = await headers(); // en CF puede ser Promise<ReadonlyHeaders>
   const proto = h.get("x-forwarded-proto") ?? "https";
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
   return `${proto}://${host}${path}`;
@@ -41,26 +40,25 @@ async function fetchBanners(): Promise<Slide[]> {
     if (!res.ok) return [];
 
     const data: any = await res.json();
-    const list =
-      Array.isArray(data)
-        ? data
-        : (data?.items ?? data?.data ?? data?.rows ?? []);
+    const list = Array.isArray(data) ? data : data?.items ?? data?.data ?? data?.rows ?? [];
 
-    return (Array.isArray(list) ? list : []).map((b: any, i: number) => {
-      const image =
-        resolveImage(
-          b.image ?? b.imageUrl ?? b.url ?? b.src ?? b.preview ?? b.key ?? b.r2Key
-        ) || "";
+    return (Array.isArray(list) ? list : [])
+      .map((b: any, i: number) => {
+        const image =
+          resolveImage(
+            b.image ?? b.imageUrl ?? b.url ?? b.src ?? b.preview ?? b.key ?? b.r2Key
+          ) || "";
 
-      const href = b.linkUrl ?? b.href ?? b.link ?? undefined;
+        const href = b.linkUrl ?? b.href ?? b.link ?? undefined;
 
-      return {
-        id: b.id ?? b._id ?? i,
-        image,
-        href,
-        title: b.title ?? b.name ?? "",
-      } as Slide;
-    }).filter(s => !!s.image); // evita slides vacíos
+        return {
+          id: b.id ?? b._id ?? i,
+          image,
+          href,
+          title: b.title ?? b.name ?? "",
+        } as Slide;
+      })
+      .filter((s) => !!s.image); // evita slides vacíos
   } catch {
     return [];
   }
@@ -70,13 +68,21 @@ export default async function LandingPage() {
   const slides = await fetchBanners();
 
   return (
-    <div className="container py-6 space-y-10">
-      <Hero slides={slides} aspect="banner" />
+    <>
+      {/* HERO FULL-BLEED: ocupa todo el ancho del viewport, fuera del container */}
+      <div className="pt-6">
+        <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen">
+          <Hero slides={slides} aspect="banner" />
+        </div>
+      </div>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Las mejores ofertas</h2>
-        <ProductGrid />
-      </section>
-    </div>
+      {/* Contenido acotado al ancho de la container */}
+      <div className="container py-6 space-y-10">
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Las mejores ofertas</h2>
+          <ProductGrid />
+        </section>
+      </div>
+    </>
   );
 }
