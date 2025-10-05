@@ -1,7 +1,6 @@
 // components/site/FeaturedCategories.tsx
 export const runtime = "edge";
 
-import Image from "next/image";
 import Link from "next/link";
 import { headers } from "next/headers";
 
@@ -12,6 +11,10 @@ type Category = {
   image?: string;
   icon?: string;
   cover?: string;
+  imageUrl?: string;
+  imageKey?: string;
+  key?: string;
+  r2Key?: string;
 };
 
 /** URL absoluta segura en Edge (Cloudflare) */
@@ -25,11 +28,19 @@ async function abs(path: string) {
   return `${proto}://${host}${path}`;
 }
 
+/** Prefija keys/paths con PUBLIC_R2_BASE_URL si no es URL absoluta */
+function resolveImage(raw?: string): string {
+  const R2 = (process.env.PUBLIC_R2_BASE_URL || "").replace(/\/+$/, "");
+  const v = (raw || "").toString();
+  if (!v) return "";
+  if (/^https?:\/\//i.test(v)) return v;
+  return R2 ? `${R2}/${v.replace(/^\/+/, "")}` : v;
+}
+
 /** Carga categorías desde el endpoint público */
 async function fetchCategories(): Promise<Category[]> {
   try {
     const res = await fetch(await abs("/api/public/categories"), {
-      // no necesitamos milisegundos: refresco cache razonable
       next: { revalidate: 21600 }, // 6 h
     });
     if (!res.ok) return [];
@@ -62,7 +73,7 @@ function seededShuffle<T>(arr: T[], seed: number) {
   return a;
 }
 
-/** Un seed que cambia cada 3 días (misma selección durante 3 días) */
+/** Seed que cambia cada 3 días (misma selección durante 3 días) */
 function seed3DayWindow() {
   const MS_DAY = 86_400_000;
   const epochDays = Math.floor(Date.now() / MS_DAY);
@@ -76,8 +87,28 @@ export default async function FeaturedCategories({
   count?: number;
   title?: string;
 }) {
-  const categories = await fetchCategories();
-  if (!categories.length) return null;
+  const raw = await fetchCategories();
+  if (!raw.length) return null;
+
+  // Normalizamos y resolvemos una imagen por categoría
+  const categories = raw.map((c, i) => {
+    const imgRaw =
+      c.image ??
+      c.imageUrl ??
+      c.cover ??
+      c.icon ??
+      c.imageKey ??
+      c.key ??
+      c.r2Key ??
+      "";
+    const image = resolveImage(imgRaw);
+    return {
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      image,
+    };
+  });
 
   const seed = seed3DayWindow();
   const picks = seededShuffle(categories, seed).slice(0, Math.min(count, categories.length));
@@ -87,19 +118,28 @@ export default async function FeaturedCategories({
       <h2 className="text-center text-2xl font-semibold">{title}</h2>
 
       {/* En móvil hace scroll; en desktop queda centrado */}
-      <div className="flex gap-6 overflow-x-auto justify-center sm:flex-wrap px-1" style={{ scrollbarWidth: "none" }}>
+      <div
+        className="flex gap-6 overflow-x-auto justify-center sm:flex-wrap px-1"
+        style={{ scrollbarWidth: "none" }}
+        aria-label="Categorías destacadas"
+      >
         {picks.map((c) => {
           const href = c.slug
-            ? `/catalogo?category=${encodeURIComponent(c.slug)}`
+            ? `/categoria/${encodeURIComponent(c.slug)}`
             : `/catalogo?categoryId=${c.id}`;
-          const img = c.image ?? c.icon ?? c.cover ?? "";
 
           return (
             <Link key={c.id} href={href} className="flex flex-col items-center shrink-0">
               <div className="size-28 sm:size-32 rounded-full overflow-hidden ring-1 ring-black/5 bg-gray-100">
-                {img ? (
-                  // usamos <img> común para evitar restricciones externas
-                  <img src={img} alt={c.name} className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                {c.image ? (
+                  <img
+                    src={c.image}
+                    alt={c.name}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                    decoding="async"
+                    draggable={false}
+                  />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-lg font-semibold text-ink-500">
                     {c.name.slice(0, 1).toUpperCase()}
@@ -112,7 +152,9 @@ export default async function FeaturedCategories({
         })}
       </div>
 
-      <p className="text-center text-xs text-ink-500">Se actualiza automáticamente cada 3 días.</p>
+      <p className="text-center text-xs text-ink-500">
+        Se actualiza automáticamente cada 3 días.
+      </p>
     </section>
   );
 }

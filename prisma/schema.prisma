@@ -23,6 +23,13 @@ model Category {
   id        Int           @id @default(autoincrement())
   name      String
   slug      String        @unique
+
+  // === NUEVO: imagen de la categoría ===
+  // Legacy URL (si ya tenías una ruta directa; opcional para no romper datos existentes)
+  imageUrl  String?
+  // Clave del objeto en R2 (p.ej. "categories/uuid.jpg"), recomendada a futuro
+  imageKey  String?
+
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   subcats   Subcategory[]

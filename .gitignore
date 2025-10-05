@@ -71,3 +71,6 @@ wrangler.toml.local
 #/full_ddl.sql y /migration.sql solo si están en la raíz
 /full_ddl.sql
 /migration.sql
+# samples
+offers.sample.json
+sample_*.json

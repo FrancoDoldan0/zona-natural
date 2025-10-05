@@ -18,7 +18,6 @@ export default function Hero({
   aspect?: "banner" | "square";
 }) {
   if (!slides || slides.length === 0) {
-    // placeholder visual si no hay banners
     return (
       <div className="rounded-2xl overflow-hidden shadow-soft w-full aspect-[21/9] sm:aspect-[21/7] bg-gradient-to-br from-brand/10 to-brand/5 flex items-center justify-center">
         <span className="text-xl font-semibold">Zona Natural</span>
@@ -33,36 +32,34 @@ export default function Hero({
       {/* h-full asegura alto para que <Image fill /> tenga contenedor */}
       <div className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scroll-smooth">
         {slides.map((s, i) => {
-          const slideInner = s.image ? (
-            <Image
-              src={s.image}
-              alt={s.title ?? ""}
-              fill
-              sizes="100vw"
-              className="object-cover"
-              priority={i === 0}
-              unoptimized // <- forzamos carga directa desde R2
-              draggable={false}
-            />
-          ) : (
-            <div className="w-full h-full bg-gradient-to-br from-brand/10 to-brand/5 flex items-center justify-center">
-              <span className="text-xl font-semibold">{s.title ?? "Zona Natural"}</span>
-            </div>
-          );
+          const Wrapper: any = s.href ? "a" : "div";
+          const wrapperProps = s.href ? { href: s.href } : {};
 
-          // min-w-full + h-full: cada slide ocupa todo el ancho y alto
-          const card = (
-            <div key={String(s.id)} className="relative min-w-full h-full shrink-0 snap-center">
-              {slideInner}
-            </div>
-          );
-
-          return s.href ? (
-            <a key={String(s.id)} href={s.href} className="block w-full h-full">
-              {card}
-            </a>
-          ) : (
-            card
+          return (
+            <Wrapper
+              key={String(s.id)}
+              {...wrapperProps}
+              className="relative block min-w-full h-full shrink-0 snap-center"
+            >
+              {s.image ? (
+                <Image
+                  src={s.image}
+                  alt={s.title ?? ""}
+                  fill
+                  sizes="100vw"
+                  className="object-cover"
+                  priority={i === 0}
+                  unoptimized
+                  draggable={false}
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-brand/10 to-brand/5 flex items-center justify-center">
+                  <span className="text-xl font-semibold">
+                    {s.title ?? "Zona Natural"}
+                  </span>
+                </div>
+              )}
+            </Wrapper>
           );
         })}
       </div>

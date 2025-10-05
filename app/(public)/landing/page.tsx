@@ -3,15 +3,10 @@ export const runtime = "edge";
 
 import Hero, { type Slide } from "@/components/site/Hero";
 import ProductGrid from "@/components/site/ProductGrid";
-import FeaturedCategories from "@/components/site/FeaturedCategories"; // 👈 NUEVO
+import FeaturedCategories from "@/components/site/FeaturedCategories";
 import { headers } from "next/headers";
 
-/**
- * Construye una URL absoluta válida en Edge/Cloudflare.
- * - Si NEXT_PUBLIC_BASE_URL está definida, la usa.
- * - Si el path ya es absoluto (http/https), lo devuelve tal cual.
- * - Si no, arma proto://host usando x-forwarded-* (fallback a host).
- */
+/** Construye una URL absoluta válida en Edge/Cloudflare. */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
 
@@ -24,13 +19,13 @@ async function abs(path: string) {
   return `${proto}://${host}${path}`;
 }
 
-/** Prefija keys/paths con PUBLIC_R2_BASE_URL si no es URL absoluta */
+/** Prefija keys/paths con PUBLIC_R2_BASE_URL si no es URL absoluta. */
 function resolveImage(raw?: string): string {
   const R2 = (process.env.PUBLIC_R2_BASE_URL || "").replace(/\/+$/, "");
   const v = (raw || "").toString();
   if (!v) return "";
   if (/^https?:\/\//i.test(v)) return v;
-  return R2 ? `${R2}/${v.replace(/^\/+/, "")}` : v; // último recurso: relativo
+  return R2 ? `${R2}/${v.replace(/^\/+/, "")}` : v;
 }
 
 async function fetchBanners(): Promise<Slide[]> {
@@ -49,7 +44,6 @@ async function fetchBanners(): Promise<Slide[]> {
           resolveImage(
             b.image ?? b.imageUrl ?? b.url ?? b.src ?? b.preview ?? b.key ?? b.r2Key
           ) || "";
-
         const href = b.linkUrl ?? b.href ?? b.link ?? undefined;
 
         return {
@@ -59,7 +53,7 @@ async function fetchBanners(): Promise<Slide[]> {
           title: b.title ?? b.name ?? "",
         } as Slide;
       })
-      .filter((s) => !!s.image); // evita slides vacíos
+      .filter((s) => !!s.image);
   } catch {
     return [];
   }
@@ -70,16 +64,15 @@ export default async function LandingPage() {
 
   return (
     <>
-      {/* HERO FULL-BLEED: ocupa todo el ancho del viewport, fuera del container */}
+      {/* HERO full-bleed */}
       <div className="pt-6">
         <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen">
           <Hero slides={slides} aspect="banner" />
         </div>
       </div>
 
-      {/* Contenido acotado al ancho de la container */}
+      {/* Contenido dentro del container */}
       <div className="container py-6 space-y-12">
-        {/* 👇 NUEVO bloque de categorías destacadas (estable 3 días) */}
         <FeaturedCategories count={6} title="Categorías Destacadas" />
 
         <section className="space-y-3">
