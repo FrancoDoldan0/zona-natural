@@ -33,14 +33,15 @@ export default function Hero({
       {/* h-full asegura alto para que <Image fill /> tenga contenedor */}
       <div className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scroll-smooth">
         {slides.map((s, i) => {
-          const inner = s.image ? (
+          const slideInner = s.image ? (
             <Image
               src={s.image}
-              alt={s.title ?? "Banner"}
+              alt={s.title ?? ""}
               fill
               sizes="100vw"
               className="object-cover"
-              priority={i === 0} // mejora LCP del primer slide
+              priority={i === 0}
+              unoptimized // <- forzamos carga directa desde R2
               draggable={false}
             />
           ) : (
@@ -49,10 +50,10 @@ export default function Hero({
             </div>
           );
 
-          // min-w-full + h-full: cada slide ocupa 100% del ancho y alto del carrusel
+          // min-w-full + h-full: cada slide ocupa todo el ancho y alto
           const card = (
-            <div className="relative min-w-full h-full shrink-0 snap-center">
-              {inner}
+            <div key={String(s.id)} className="relative min-w-full h-full shrink-0 snap-center">
+              {slideInner}
             </div>
           );
 
@@ -61,9 +62,7 @@ export default function Hero({
               {card}
             </a>
           ) : (
-            <div key={String(s.id)} className="w-full h-full">
-              {card}
-            </div>
+            card
           );
         })}
       </div>

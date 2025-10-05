@@ -29,6 +29,8 @@ export default function ProductCard({
             fill
             sizes="(min-width:1024px) 25vw, 50vw"
             className="object-cover transition-transform duration-300 group-hover:scale-105"
+            unoptimized // <- clave para CF Pages + R2
+            draggable={false}
           />
         ) : (
           <div className="w-full h-full bg-gray-100" />
