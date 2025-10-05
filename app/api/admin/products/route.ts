@@ -37,14 +37,14 @@ export function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
     headers: {
-      'Allow': 'GET,POST,PUT,OPTIONS',
+      Allow: 'GET,POST,PUT,OPTIONS',
       'Cache-Control': 'no-store',
     },
   });
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// GET (igual que tu versión)
+// GET
 // ────────────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -58,8 +58,15 @@ export async function GET(req: NextRequest) {
     const item = await prisma.product.findUnique({
       where: { id },
       select: {
-        id: true, name: true, slug: true, description: true, price: true, sku: true,
-        status: true, categoryId: true, subcategoryId: true,
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        sku: true,
+        status: true,
+        categoryId: true,
+        subcategoryId: true,
         category: { select: { id: true, name: true } },
         subcategory: { select: { id: true, name: true } },
       },
@@ -130,8 +137,15 @@ export async function GET(req: NextRequest) {
       take,
       orderBy: { id: 'desc' },
       select: {
-        id: true, name: true, slug: true, description: true, price: true, sku: true,
-        status: true, categoryId: true, subcategoryId: true,
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        sku: true,
+        status: true,
+        categoryId: true,
+        subcategoryId: true,
         category: { select: { id: true, name: true } },
         subcategory: { select: { id: true, name: true } },
       },
@@ -145,7 +159,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// POST — con prevalidaciones y manejo de errores más informativo
+// POST — pre-check de slug + prevalidaciones de FK + errores informativos
 // ────────────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
@@ -159,14 +173,26 @@ export async function POST(req: NextRequest) {
     }
     const b = parsed.data;
 
-    // Slug / estado
+    // Slug/estado
     const newSlug = (b.slug?.trim() || slugify(b.name)).trim();
     const sku = (b.sku ?? '').trim();
     const safeStatus = STATUS_VALUES.has((b.status || 'ACTIVE') as any)
       ? (b.status as any)
       : 'ACTIVE';
 
-    // ── Prevalidaciones de FK para evitar 500 ───────────────────────────────
+    // ✅ Chequeo de slug único para evitar 500 por unique en CF/Edge
+    const exists = await prisma.product.findUnique({
+      where: { slug: newSlug },
+      select: { id: true },
+    });
+    if (exists) {
+      return NextResponse.json(
+        { ok: false, error: 'slug_taken', slug: newSlug },
+        { status: 409 },
+      );
+    }
+
+    // ── Prevalidaciones de FK
     let categoryId: number | null = b.categoryId ?? null;
     let subcategoryId: number | null = b.subcategoryId ?? null;
 
@@ -194,22 +220,24 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
       }
-      // Si el usuario eligió ambos, validar pertenencia
       if (categoryId != null && sub.categoryId !== categoryId) {
         return NextResponse.json(
           {
             ok: false,
             error: 'subcategory_mismatch',
-            detail: { subcategoryId, categoryIdProvided: categoryId, categoryIdOfSub: sub.categoryId },
+            detail: {
+              subcategoryId,
+              categoryIdProvided: categoryId,
+              categoryIdOfSub: sub.categoryId,
+            },
           },
           { status: 400 },
         );
       }
-      // Si no vino categoryId, lo alineamos con el de la sub
       if (categoryId == null) categoryId = sub.categoryId;
     }
 
-    // ── Inserción ───────────────────────────────────────────────────────────
+    // Inserción
     const created = await prisma.product.create({
       data: {
         name: b.name,
@@ -222,36 +250,37 @@ export async function POST(req: NextRequest) {
         subcategoryId,
       },
       select: {
-        id: true, name: true, slug: true, description: true, price: true, sku: true,
-        status: true, categoryId: true, subcategoryId: true,
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        sku: true,
+        status: true,
+        categoryId: true,
+        subcategoryId: true,
       },
     });
 
-    // audit puede fallar sin romper el alta
     try {
       await audit(req, 'CREATE', 'Product', created.id, { name: b.name, slug: newSlug });
     } catch {}
 
     return NextResponse.json({ ok: true, item: created }, { status: 201 });
   } catch (e: any) {
-    // Prisma Known Errors
     const code = e?.code as string | undefined;
     if (code === 'P2002') {
-      // Unique constraint (p.ej. slug)
       return NextResponse.json(
-        { ok: false, error: 'unique_constraint', field: (e?.meta?.target ?? 'slug') },
+        { ok: false, error: 'unique_constraint', field: e?.meta?.target ?? 'slug' },
         { status: 409 },
       );
     }
     if (code === 'P2003') {
-      // FK constraint
       return NextResponse.json(
         { ok: false, error: 'foreign_key_violation', detail: e?.meta ?? null },
         { status: 400 },
       );
     }
-
-    // Genérico: devolvemos más contexto para depurar (en Pages)
     return NextResponse.json(
       {
         ok: false,
@@ -266,7 +295,7 @@ export async function POST(req: NextRequest) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// PUT (sin cambios funcionales respecto a tu versión)
+// PUT
 // ────────────────────────────────────────────────────────────────────────────
 export async function PUT(req: NextRequest) {
   const url = new URL(req.url);
@@ -316,12 +345,21 @@ export async function PUT(req: NextRequest) {
       where: { id },
       data,
       select: {
-        id: true, name: true, slug: true, description: true, price: true, sku: true,
-        status: true, categoryId: true, subcategoryId: true,
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        price: true,
+        sku: true,
+        status: true,
+        categoryId: true,
+        subcategoryId: true,
       },
     });
 
-    try { await audit(req, 'UPDATE', 'Product', id, data); } catch {}
+    try {
+      await audit(req, 'UPDATE', 'Product', id, data);
+    } catch {}
 
     return NextResponse.json({ ok: true, item });
   } catch (e: any) {
