@@ -24,29 +24,43 @@ async function abs(path: string) {
   return `${proto}://${host}${path}`;
 }
 
+/** Prefija keys/paths con PUBLIC_R2_BASE_URL si no es URL absoluta */
+function resolveImage(raw?: string): string {
+  const R2 = (process.env.PUBLIC_R2_BASE_URL || "").replace(/\/+$/, "");
+  const v = (raw || "").toString();
+  if (!v) return "";
+  if (/^https?:\/\//i.test(v)) return v;
+  return R2 ? `${R2}/${v.replace(/^\/+/, "")}` : v; // último recurso: relativo
+}
+
 async function fetchBanners(): Promise<Slide[]> {
   try {
     const res = await fetch(await abs("/api/public/banners"), {
-      // Podés ajustar a revalidate: 60 si preferís ISR en vez de no-store
-      cache: "no-store",
+      next: { revalidate: 60 },
     });
-    const data: unknown = await res.json();
+    if (!res.ok) return [];
 
+    const data: any = await res.json();
     const list =
       Array.isArray(data)
         ? data
-        : // intentamos {data}, {items}, {rows}
-          (data as any)?.data ??
-          (data as any)?.items ??
-          (data as any)?.rows ??
-          [];
+        : (data?.items ?? data?.data ?? data?.rows ?? []);
 
-    return (Array.isArray(list) ? list : []).map((b: any, i: number) => ({
-      id: b.id ?? b._id ?? i,
-      image: b.image ?? b.url ?? b.src ?? "",
-      href: b.href ?? b.link ?? undefined,
-      title: b.title ?? b.name ?? "",
-    }));
+    return (Array.isArray(list) ? list : []).map((b: any, i: number) => {
+      const image =
+        resolveImage(
+          b.image ?? b.imageUrl ?? b.url ?? b.src ?? b.preview ?? b.key ?? b.r2Key
+        ) || "";
+
+      const href = b.linkUrl ?? b.href ?? b.link ?? undefined;
+
+      return {
+        id: b.id ?? b._id ?? i,
+        image,
+        href,
+        title: b.title ?? b.name ?? "",
+      } as Slide;
+    }).filter(s => !!s.image); // evita slides vacíos
   } catch {
     return [];
   }
