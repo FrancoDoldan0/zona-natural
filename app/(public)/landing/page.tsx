@@ -7,14 +7,14 @@ import ProductGrid from "@/components/site/ProductGrid";
 async function fetchBanners(): Promise<Slide[]> {
   try {
     const base = process.env.NEXT_PUBLIC_BASE_URL ?? "";
-    const res = await fetch(${base}/api/public/banners, { cache: "no-store" });
+    const res = await fetch(`${base}/api/public/banners`, { cache: "no-store" });
     const data: unknown = await res.json();
 
     let list: unknown = [];
     if (Array.isArray(data)) list = data;
     else if (data && typeof data === "object") {
-      if ("data" in (data as any)) list = (data as any).data;
-      else if ("items" in (data as any)) list = (data as any).items;
+      const obj = data as Record<string, unknown>;
+      list = (obj.data as unknown) ?? (obj.items as unknown) ?? [];
     }
 
     const arr = (Array.isArray(list) ? list : []) as any[];
