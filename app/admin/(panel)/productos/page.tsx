@@ -20,10 +20,6 @@ type Product = {
   subcategory?: { id: number; name: string } | null;
 };
 
-type ApiListOk = { ok: true; items: Product[]; total?: number };
-type ApiErr = { ok: false; error: string };
-type ApiListResponse = ApiListOk | ApiErr;
-
 const DEFAULT_LIMIT = 20;
 
 /** Fallback: primero prueba /products y si no, /productos */
@@ -31,6 +27,7 @@ async function callApi(pathEn: string, pathEs: string, init?: RequestInit) {
   const baseInit: RequestInit = {
     ...init,
     cache: 'no-store',
+    // Next/fetch en el cliente ya usa credentials:"same-origin" por defecto
     headers: {
       Accept: 'application/json',
       ...(init?.headers || {}),
@@ -40,24 +37,62 @@ async function callApi(pathEn: string, pathEs: string, init?: RequestInit) {
     },
   };
   const resEn = await fetch(pathEn, baseInit);
-  if (resEn.ok) return resEn;
-  // Si 404/302/401 u otro error, intentar español
-  const resEs = await fetch(pathEs, baseInit);
-  return resEs;
+  if (resEn.ok || resEn.status !== 404) return resEn;
+  // Si 404 puntual, probamos la variante /productos
+  return fetch(pathEs, baseInit);
 }
 
-/** Lee la respuesta de forma segura. Si no es JSON, devuelve el texto */
-async function readJsonSafe(res: Response): Promise<{ json: any | null; text: string }> {
+/** Lee la respuesta de forma segura. Si no es JSON, devuelve el texto crudo */
+async function readJsonSafe(res: Response): Promise<{ json: any | null; text: string; ctype: string }> {
   const ct = res.headers.get('content-type') || '';
-  const body = await res.text(); // leemos una sola vez
+  const body = await res.text();
   if (ct.includes('application/json')) {
     try {
-      return { json: JSON.parse(body), text: body };
+      return { json: JSON.parse(body), text: body, ctype: ct };
     } catch {
-      // cae abajo con el texto crudo
+      // sigue abajo con texto crudo
     }
   }
-  return { json: null, text: body };
+  return { json: null, text: body, ctype: ct };
+}
+
+/** Mensajes de error legibles para el panel */
+function formatApiError(res: Response, json: any, text: string) {
+  // sesión expirada / login requerido
+  const redirectedToLogin =
+    res.redirected && /\/admin\/login/.test(res.url) ||
+    /\/admin\/login/.test(text) ||
+    res.status === 401 || res.status === 403;
+
+  if (redirectedToLogin) {
+    return 'Tu sesión expiró o no tenés permisos. Volvé a iniciar sesión en el panel.';
+  }
+
+  // Errores del handler de Products
+  const code = json?.error as string | undefined;
+
+  if (res.status === 409 && (code === 'slug_taken' || code === 'unique_constraint')) {
+    const slug = json?.slug ?? json?.field ?? 'slug';
+    return `El ${slug === 'slug' ? 'slug' : String(slug)} ya existe. Cambiá el nombre o definí un slug distinto.`;
+  }
+
+  if (code === 'category_not_found') {
+    return `La categoría indicada no existe (id: ${json?.detail?.categoryId}).`;
+  }
+  if (code === 'subcategory_not_found') {
+    return `La subcategoría indicada no existe (id: ${json?.detail?.subcategoryId}).`;
+  }
+  if (code === 'subcategory_mismatch') {
+    const d = json?.detail || {};
+    return `La subcategoría ${d.subcategoryId} pertenece a la categoría ${d.categoryIdOfSub}, no a ${d.categoryIdProvided}.`;
+  }
+  if (code === 'validation_failed') {
+    return 'Los datos enviados no son válidos. Revisá nombre, precio y selecciones.';
+  }
+
+  // fallback con contexto
+  const short = text ? text.slice(0, 500) : '(sin cuerpo)';
+  return `HTTP ${res.status} ${res.statusText} — ${short}`;
 }
 
 export default function ProductosPage() {
@@ -77,7 +112,7 @@ export default function ProductosPage() {
     [subs, fCat],
   );
 
-  // paginación (limit/offset)
+  // paginación
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [offset, setOffset] = useState(0);
 
@@ -95,18 +130,19 @@ export default function ProductosPage() {
   async function loadCats() {
     const res = await fetch('/api/admin/categories?take=999', { cache: 'no-store' });
     const data = await res.json<any>().catch(() => ({}));
-    if (data.ok) setCats(data.items);
+    if (data?.ok) setCats(data.items);
   }
   async function loadSubs() {
     const res = await fetch('/api/admin/subcategories?take=999', { cache: 'no-store' });
     const data = await res.json<any>().catch(() => ({}));
-    if (data.ok) setSubs(data.items);
+    if (data?.ok) setSubs(data.items);
   }
 
   async function load() {
     try {
       setLoading(true);
       setErr(null);
+
       const u = new URLSearchParams();
       u.set('limit', String(limit));
       u.set('offset', String(offset));
@@ -120,16 +156,14 @@ export default function ProductosPage() {
       const { json, text } = await readJsonSafe(res);
 
       if (!res.ok) {
-        throw new Error(
-          `HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`,
-        );
+        throw new Error(formatApiError(res, json, text));
       }
       if (!json?.ok) {
         throw new Error(json?.error || 'API error');
       }
 
-      const list =
-        (json as any).items ?? (json as any).data ?? (json as any).rows ?? ([] as Product[]);
+      const list: Product[] =
+        (json as any).items ?? (json as any).data ?? (json as any).rows ?? [];
 
       const count = typeof (json as any).total === 'number' ? (json as any).total : list.length;
 
@@ -160,7 +194,14 @@ export default function ProductosPage() {
       setErr(null);
       const body: any = { name: name.trim(), status };
       if (description.trim() !== '') body.description = description.trim();
-      if (price.trim() !== '') body.price = Number(price.replace(',', '.'));
+
+      if (price.trim() !== '') {
+        // Permite "234,50"
+        const n = Number(price.replace(',', '.'));
+        if (!Number.isFinite(n)) throw new Error('Precio inválido. Usá números (ej: 199.90).');
+        body.price = n;
+      }
+
       if (sku.trim() !== '') body.sku = sku.trim();
       if (cId !== '') body.categoryId = Number(cId);
       if (sId !== '') body.subcategoryId = Number(sId);
@@ -172,12 +213,11 @@ export default function ProductosPage() {
       const { json, text } = await readJsonSafe(res);
 
       if (!res.ok) {
-        throw new Error(
-          `HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`,
-        );
+        throw new Error(formatApiError(res, json, text));
       }
       if (!json?.ok) {
-        throw new Error(json?.error || 'API error al crear');
+        // errores lógicos devueltos por la API con ok=false
+        throw new Error(formatApiError(res, json, text));
       }
 
       // limpiar
@@ -205,9 +245,7 @@ export default function ProductosPage() {
       });
       const { json, text } = await readJsonSafe(res);
       if (!res.ok) {
-        throw new Error(
-          `HTTP ${res.status} ${res.statusText} — ${text?.slice(0, 200) || '(sin cuerpo)'}`,
-        );
+        throw new Error(formatApiError(res, json, text));
       }
       if (!json?.ok) {
         throw new Error(json?.error || 'No se pudo borrar');
@@ -220,7 +258,6 @@ export default function ProductosPage() {
   }
 
   const page = Math.floor(offset / limit) + 1;
-  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
