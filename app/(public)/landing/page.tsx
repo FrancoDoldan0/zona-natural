@@ -3,6 +3,7 @@ export const runtime = "edge";
 
 import Hero, { type Slide } from "@/components/site/Hero";
 import ProductGrid from "@/components/site/ProductGrid";
+import FeaturedCategories from "@/components/site/FeaturedCategories"; // 👈 NUEVO
 import { headers } from "next/headers";
 
 /**
@@ -77,7 +78,10 @@ export default async function LandingPage() {
       </div>
 
       {/* Contenido acotado al ancho de la container */}
-      <div className="container py-6 space-y-10">
+      <div className="container py-6 space-y-12">
+        {/* 👇 NUEVO bloque de categorías destacadas (estable 3 días) */}
+        <FeaturedCategories count={6} title="Categorías Destacadas" />
+
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Las mejores ofertas</h2>
           <ProductGrid />
