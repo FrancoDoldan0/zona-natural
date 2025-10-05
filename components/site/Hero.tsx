@@ -1,41 +1,51 @@
 import Image from "next/image";
 import Link from "next/link";
 
-export type Slide = { id: string | number; image: string; href?: string; title?: string };
-export default function Hero({ slides, aspect = "banner" }: { slides: Slide[]; aspect?: "banner" | "square" }) {
+export type Slide = {
+  id: string | number;
+  image: string;
+  href?: string;
+  title?: string;
+};
+
+export default function Hero({
+  slides,
+  aspect = "banner",
+}: {
+  slides: Slide[];
+  aspect?: "banner" | "square";
+}) {
   if (!slides?.length) return null;
-  const aspectClass =
-    aspect === "square" ? "aspect-square" : "aspect-[16/6] md:aspect-[16/5] lg:aspect-[16/4]";
+
+  const ratio = aspect === "banner" ? "aspect-[16/6]" : "aspect-[1/1]";
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border shadow-sm">
-      <div className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth">
+    <section className="relative">
+      <div className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth gap-3">
         {slides.map((s) => {
-          const content = (
-            <div key={s.id} className={elative w-full shrink-0 snap-center }>
-              <Image src={s.image} alt={s.title ?? ""} fill sizes="100vw" className="object-cover" />
+          const frame = (
+            <div className={`relative w-full shrink-0 snap-center ${ratio}`}>
+              <Image
+                src={s.image}
+                alt={s.title ?? ""}
+                fill
+                sizes="100vw"
+                className="object-cover rounded-2xl"
+              />
             </div>
           );
-          if (s.href?.startsWith("/")) {
-            return (
-              <Link key={s.id} href={s.href} className="block w-full">
-                {content}
-              </Link>
-            );
-          }
-          return (
-            <a
-              key={s.id}
-              href={s.href}
-              target={s.href ? "_blank" : undefined}
-              rel={s.href ? "noopener" : undefined}
-              className="block w-full"
-            >
-              {content}
-            </a>
+
+          return s.href ? (
+            <Link key={String(s.id)} href={s.href} className="block w-full">
+              {frame}
+            </Link>
+          ) : (
+            <div key={String(s.id)} className="w-full">
+              {frame}
+            </div>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
