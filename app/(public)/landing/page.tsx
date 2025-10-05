@@ -74,7 +74,7 @@ export default async function LandingPage() {
       <Hero slides={slides} aspect="banner" />
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Ofertas activas</h2>
+        <h2 className="text-lg font-semibold">Las mejores ofertas</h2>
         <ProductGrid />
       </section>
     </div>

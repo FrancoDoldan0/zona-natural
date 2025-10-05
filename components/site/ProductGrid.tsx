@@ -3,6 +3,7 @@ export const runtime = "edge";
 
 import ProductCard from "@/components/ui/ProductCard";
 import { headers } from "next/headers";
+import OffersCarousel from "@/components/site/OffersCarousel.client";
 
 /** Tipos lazos según tus APIs públicas */
 type OfferItem = {
@@ -121,13 +122,9 @@ function toCardProps(off: OfferItem, prod: CatalogProduct): CardProps {
   const title = prod.name || off.title || "Producto en oferta";
   const slug = prod.slug || off.product?.slug;
   const image = resolveProductImage(prod);
-
-  // Tomamos como base el priceOriginal (si existe); si no, priceFinal
   const baseOriginal =
     typeof prod.priceOriginal === "number" ? prod.priceOriginal : prod.priceFinal ?? undefined;
-
   const finalPrice = applyOfferPrice(baseOriginal, off);
-
   const outOfStock =
     typeof prod.status === "string" ? prod.status.toUpperCase() === "AGOTADO" : undefined;
 
@@ -160,7 +157,7 @@ export default async function ProductGrid() {
     let prod: CatalogProduct | undefined =
       (pid != null ? byId.get(pid) : undefined) || (pslug ? bySlug.get(pslug) : undefined);
 
-    if (!prod) continue; // si no encontramos el producto en catálogo, lo salteamos
+    if (!prod) continue;
 
     cards.push(toCardProps(off, prod));
   }
@@ -169,12 +166,20 @@ export default async function ProductGrid() {
     return <p className="text-sm text-ink-500">No hay ofertas activas.</p>;
   }
 
+  // Carrusel: cada slide ocupa ~1/4 en desktop, ~1/2 en tablet, ~80% en móvil
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-      {cards.slice(0, 8).map((props, idx) => {
-        const key = (props.slug ?? idx.toString());
-        return <ProductCard key={key} {...props} />;
+    <OffersCarousel autoPlayMs={4000} ariaLabel="Las mejores ofertas">
+      {cards.map((props, i) => {
+        const key = props.slug ?? String(i);
+        return (
+          <div
+            key={key}
+            className="min-w-[80%] sm:min-w-[50%] lg:min-w-[25%] pr-4"
+          >
+            <ProductCard {...props} />
+          </div>
+        );
       })}
-    </div>
+    </OffersCarousel>
   );
 }
