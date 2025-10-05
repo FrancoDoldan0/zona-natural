@@ -1,3 +1,4 @@
+// components/site/Hero.tsx
 export const runtime = "edge";
 
 import Image from "next/image";
@@ -29,15 +30,18 @@ export default function Hero({
 
   return (
     <div className={`relative rounded-2xl overflow-hidden shadow-soft w-full ${ratio}`}>
-      <div className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth">
-        {slides.map((s) => {
-          const slideInner = s.image ? (
+      {/* h-full asegura alto para que <Image fill /> tenga contenedor */}
+      <div className="flex h-full w-full snap-x snap-mandatory overflow-x-auto scroll-smooth">
+        {slides.map((s, i) => {
+          const inner = s.image ? (
             <Image
               src={s.image}
-              alt={s.title ?? ""}
+              alt={s.title ?? "Banner"}
               fill
               sizes="100vw"
               className="object-cover"
+              priority={i === 0} // mejora LCP del primer slide
+              draggable={false}
             />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-brand/10 to-brand/5 flex items-center justify-center">
@@ -45,18 +49,21 @@ export default function Hero({
             </div>
           );
 
+          // min-w-full + h-full: cada slide ocupa 100% del ancho y alto del carrusel
           const card = (
-            <div key={String(s.id)} className="relative w-full shrink-0 snap-center">
-              {slideInner}
+            <div className="relative min-w-full h-full shrink-0 snap-center">
+              {inner}
             </div>
           );
 
           return s.href ? (
-            <a key={String(s.id)} href={s.href} className="w-full">
+            <a key={String(s.id)} href={s.href} className="block w-full h-full">
               {card}
             </a>
           ) : (
-            card
+            <div key={String(s.id)} className="w-full h-full">
+              {card}
+            </div>
           );
         })}
       </div>
