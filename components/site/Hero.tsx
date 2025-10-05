@@ -1,9 +1,10 @@
+export const runtime = "edge";
+
 import Image from "next/image";
-import Link from "next/link";
 
 export type Slide = {
   id: string | number;
-  image?: string;
+  image: string;
   href?: string;
   title?: string;
 };
@@ -15,43 +16,50 @@ export default function Hero({
   slides: Slide[];
   aspect?: "banner" | "square";
 }) {
-  if (!slides?.length) return null;
+  if (!slides || slides.length === 0) {
+    // placeholder visual si no hay banners
+    return (
+      <div className="rounded-2xl overflow-hidden shadow-soft w-full aspect-[21/9] sm:aspect-[21/7] bg-gradient-to-br from-brand/10 to-brand/5 flex items-center justify-center">
+        <span className="text-xl font-semibold">Zona Natural</span>
+      </div>
+    );
+  }
 
-  const ratio = aspect === "banner" ? "aspect-[16/6]" : "aspect-[1/1]";
+  const ratio = aspect === "banner" ? "aspect-[21/9] sm:aspect-[21/7]" : "aspect-[1/1]";
 
   return (
-    <section className="relative">
-      <div className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth gap-3">
-        {slides.map((s, idx) => {
-          const inner = s.image ? (
+    <div className={`relative rounded-2xl overflow-hidden shadow-soft w-full ${ratio}`}>
+      <div className="flex snap-x snap-mandatory overflow-x-auto scroll-smooth">
+        {slides.map((s) => {
+          const slideInner = s.image ? (
             <Image
               src={s.image}
               alt={s.title ?? ""}
               fill
               sizes="100vw"
-              className="object-cover rounded-2xl"
+              className="object-cover"
             />
           ) : (
-            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-brand to-emerald-400/80" />
+            <div className="w-full h-full bg-gradient-to-br from-brand/10 to-brand/5 flex items-center justify-center">
+              <span className="text-xl font-semibold">{s.title ?? "Zona Natural"}</span>
+            </div>
           );
 
-          const frame = (
-            <div className={`relative w-full shrink-0 snap-center ${ratio}`}>
-              {inner}
+          const card = (
+            <div key={String(s.id)} className="relative w-full shrink-0 snap-center">
+              {slideInner}
             </div>
           );
 
           return s.href ? (
-            <Link key={String(s.id ?? idx)} href={s.href} className="block w-full">
-              {frame}
-            </Link>
+            <a key={String(s.id)} href={s.href} className="w-full">
+              {card}
+            </a>
           ) : (
-            <div key={String(s.id ?? idx)} className="w-full">
-              {frame}
-            </div>
+            card
           );
         })}
       </div>
-    </section>
+    </div>
   );
 }

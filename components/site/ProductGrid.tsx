@@ -1,11 +1,38 @@
-import ProductCard from "@/components/ui/ProductCard";
+export const runtime = "edge";
 
-async function fetchOffers(): Promise<any[]> {
+import ProductCard from "@/components/ui/ProductCard";
+import { headers } from "next/headers";
+
+function makeUrl(path: string) {
+  const base = process.env.NEXT_PUBLIC_BASE_URL;
+  if (base) return `${base}${path}`;
+  const h = headers();
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const host = h.get("host") ?? "";
+  return `${proto}://${host}${path}`;
+}
+
+type Product = Record<string, any>;
+
+async function fetchOffers(): Promise<Product[]> {
   try {
-    const base = process.env.NEXT_PUBLIC_BASE_URL ?? "";
-    const res = await fetch(`${base}/api/public/offers`, { cache: "no-store" });
-    const data: any = await res.json();
-    const list = Array.isArray(data) ? data : data?.data ?? data?.items ?? [];
+    const res = await fetch(makeUrl("/api/public/offers"), { cache: "no-store" });
+    const payload: any = await res.json();
+    let list: any =
+      Array.isArray(payload) ? payload :
+      payload?.products ?? payload?.items ?? payload?.data ?? [];
+
+    // Fallback: si vino vacío, probamos el catálogo filtrado (si tu API lo soporta)
+    if (!Array.isArray(list) || list.length === 0) {
+      try {
+        const res2 = await fetch(makeUrl("/api/public/catalogo?offers=active"), { cache: "no-store" });
+        if (res2.ok) {
+          const p2: any = await res2.json();
+          list = Array.isArray(p2) ? p2 : p2?.items ?? p2?.data ?? [];
+        }
+      } catch {}
+    }
+
     return Array.isArray(list) ? list : [];
   } catch {
     return [];
@@ -13,24 +40,17 @@ async function fetchOffers(): Promise<any[]> {
 }
 
 export default async function ProductGrid() {
-  const products = await fetchOffers();
-  if (!products.length) return null;
+  const items = await fetchOffers();
+
+  if (!items.length) {
+    return <p className="text-sm text-ink-500">No hay ofertas activas.</p>;
+  }
 
   return (
-    <section className="space-y-4">
-      <h2 className="text-xl font-semibold">Ofertas</h2>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {products.map((p: any, i: number) => (
-          <ProductCard
-            key={p.id ?? p.slug ?? i}
-            slug={p.slug ?? p.url ?? "#"}
-            title={p.name ?? p.title ?? "Producto"}
-            price={p.price ?? p.precio}
-            image={p.image ?? p.images?.[0]?.url ?? p.img ?? ""}
-            outOfStock={p.stock === 0 || p.outOfStock}
-          />
-        ))}
-      </div>
-    </section>
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+      {items.slice(0, 8).map((p, idx) => (
+        <ProductCard key={p.id ?? p.slug ?? idx} product={p} />
+      ))}
+    </div>
   );
 }
