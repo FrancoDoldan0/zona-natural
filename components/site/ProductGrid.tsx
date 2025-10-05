@@ -31,11 +31,12 @@ type CatalogProduct = {
   priceFinal?: number | null;
 };
 
-type ProductCardProps = {
+type CardProps = {
   title: string;
   slug?: string;
   image?: string;
-  price?: number;
+  price?: number;           // precio final (con descuento aplicado)
+  originalPrice?: number;   // precio original (para tachado)
   outOfStock?: boolean;
 };
 
@@ -116,18 +117,28 @@ function resolveProductImage(p: CatalogProduct): string | undefined {
 }
 
 /** Convierte oferta + producto a props de <ProductCard/> */
-function toCardProps(off: OfferItem, prod: CatalogProduct): ProductCardProps {
+function toCardProps(off: OfferItem, prod: CatalogProduct): CardProps {
   const title = prod.name || off.title || "Producto en oferta";
   const slug = prod.slug || off.product?.slug;
   const image = resolveProductImage(prod);
 
-  const basePrice = typeof prod.priceOriginal === "number" ? prod.priceOriginal : prod.priceFinal;
-  const price = applyOfferPrice(basePrice, off);
+  // Tomamos como base el priceOriginal (si existe); si no, priceFinal
+  const baseOriginal =
+    typeof prod.priceOriginal === "number" ? prod.priceOriginal : prod.priceFinal ?? undefined;
+
+  const finalPrice = applyOfferPrice(baseOriginal, off);
 
   const outOfStock =
     typeof prod.status === "string" ? prod.status.toUpperCase() === "AGOTADO" : undefined;
 
-  return { title, slug, image, price, outOfStock };
+  return {
+    title,
+    slug,
+    image,
+    price: finalPrice,
+    originalPrice: baseOriginal,
+    outOfStock,
+  };
 }
 
 export default async function ProductGrid() {
@@ -141,7 +152,7 @@ export default async function ProductGrid() {
   const { byId, bySlug } = await fetchCatalogMap();
 
   // 3) Combinar: tomamos solo ofertas con producto resoluble (por id o slug)
-  const cards: ProductCardProps[] = [];
+  const cards: CardProps[] = [];
   for (const off of offers) {
     const pid = off.productId ?? off.product?.id ?? null;
     const pslug = off.product?.slug ?? null;
