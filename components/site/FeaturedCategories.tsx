@@ -8,11 +8,12 @@ type Category = {
   id: number;
   name: string;
   slug?: string;
+  imageUrl?: string | null;
+  imageKey?: string | null;
+  // compatibilidad con otros campos
   image?: string;
   icon?: string;
   cover?: string;
-  imageUrl?: string;
-  imageKey?: string;
   key?: string;
   r2Key?: string;
 };
@@ -29,11 +30,12 @@ async function abs(path: string) {
 }
 
 /** Prefija keys/paths con PUBLIC_R2_BASE_URL si no es URL absoluta */
-function resolveImage(raw?: string): string {
+function resolveImage(raw?: string | null): string {
   const R2 = (process.env.PUBLIC_R2_BASE_URL || "").replace(/\/+$/, "");
-  const v = (raw || "").toString();
+  const v = (raw || "").toString().trim();
   if (!v) return "";
-  if (/^https?:\/\//i.test(v)) return v;
+  if (/^https?:\/\//i.test(v)) return v; // ya es absoluta
+  // si viene una key de R2 (p.ej. "categories/xxx.jpg")
   return R2 ? `${R2}/${v.replace(/^\/+/, "")}` : v;
 }
 
@@ -90,18 +92,18 @@ export default async function FeaturedCategories({
   const raw = await fetchCategories();
   if (!raw.length) return null;
 
-  // Normalizamos y resolvemos una imagen por categoría
-  const categories = raw.map((c, i) => {
-    const imgRaw =
-      c.image ??
-      c.imageUrl ??
-      c.cover ??
-      c.icon ??
+  // Preferimos imageKey (R2). Si no hay, usamos imageUrl o campos de compatibilidad.
+  const categories = raw.map((c) => {
+    const candidate =
       c.imageKey ??
       c.key ??
       c.r2Key ??
+      c.imageUrl ??
+      c.image ??
+      c.cover ??
+      c.icon ??
       "";
-    const image = resolveImage(imgRaw);
+    const image = resolveImage(candidate);
     return {
       id: c.id,
       name: c.name,
