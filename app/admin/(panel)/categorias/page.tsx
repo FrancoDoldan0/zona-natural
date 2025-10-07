@@ -97,11 +97,11 @@ export default function CategoriasPage() {
           method: 'POST',
           body: fd,
         });
-        const upData: any = await up.json().catch(() => ({} as any)); // 👈 tipado para TS
+        const upData: any = await up.json().catch(() => ({} as any)); // 👈 tolerante a no-JSON
         if (!up.ok || upData?.ok === false) {
           throw new Error(upData?.error || 'No se pudo subir la imagen');
         }
-        // Nota: el endpoint ya actualiza imageKey en la categoría; no hace falta PATCH extra.
+        // El endpoint ya actualiza imageKey en la categoría.
       }
 
       // limpiar form
@@ -160,15 +160,29 @@ export default function CategoriasPage() {
     }
   }
 
+  // 🔸 ALERT MEJORADO: muestra error + detail y tolera respuestas no-JSON
   async function onDelete(id: number) {
-    if (!confirm('¿Eliminar categoría (y sus subcategorías)?')) return;
+    if (!confirm('¿Eliminar la categoría y sus subcategorías asociadas?')) return;
     try {
       const res = await fetch(`/api/admin/categories/${id}`, { method: 'DELETE' });
-      const data: any = await res.json();
-      if (data.ok) setItems((prev) => prev.filter((x) => x.id !== id));
-      else alert(data.error || 'No se pudo borrar');
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // si el backend devolviese HTML o texto, seguimos sin romper
+        data = null;
+      }
+
+      if (res.ok && data?.ok !== false) {
+        setItems((prev) => prev.filter((x) => x.id !== id));
+      } else {
+        const base = data?.error || res.statusText || 'No se pudo borrar';
+        const detail = data?.detail ? ` — ${data.detail}` : '';
+        alert(base + detail);
+      }
     } catch (e: any) {
-      alert(e?.message || 'No se pudo borrar');
+      alert((e?.message || 'No se pudo borrar') as string);
     }
   }
 
