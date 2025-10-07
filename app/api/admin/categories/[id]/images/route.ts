@@ -67,7 +67,7 @@ export async function GET(_req: Request, ctx: any) {
         key: o.key,
         url: publicR2Url(o.key),
         alt: row?.alt ?? null,
-        isCover: row?.isCover ?? (i === 0),
+        isCover: row?.isCover ?? i === 0,
         sortOrder: Number.isFinite(row?.sortOrder) ? row!.sortOrder : i,
         size: o.size ?? row?.size ?? null,
         width: row?.width ?? null,
@@ -116,7 +116,7 @@ export async function GET(_req: Request, ctx: any) {
 }
 
 /* ============================================================
-   POST: subir a R2 y (best-effort) setear Category.imageKey
+   POST: subir a R2 + (best-effort) DB y ACTUALIZAR Category
    ============================================================ */
 export async function POST(req: Request, ctx: any) {
   const { categoryId } = await readParams(ctx);
@@ -138,19 +138,15 @@ export async function POST(req: Request, ctx: any) {
   const alt = (String(form.get('alt') ?? '').trim() || null) as string | null;
 
   if (!file || typeof (file as any).arrayBuffer !== 'function') {
-    return NextResponse.json(
-      { ok: false, error: 'bad_request: field "file" required' },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: 'bad_request: field "file" required' }, { status: 400 });
   }
 
   try {
-    // sortOrder sugerido (si existiera CategoryImage)
+    // sortOrder sugerido
     let sortOrder = Number(form.get('sortOrder'));
     if (!Number.isFinite(sortOrder)) {
       try {
-        sortOrder =
-          (await (prisma as any)?.categoryImage?.count({ where: { categoryId } })) ?? 0;
+        sortOrder = (await (prisma as any)?.categoryImage?.count({ where: { categoryId } })) ?? 0;
       } catch {
         sortOrder = 0;
       }
@@ -173,7 +169,7 @@ export async function POST(req: Request, ctx: any) {
       );
     }
 
-    // Best-effort: registrar fila en CategoryImage si existiera esa tabla
+    // Crear en DB (si existe CategoryImage; si no, seguimos R2-only)
     let created: any = {
       id: undefined,
       key,
@@ -195,19 +191,21 @@ export async function POST(req: Request, ctx: any) {
         select: { id: true, key: true, alt: true, sortOrder: true, isCover: true, createdAt: true },
       });
     } catch {
-      // si no hay tabla o falla Prisma en Edge, seguimos (R2-only)
+      // sin tabla, ok
     }
 
-    // **NUEVO**: setear la imagen principal de la categoría
-    let category: any = null;
+    // 👇 **Clave del fix**: actualizar la categoría con la URL pública y la key
     try {
-      category = await prisma.category.update({
+      await prisma.category.update({
         where: { id: categoryId },
-        data: { imageKey: key }, // la última subida queda como imagen
-        select: { id: true, name: true, slug: true, imageUrl: true, imageKey: true },
+        data: {
+          imageKey: key,
+          imageUrl: publicR2Url(key),
+        },
+        select: { id: true },
       });
     } catch {
-      // si falla, igual devolvemos ok (la imagen existe en R2)
+      // si falla, igual devolvemos ok (la imagen ya está en R2)
     }
 
     await audit(req, 'category_images.create', 'category', String(categoryId), {
@@ -216,7 +214,7 @@ export async function POST(req: Request, ctx: any) {
     }).catch(() => {});
 
     return NextResponse.json(
-      { ok: true, item: { ...created, url: publicR2Url(key) }, category },
+      { ok: true, item: { ...created, url: publicR2Url(key) } },
       { status: 201 },
     );
   } catch (e: any) {
@@ -252,6 +250,7 @@ export async function DELETE(req: Request, ctx: any) {
   try {
     let keyToDelete: string | null = null;
 
+    // Si llega imageId, buscamos key y borramos registro
     if (imageId) {
       try {
         const img = await (prisma as any)?.categoryImage?.findFirst({
@@ -264,6 +263,7 @@ export async function DELETE(req: Request, ctx: any) {
       } catch {}
     }
 
+    // Si vino key directo
     if (!keyToDelete && key) {
       const expectedPrefix = `categories/${categoryId}/`;
       if (!key.startsWith(expectedPrefix)) {
@@ -281,21 +281,6 @@ export async function DELETE(req: Request, ctx: any) {
         await r2Delete(keyToDelete);
       } catch {}
     }
-
-    // **NUEVO**: si la categoría estaba apuntando a esa imagen, limpiar imageKey
-    try {
-      const cat = await prisma.category.findUnique({
-        where: { id: categoryId },
-        select: { imageKey: true },
-      });
-      if (cat?.imageKey && keyToDelete && cat.imageKey === keyToDelete) {
-        await prisma.category.update({
-          where: { id: categoryId },
-          data: { imageKey: null },
-          select: { id: true },
-        });
-      }
-    } catch {}
 
     await audit(req, 'category_images.delete', 'category', String(categoryId), {
       imageId,
