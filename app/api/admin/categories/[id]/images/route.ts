@@ -34,7 +34,7 @@ export async function GET(_req: Request, ctx: any) {
 
     // 1) R2 es la fuente de verdad
     const r2Objs = await r2List(prefix); // [{ key, size, uploaded, etag }]
-    const r2Map = new Map(r2Objs.map(o => [o.key, o] as const));
+    const r2Map = new Map(r2Objs.map((o) => [o.key, o] as const));
 
     // 2) Metadata desde DB (si tuvieras CategoryImage)
     let rows: any[] = [];
@@ -61,7 +61,7 @@ export async function GET(_req: Request, ctx: any) {
 
     // 3) Fusionar por key
     const items = r2Objs.map((o, i) => {
-      const row = rows.find(r => r.key === o.key);
+      const row = rows.find((r) => r.key === o.key);
       return {
         id: row?.id,
         key: o.key,
@@ -116,7 +116,7 @@ export async function GET(_req: Request, ctx: any) {
 }
 
 /* ============================================================
-   POST: subir a R2 y (best-effort) crear registro en DB
+   POST: subir a R2 y (best-effort) setear Category.imageKey
    ============================================================ */
 export async function POST(req: Request, ctx: any) {
   const { categoryId } = await readParams(ctx);
@@ -138,15 +138,19 @@ export async function POST(req: Request, ctx: any) {
   const alt = (String(form.get('alt') ?? '').trim() || null) as string | null;
 
   if (!file || typeof (file as any).arrayBuffer !== 'function') {
-    return NextResponse.json({ ok: false, error: 'bad_request: field "file" required' }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: 'bad_request: field "file" required' },
+      { status: 400 },
+    );
   }
 
   try {
-    // sortOrder sugerido
+    // sortOrder sugerido (si existiera CategoryImage)
     let sortOrder = Number(form.get('sortOrder'));
     if (!Number.isFinite(sortOrder)) {
       try {
-        sortOrder = (await (prisma as any)?.categoryImage?.count({ where: { categoryId } })) ?? 0;
+        sortOrder =
+          (await (prisma as any)?.categoryImage?.count({ where: { categoryId } })) ?? 0;
       } catch {
         sortOrder = 0;
       }
@@ -155,7 +159,9 @@ export async function POST(req: Request, ctx: any) {
 
     // Subida a R2
     const safeName = sanitizeName((file as any).name || 'upload');
-    const key = `categories/${categoryId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+    const key = `categories/${categoryId}/${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}-${safeName}`;
     const contentType = (file as any).type || undefined;
 
     try {
@@ -167,7 +173,7 @@ export async function POST(req: Request, ctx: any) {
       );
     }
 
-    // Crear en DB (si existe CategoryImage; si no, continuamos con R2-only)
+    // Best-effort: registrar fila en CategoryImage si existiera esa tabla
     let created: any = {
       id: undefined,
       key,
@@ -192,12 +198,27 @@ export async function POST(req: Request, ctx: any) {
       // si no hay tabla o falla Prisma en Edge, seguimos (R2-only)
     }
 
+    // **NUEVO**: setear la imagen principal de la categoría
+    let category: any = null;
+    try {
+      category = await prisma.category.update({
+        where: { id: categoryId },
+        data: { imageKey: key }, // la última subida queda como imagen
+        select: { id: true, name: true, slug: true, imageUrl: true, imageKey: true },
+      });
+    } catch {
+      // si falla, igual devolvemos ok (la imagen existe en R2)
+    }
+
     await audit(req, 'category_images.create', 'category', String(categoryId), {
       imageId: created?.id,
       key,
     }).catch(() => {});
 
-    return NextResponse.json({ ok: true, item: { ...created, url: publicR2Url(key) } }, { status: 201 });
+    return NextResponse.json(
+      { ok: true, item: { ...created, url: publicR2Url(key) }, category },
+      { status: 201 },
+    );
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: 'internal_error', detail: e?.message ?? String(e) },
@@ -231,7 +252,6 @@ export async function DELETE(req: Request, ctx: any) {
   try {
     let keyToDelete: string | null = null;
 
-    // Si llega imageId, buscamos key y borramos registro
     if (imageId) {
       try {
         const img = await (prisma as any)?.categoryImage?.findFirst({
@@ -244,7 +264,6 @@ export async function DELETE(req: Request, ctx: any) {
       } catch {}
     }
 
-    // Si vino key directo
     if (!keyToDelete && key) {
       const expectedPrefix = `categories/${categoryId}/`;
       if (!key.startsWith(expectedPrefix)) {
@@ -262,6 +281,21 @@ export async function DELETE(req: Request, ctx: any) {
         await r2Delete(keyToDelete);
       } catch {}
     }
+
+    // **NUEVO**: si la categoría estaba apuntando a esa imagen, limpiar imageKey
+    try {
+      const cat = await prisma.category.findUnique({
+        where: { id: categoryId },
+        select: { imageKey: true },
+      });
+      if (cat?.imageKey && keyToDelete && cat.imageKey === keyToDelete) {
+        await prisma.category.update({
+          where: { id: categoryId },
+          data: { imageKey: null },
+          select: { id: true },
+        });
+      }
+    } catch {}
 
     await audit(req, 'category_images.delete', 'category', String(categoryId), {
       imageId,
