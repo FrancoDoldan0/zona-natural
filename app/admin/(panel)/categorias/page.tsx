@@ -1,7 +1,7 @@
 // app/admin/(panel)/categorias/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type Category = {
   id: number;
@@ -19,7 +19,6 @@ function resolveImage(imageUrl?: string | null, imageKey?: string | null) {
   if (url && /^https?:\/\//i.test(url)) return url;
   const key = (imageKey || '').trim().replace(/^\/+/, '');
   if (key && R2_BASE) return `${R2_BASE}/${key}`;
-  // como fallback, si imageUrl es relativo y existe base, no lo tocamos (puede fallar)
   return url || '';
 }
 
@@ -27,8 +26,15 @@ export default function CategoriasPage() {
   const [items, setItems] = useState<Category[]>([]);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
+
+  // imagen al crear (drag & drop / file input)
+  const [createFile, setCreateFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // soporta también los campos antiguos por si querés pegar una URL o key manual
   const [imageUrl, setImageUrl] = useState('');
   const [imageKey, setImageKey] = useState('');
+
   const [q, setQ] = useState('');
 
   // edición inline
@@ -37,8 +43,10 @@ export default function CategoriasPage() {
   const [eSlug, setESlug] = useState('');
   const [eImageUrl, setEImageUrl] = useState('');
   const [eImageKey, setEImageKey] = useState('');
+
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     try {
@@ -61,14 +69,47 @@ export default function CategoriasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // preview de la imagen a crear: si hay archivo, usar ObjectURL; si no, usar url/key
+  const createPreview = useMemo(() => {
+    if (createFile) return URL.createObjectURL(createFile);
+    return resolveImage(imageUrl, imageKey);
+  }, [createFile, imageUrl, imageKey]);
+
+  // liberar ObjectURL al cambiar/limpiar
+  useEffect(() => {
+    return () => {
+      if (createFile) URL.revokeObjectURL(createPreview);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createFile]);
+
+  function onChooseFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.currentTarget.files?.[0];
+    setCreateFile(f ?? null);
+  }
+  function onDropCreate(ev: React.DragEvent<HTMLDivElement>) {
+    ev.preventDefault();
+    const f = ev.dataTransfer.files?.[0];
+    if (f) setCreateFile(f);
+  }
+  function clearCreateFile() {
+    setCreateFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    setSaving(true);
     try {
+      // 1) Crear categoría
       const body: any = { name: name.trim() };
       if (slug.trim()) body.slug = slug.trim();
-      if (imageUrl.trim()) body.imageUrl = imageUrl.trim();
-      if (imageKey.trim()) body.imageKey = imageKey.trim();
+      if (!createFile) {
+        // si no hay archivo para subir, permitimos URL/key manuales
+        if (imageUrl.trim()) body.imageUrl = imageUrl.trim();
+        if (imageKey.trim()) body.imageKey = imageKey.trim();
+      }
 
       const res = await fetch('/api/admin/categories', {
         method: 'POST',
@@ -81,13 +122,49 @@ export default function CategoriasPage() {
       }
       if (!data.ok) throw new Error(data.error || 'Error al crear categoría');
 
+      const createdId: number | undefined = data?.item?.id;
+
+      // 2) Si hay archivo, subirlo a /api/admin/categories/{id}/images
+      if (createdId && createFile) {
+        const fd = new FormData();
+        fd.append('file', createFile);
+        const up = await fetch(`/api/admin/categories/${createdId}/images`, {
+          method: 'POST',
+          body: fd,
+          credentials: 'include',
+        });
+        const upData = await up.json().catch(() => ({}));
+        if (!up.ok || upData?.ok === false) {
+          throw new Error(upData?.error || 'No se pudo subir la imagen');
+        }
+
+        // 3) Asegurar que la categoría quede apuntando a esa imagen (por si el endpoint no la setea)
+        const newKey = upData?.item?.key as string | undefined;
+        const newUrl = upData?.item?.url as string | undefined;
+        if (newKey || newUrl) {
+          await fetch(`/api/admin/categories?id=${createdId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageKey: newKey ?? null,
+              imageUrl: newKey ? null : (newUrl ?? null),
+            }),
+          }).catch(() => {});
+        }
+      }
+
+      // reset
       setName('');
       setSlug('');
       setImageUrl('');
       setImageKey('');
+      clearCreateFile();
+
       await load();
     } catch (e: any) {
       setErr(e?.message || 'Error al crear');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -111,6 +188,7 @@ export default function CategoriasPage() {
   async function saveEdit(id: number) {
     try {
       setErr(null);
+      setSaving(true);
       const body: any = {};
       if (typeof eName === 'string') body.name = eName.trim();
       if (typeof eSlug === 'string') body.slug = eSlug; // "" -> recalculará en API
@@ -132,6 +210,8 @@ export default function CategoriasPage() {
       await load();
     } catch (e: any) {
       setErr(e?.message || 'No se pudo guardar');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -147,17 +227,55 @@ export default function CategoriasPage() {
     }
   }
 
-  const createPreview = useMemo(
-    () => resolveImage(imageUrl, imageKey),
-    [imageUrl, imageKey],
-  );
+  const manualPreview = useMemo(() => resolveImage(eImageUrl, eImageKey), [eImageUrl, eImageKey]);
 
   return (
     <main className="max-w-5xl mx-auto p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Categorías</h1>
 
-      {/* Crear */}
+      {/* Crear con drag&drop (como banners) */}
       <form onSubmit={onCreate} className="border rounded p-4 space-y-3">
+        {/* Dropzone */}
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDropCreate}
+          className="rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/40 hover:bg-emerald-50 transition p-6 sm:p-8 text-center"
+        >
+          <p className="mb-1 font-medium">Arrastrá y soltá la imagen aquí</p>
+          <p className="text-sm text-gray-500 mb-4">o seleccioná desde tu equipo</p>
+
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={onChooseFile}
+              className="text-sm file:mr-3 file:rounded-full file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-white hover:file:bg-emerald-700 file:cursor-pointer"
+            />
+            {createFile && (
+              <button
+                type="button"
+                className="text-sm rounded-full border px-3 py-1 hover:bg-white"
+                onClick={clearCreateFile}
+              >
+                Quitar imagen
+              </button>
+            )}
+          </div>
+
+          {/* Preview en grande */}
+          {createPreview && (
+            <div className="mt-4 flex justify-center">
+              <img
+                src={createPreview}
+                alt="preview"
+                className="h-24 w-24 rounded object-cover border"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Campos */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
           <input
             className="border rounded p-2 md:col-span-2"
@@ -172,38 +290,31 @@ export default function CategoriasPage() {
             value={slug}
             onChange={(e) => setSlug(e.target.value)}
           />
+          {/* Si no subís archivo, podés pegar manualmente una URL o key */}
           <input
             className="border rounded p-2"
             placeholder="Imagen (URL pública, opcional)"
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
+            disabled={!!createFile}
           />
           <input
             className="border rounded p-2"
             placeholder="Clave R2 (imageKey, opcional)"
             value={imageKey}
             onChange={(e) => setImageKey(e.target.value)}
+            disabled={!!createFile}
           />
         </div>
 
-        {/* Preview mini */}
-        {createPreview && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Preview:</span>
-            <img
-              src={createPreview}
-              alt="preview"
-              className="h-12 w-12 rounded object-cover border"
-            />
-          </div>
-        )}
-
-        <button className="border rounded px-4" type="submit">
-          Crear
-        </button>
-        <p className="text-xs text-gray-500">
-          Podés usar <b>Image URL</b> o bien una <b>Clave R2</b> (imageKey). Si ponés ambas, el front preferirá la clave.
-        </p>
+        <div className="flex items-center gap-3">
+          <button className="border rounded px-4 py-2" type="submit" disabled={saving}>
+            {saving ? 'Creando…' : 'Crear'}
+          </button>
+          <p className="text-xs text-gray-500">
+            Podés subir un archivo o, si preferís, pegar una <b>URL</b> o una <b>clave R2</b>.
+          </p>
+        </div>
       </form>
 
       {/* Filtros */}
@@ -231,7 +342,7 @@ export default function CategoriasPage() {
               <th className="p-2 border">Slug</th>
               <th className="p-2 border w-64">Imagen URL</th>
               <th className="p-2 border w-64">Clave R2</th>
-              <th className="p-2 border w-36">Acciones</th>
+              <th className="p-2 border w-40">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -247,7 +358,7 @@ export default function CategoriasPage() {
                       {isEditing ? (
                         <div className="flex items-center gap-2">
                           <img
-                            src={resolveImage(eImageUrl, eImageKey) || preview || '/favicon.ico'}
+                            src={manualPreview || preview || '/favicon.ico'}
                             alt=""
                             className="h-12 w-12 rounded object-cover border"
                           />
@@ -324,6 +435,7 @@ export default function CategoriasPage() {
                           <button
                             className="text-blue-600"
                             onClick={() => saveEdit(c.id)}
+                            disabled={saving}
                           >
                             Guardar
                           </button>
