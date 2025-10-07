@@ -73,24 +73,20 @@ export async function DELETE(req: Request, ctx: any) {
       });
     }
 
-    // 3) Desasociar ofertas de la categoría (si corresponde)
+    // 3) Desasociar ofertas de la categoría
     await prisma.offer.updateMany({
       where: { categoryId: id },
       data: { categoryId: null },
     });
 
-    // 4) (Best-effort) Desasociar banners si la columna existe.
-    //    En tu DB actual puede NO existir; si falla, ignoramos y seguimos.
+    // 4) (best-effort) Desasociar banners si la columna existe en la DB actual
     try {
-      // @ts-expect-error: puede no existir la columna en esta base
       await prisma.banner.updateMany({
-        // @ts-ignore
         where: { categoryId: id },
-        // @ts-ignore
         data: { categoryId: null },
       });
     } catch {
-      // columna inexistente: continuar sin bloquear el borrado
+      // Si la columna no existe en esta base, ignoramos y seguimos
     }
 
     // 5) Borrar subcategorías
@@ -102,7 +98,6 @@ export async function DELETE(req: Request, ctx: any) {
     await audit(req, 'category.delete', 'category', String(id)).catch(() => {});
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    // P2003 = constraint (FK) violation
     if (e?.code === 'P2003') {
       return NextResponse.json(
         { ok: false, error: 'delete_failed', detail: 'constraint_violation' },
