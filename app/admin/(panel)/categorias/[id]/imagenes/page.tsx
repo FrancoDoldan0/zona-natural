@@ -1,4 +1,4 @@
-// app/admin/(panel)/productos/[id]/imagenes/page.tsx
+// app/admin/(panel)/categorias/[id]/imagenes/page.tsx
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -15,16 +15,17 @@ type Img = {
   size?: number | null;
   createdAt?: string | null;
 };
-type Product = { id: number; name: string; slug: string };
+
+type Category = { id: number; name: string; slug?: string };
 
 const PLACEHOLDER = '/placeholder.jpg';
 
-/** Llama primero a /products y, si no existe, a /productos. Siempre con credenciales. */
-async function callApi(pathProducts: string, pathProductos: string, init?: RequestInit) {
+/** Llama primero a /categories y, si no existe, a /categorias. Siempre con credenciales. */
+async function callApi(pathEn: string, pathEs: string, init?: RequestInit) {
   const opts: RequestInit = { credentials: 'include', ...init };
-  const r = await fetch(pathProducts, opts);
+  const r = await fetch(pathEn, opts);
   if (r.ok || r.status !== 404) return r;
-  return fetch(pathProductos, opts);
+  return fetch(pathEs, opts);
 }
 
 /** Intenta una lista de URLs hasta que alguna de OK (status 2xx) */
@@ -35,20 +36,18 @@ async function fetchUntilOk(urls: string[], init?: RequestInit) {
       const r = await fetch(u, { credentials: 'include', ...init });
       if (r.ok) return r;
       last = r;
-    } catch {
-      // sigue probando
-    }
+    } catch {}
   }
   if (last) return last;
   throw new Error('No se pudo contactar al servidor.');
 }
 
-export default function AdminProductImagesPage() {
+export default function AdminCategoryImagesPage() {
   const { id } = useParams<{ id: string }>();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [product, setProduct] = useState<Product | null>(null);
+  const [category, setCategory] = useState<Category | null>(null);
   const [items, setItems] = useState<Img[]>([]);
   const [error, setError] = useState('');
 
@@ -59,29 +58,34 @@ export default function AdminProductImagesPage() {
   const uploadAltRef = useRef<HTMLInputElement>(null);
   const dragSrcIndex = useRef<number | null>(null);
 
-  const title = useMemo(() => (product ? `Imágenes — ${product.name}` : 'Imágenes'), [product]);
+  const title = useMemo(
+    () => (category ? `Imágenes — ${category.name}` : 'Imágenes'),
+    [category],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      // 1) Producto (para título y links)
-      {
-        const r = await callApi(`/api/admin/products/${id}`, `/api/admin/productos/${id}`, {
-          cache: 'no-store',
-        });
-        if (!r.ok) throw new Error(`GET product ${id}: ${r.status}`);
-        const data = await r.json<any>();
-        const p = (data.item ?? data?.data ?? data) as Product;
-        setProduct(p);
-      }
-
-      // 2) Imágenes (siempre desde el endpoint nuevo con fallback a R2)
+      // 1) Categoría (para título y links)
       {
         const r = await callApi(
-          `/api/admin/products/${id}/images`,
-          `/api/admin/productos/${id}/imagenes`,
-          { cache: 'no-store' }
+          `/api/admin/categories/${id}`,
+          `/api/admin/categorias/${id}`,
+          { cache: 'no-store' },
+        );
+        if (!r.ok) throw new Error(`GET category ${id}: ${r.status}`);
+        const data = await r.json<any>();
+        const c = (data.item ?? data?.data ?? data) as Category;
+        setCategory(c);
+      }
+
+      // 2) Imágenes (siempre desde el endpoint nuevo con fallback)
+      {
+        const r = await callApi(
+          `/api/admin/categories/${id}/images`,
+          `/api/admin/categorias/${id}/imagenes`,
+          { cache: 'no-store' },
         );
         if (!r.ok) throw new Error(`GET images ${id}: ${r.status}`);
         const data = await r.json<any>();
@@ -101,6 +105,7 @@ export default function AdminProductImagesPage() {
       }
     } catch (e: any) {
       setError(e?.message ?? String(e));
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -122,13 +127,12 @@ export default function AdminProductImagesPage() {
           const fd = new FormData();
           fd.append('file', files[i]); // backend espera "file"
           if (altCommon) fd.append('alt', altCommon);
-          // dejamos que el server calcule sortOrder al final; igualmente mandamos sugerencia
           fd.append('sortOrder', String((items?.length ?? 0) + i));
 
           const r = await callApi(
-            `/api/admin/products/${id}/images`,
-            `/api/admin/productos/${id}/imagenes`,
-            { method: 'POST', body: fd }
+            `/api/admin/categories/${id}/images`,
+            `/api/admin/categorias/${id}/imagenes`,
+            { method: 'POST', body: fd },
           );
           if (!r.ok) {
             const t = await r.text();
@@ -144,7 +148,7 @@ export default function AdminProductImagesPage() {
         setSaving(false);
       }
     },
-    [id, items, load]
+    [id, items, load],
   );
 
   const onDropFiles = useCallback(
@@ -153,7 +157,7 @@ export default function AdminProductImagesPage() {
       const files = ev.dataTransfer.files;
       if (files && files.length) doUpload(files);
     },
-    [doUpload]
+    [doUpload],
   );
 
   // ---------- Delete ----------
@@ -168,28 +172,24 @@ export default function AdminProductImagesPage() {
         // por id (DB)
         r = await fetchUntilOk(
           [
-            // EN/ES con id en path
-            `/api/admin/products/${id}/images/${img.id}`,
-            `/api/admin/productos/${id}/imagenes/${img.id}`,
-            // fallbacks legacy por query (?imageId= / ?productId=)
-            `/api/admin/products/images?productId=${id}&imageId=${img.id}`,
-            `/api/admin/productos/imagenes?productId=${id}&imageId=${img.id}`,
+            `/api/admin/categories/${id}/images/${img.id}`,
+            `/api/admin/categorias/${id}/imagenes/${img.id}`,
+            `/api/admin/categories/images?categoryId=${id}&imageId=${img.id}`,
+            `/api/admin/categorias/imagenes?categoryId=${id}&imageId=${img.id}`,
           ],
-          { method: 'DELETE' }
+          { method: 'DELETE' },
         );
       } else if (img.key) {
         const enc = encodeURIComponent(img.key);
         // por key (R2-only)
         r = await fetchUntilOk(
           [
-            // EN/ES con id en path + query key
-            `/api/admin/products/${id}/images?key=${enc}`,
-            `/api/admin/productos/${id}/imagenes?key=${enc}`,
-            // fallbacks legacy sin id en path
-            `/api/admin/products/imagenes?productId=${id}&key=${enc}`,
-            `/api/admin/productos/imagenes?productId=${id}&key=${enc}`,
+            `/api/admin/categories/${id}/images?key=${enc}`,
+            `/api/admin/categorias/${id}/imagenes?key=${enc}`,
+            `/api/admin/categories/imagenes?categoryId=${id}&key=${enc}`,
+            `/api/admin/categorias/imagenes?categoryId=${id}&key=${enc}`,
           ],
-          { method: 'DELETE' }
+          { method: 'DELETE' },
         );
       } else {
         throw new Error('No hay id ni key para borrar la imagen.');
@@ -198,7 +198,7 @@ export default function AdminProductImagesPage() {
       if (!r.ok) throw new Error(`DELETE: ${r.status}`);
       // Optimista
       setItems((prev) =>
-        prev.filter((x) => (img.id != null ? x.id !== img.id : x.key !== img.key))
+        prev.filter((x) => (img.id != null ? x.id !== img.id : x.key !== img.key)),
       );
     } catch (e: any) {
       setError(e?.message ?? String(e));
@@ -207,7 +207,7 @@ export default function AdminProductImagesPage() {
     }
   }
 
-  // ---------- Reordenar ----------
+  // ---------- Reordenar (sólo si hay IDs/DB) ----------
   async function persistOrder(newItems: Img[]) {
     if (!canEditOrderAlt) {
       setError('No se puede reordenar sin IDs de imágenes (modo sólo R2).');
@@ -218,29 +218,29 @@ export default function AdminProductImagesPage() {
     try {
       const ids = newItems.map((x) => x.id!).filter((x) => x != null);
 
-      // 1) Endpoint masivo (nuevo): POST { desiredIds }
+      // Intento masivo
       let r = await callApi(
-        `/api/admin/products/${id}/images/reorder`,
-        `/api/admin/productos/${id}/imagenes/reorder`,
+        `/api/admin/categories/${id}/images/reorder`,
+        `/api/admin/categorias/${id}/imagenes/reorder`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ desiredIds: ids }),
-        }
+        },
       );
 
-      // 2) Fallback: actualizar uno por uno si el masivo no existe
+      // Fallback: uno por uno si el masivo no existe
       if (r.status === 404) {
         for (let i = 0; i < newItems.length; i++) {
           const imgId = newItems[i].id!;
           r = await callApi(
-            `/api/admin/products/${id}/images/${imgId}`,
-            `/api/admin/productos/${id}/imagenes/${imgId}`,
+            `/api/admin/categories/${id}/images/${imgId}`,
+            `/api/admin/categorias/${id}/imagenes/${imgId}`,
             {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ sortOrder: i }),
-            }
+            },
           );
           if (!r.ok) throw new Error(`PATCH sortOrder(${imgId}): ${r.status}`);
         }
@@ -283,20 +283,20 @@ export default function AdminProductImagesPage() {
       return;
     }
     if (ix === 0) return;
+    const img = items[ix];
     setSaving(true);
     setError('');
     try {
-      const img = items[ix];
       let r = await callApi(
-        `/api/admin/products/${id}/images/${img.id}`,
-        `/api/admin/productos/${id}/imagenes/${img.id}`,
+        `/api/admin/categories/${id}/images/${img.id}`,
+        `/api/admin/categorias/${id}/imagenes/${img.id}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ isCover: true }),
-        }
+        },
       );
-      // Fallback: si no existe PATCH isCover, reordenamos local→persist
+      // Fallback: reordenar local si PATCH no existe
       if (r.status === 404) {
         const next = items.slice();
         const [m] = next.splice(ix, 1);
@@ -323,13 +323,13 @@ export default function AdminProductImagesPage() {
     setError('');
     try {
       const r = await callApi(
-        `/api/admin/products/${id}/images/${img.id}`,
-        `/api/admin/productos/${id}/imagenes/${img.id}`,
+        `/api/admin/categories/${id}/images/${img.id}`,
+        `/api/admin/categorias/${id}/imagenes/${img.id}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ alt }),
-        }
+        },
       );
       if (!r.ok) throw new Error(`PATCH alt: ${r.status}`);
       setItems((prev) => prev.map((x) => (x.id === img.id ? { ...x, alt } : x)));
@@ -341,6 +341,11 @@ export default function AdminProductImagesPage() {
   }
 
   // ---------- UI ----------
+  const tiendaHref =
+    category?.slug
+      ? `/catalogo?category=${encodeURIComponent(category.slug)}`
+      : `/catalogo?categoryId=${category?.id}`;
+
   return (
     <main className="max-w-7xl mx-auto p-6 md:p-8 space-y-6">
       {/* Header */}
@@ -350,7 +355,7 @@ export default function AdminProductImagesPage() {
           <p className="text-sm text-gray-500">
             {items.length
               ? `${items.length} imagen${items.length === 1 ? '' : 'es'} en total`
-              : 'Gestioná las imágenes del producto'}
+              : 'Gestioná las imágenes de la categoría'}
           </p>
           {!canEditOrderAlt && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 mt-2 inline-block">
@@ -360,23 +365,23 @@ export default function AdminProductImagesPage() {
           )}
         </div>
 
-        {product && (
-          <div className="flex items-center gap-2">
-            <Link
-              className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm hover:bg-gray-50 transition"
-              href={`/admin/productos/${product.id}`}
-            >
-              <span>←</span> Volver al editor
-            </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm hover:bg-gray-50 transition"
+            href={`/admin/categorias`}
+          >
+            <span>←</span> Volver a categorías
+          </Link>
+          {category && (
             <Link
               className="inline-flex items-center gap-2 rounded-full bg-emerald-600 text-white px-3 py-1.5 text-sm hover:bg-emerald-700 transition"
               target="_blank"
-              href={`/productos/${product.slug}`}
+              href={tiendaHref}
             >
               Ver en tienda ↗
             </Link>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Zona de drop / subida */}
@@ -422,8 +427,7 @@ export default function AdminProductImagesPage() {
         </div>
 
         <p className="text-xs mt-3 text-gray-500">
-          Tip: Podés editar el ALT de cada imagen, reordenar con drag &amp; drop y marcar portada (si hay
-          registros en DB).
+          Tip: Si más adelante habilitás metadata en DB, vas a poder reordenar, marcar portada y editar ALT.
         </p>
       </div>
 
@@ -436,22 +440,8 @@ export default function AdminProductImagesPage() {
       {loading ? (
         <div className="flex items-center gap-2 text-gray-600">
           <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="3"
-              fill="none"
-            />
-            <path
-              className="opacity-75"
-              d="M4 12a8 8 0 0 1 8-8"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-            />
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" />
+            <path className="opacity-75" d="M4 12a8 8 0 0 1 8-8" fill="none" stroke="currentColor" strokeWidth="3" />
           </svg>
           Cargando…
         </div>
@@ -460,10 +450,7 @@ export default function AdminProductImagesPage() {
           Aún no hay imágenes.
         </div>
       ) : (
-        <div
-          className="grid gap-5"
-          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
-        >
+        <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
           {items.map((im, i) => (
             <div
               key={im.id ?? im.key ?? `${im.url}-${i}`}
@@ -493,9 +480,7 @@ export default function AdminProductImagesPage() {
               {/* badge portada / acción hacer portada */}
               <div className="absolute top-2 left-2 text-xs">
                 {i === 0 ? (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow">
-                    Portada
-                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow">Portada</span>
                 ) : canEditOrderAlt ? (
                   <button
                     className="px-2 py-0.5 rounded-full bg-gray-900/80 text-white opacity-0 group-hover:opacity-100 transition shadow"
@@ -518,9 +503,7 @@ export default function AdminProductImagesPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] tracking-wide uppercase text-gray-500">
-                    Texto ALT
-                  </label>
+                  <label className="text-[11px] tracking-wide uppercase text-gray-500">Texto ALT</label>
                   <input
                     defaultValue={im.alt ?? ''}
                     placeholder={canEditOrderAlt ? 'Descripción accesible' : 'No disponible en modo R2'}
@@ -542,22 +525,8 @@ export default function AdminProductImagesPage() {
       {saving && (
         <div className="fixed bottom-4 right-4 rounded-xl bg-gray-900 text-white shadow-lg px-3 py-2 text-sm flex items-center gap-2">
           <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24">
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="3"
-              fill="none"
-            />
-            <path
-              className="opacity-75"
-              d="M4 12a8 8 0 0 1 8-8"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-            />
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" />
+            <path className="opacity-75" d="M4 12a8 8 0 0 1 8-8" fill="none" stroke="currentColor" strokeWidth="3" />
           </svg>
           Guardando cambios…
         </div>
