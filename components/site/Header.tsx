@@ -1,27 +1,31 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import CategoriesChips from "./CategoriesChips";
-import { usePathname } from "next/navigation";
-import clsx from "clsx";
+import Link from 'next/link';
+import CategoriesChips from './CategoriesChips';
+import { usePathname } from 'next/navigation';
 
 export default function Header() {
-  const pathname = usePathname() || "/";
+  const pathname = usePathname() || '/';
 
-  // Ocultar chips en la landing y en la home
-  const isLanding =
-    pathname === "/" ||
-    pathname === "/landing" ||
-    pathname.startsWith("/landing/");
+  const isActive = (href: string) =>
+    pathname === href || pathname.startsWith(href + '/');
 
-  const showChips = !isLanding;
+  const navLink = (href: string, label: string) =>
+    (
+      <Link
+        href={href}
+        className={`transition hover:text-brand ${
+          isActive(href) ? 'text-brand font-medium' : ''
+        }`}
+      >
+        {label}
+      </Link>
+    );
 
   return (
-    <header className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b">
+    <header className="sticky top-0 z-50 bg-white/80 backdrop-blur border-b will-change-transform">
       <div className="container h-16 flex items-center gap-4">
-        <Link href="/" className="font-semibold text-lg">
-          Zona Natural
-        </Link>
+        <Link href="/" className="font-semibold text-lg">Zona Natural</Link>
 
         <form action="/productos" className="flex-1 max-w-xl">
           <input
@@ -32,15 +36,15 @@ export default function Header() {
         </form>
 
         <nav className="hidden md:flex items-center gap-4">
-          <Link href="/productos">Productos</Link>
-          <Link href="/ofertas">Ofertas</Link>
-          <Link href="/catalogo">Catálogo</Link>
+          {navLink('/productos', 'Productos')}
+          {navLink('/ofertas', 'Ofertas')}
+          {navLink('/catalogo', 'Catálogo')}
         </nav>
       </div>
 
-      {/* Chips de categorías: solo en páginas que NO sean la landing/home */}
-      <div className={clsx(showChips ? "border-t" : "hidden")}>
-        {showChips && <CategoriesChips />}
+      <div className="border-t">
+        {/* Si la API devuelve vacío, el componente no renderiza nada */}
+        <CategoriesChips />
       </div>
     </header>
   );
