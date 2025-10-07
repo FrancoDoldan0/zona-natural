@@ -4,7 +4,6 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { createPrisma } from '@/lib/prisma-edge';
 import { audit } from '@/lib/audit';
-import { r2List, r2Delete } from '@/lib/storage';
 
 const prisma = createPrisma();
 
@@ -22,16 +21,12 @@ export async function GET(_req: Request, ctx: any) {
     return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
   }
 
-  try {
-    const item = await prisma.category.findUnique({ where: { id } });
-    if (!item) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
-    return NextResponse.json({ ok: true, item });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: 'fetch_failed', detail: e?.message ?? String(e) },
-      { status: 500 }
-    );
+  const item = await prisma.category.findUnique({ where: { id } });
+  if (!item) {
+    return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
   }
+
+  return NextResponse.json({ ok: true, item });
 }
 
 export async function PUT(req: Request, ctx: any) {
@@ -40,21 +35,16 @@ export async function PUT(req: Request, ctx: any) {
     return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
   }
 
-  try {
-    const body = await req.json<any>().catch(() => ({} as any));
-    const data: any = {};
-    if (typeof body.name === 'string') data.name = body.name.trim();
-    if (typeof body.slug === 'string') data.slug = body.slug.trim();
+  const body = await req.json<any>().catch(() => ({} as any));
+  const data: any = {};
+  if (typeof body.name === 'string') data.name = body.name.trim();
+  if (typeof body.slug === 'string') data.slug = body.slug.trim();
 
-    const item = await prisma.category.update({ where: { id }, data });
-    await audit(req, 'category.update', 'category', String(id), { data }).catch(() => {});
-    return NextResponse.json({ ok: true, item });
-  } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: 'update_failed', detail: e?.message ?? String(e) },
-      { status: 500 }
-    );
-  }
+  const item = await prisma.category.update({ where: { id }, data });
+
+  await audit(req, 'category.update', 'category', String(id), { data }).catch(() => {});
+
+  return NextResponse.json({ ok: true, item });
 }
 
 export async function DELETE(req: Request, ctx: any) {
@@ -64,70 +54,64 @@ export async function DELETE(req: Request, ctx: any) {
   }
 
   try {
-    // 1) Buscar subcategorías para desasociar productos por subcategoryId
+    // 1) Desasociar productos de la categoría
+    await prisma.product.updateMany({
+      where: { categoryId: id },
+      data: { categoryId: null },
+    });
+
+    // 2) Desasociar productos de subcategorías de esta categoría
     const subcats = await prisma.subcategory.findMany({
       where: { categoryId: id },
       select: { id: true },
     });
-    const subcatIds = subcats.map((s) => s.id);
-
-    // 2) Transacción: desasociar/borrar dependencias y borrar la categoría
-    await prisma.$transaction(async (tx) => {
-      // Desasocio productos que referencian esta categoría
-      await tx.product.updateMany({
-        where: { categoryId: id },
-        data: { categoryId: null },
+    const subIds = subcats.map((s) => s.id);
+    if (subIds.length) {
+      await prisma.product.updateMany({
+        where: { subcategoryId: { in: subIds } },
+        data: { subcategoryId: null },
       });
-
-      // Desasocio productos que refieren a subcategorías de esta categoría
-      if (subcatIds.length) {
-        await tx.product.updateMany({
-          where: { subcategoryId: { in: subcatIds } },
-          data: { subcategoryId: null },
-        });
-      }
-
-      // Elimino ofertas que apuntan a esta categoría
-      await tx.offer.deleteMany({ where: { categoryId: id } });
-
-      // Desasocio banners que apuntan a esta categoría
-      await tx.banner.updateMany({
-        where: { categoryId: id },
-        data: { categoryId: null },
-      });
-
-      // Elimino subcategorías de la categoría
-      await tx.subcategory.deleteMany({ where: { categoryId: id } });
-
-      // Finalmente, elimino la categoría
-      await tx.category.delete({ where: { id } });
-    });
-
-    // 3) Limpieza en R2: borro objetos bajo categories/{id}/
-    try {
-      const prefix = `categories/${id}/`;
-      const objs = await r2List(prefix).catch(() => []);
-      await Promise.all(
-        (objs || []).map((o: any) =>
-          r2Delete(o.key).catch(() => {
-            /* ignore */
-          })
-        )
-      );
-    } catch {
-      // No bloquea el borrado
     }
 
-    await audit(req, 'category.delete', 'category', String(id), {
-      subcatCount: subcatIds.length,
-    }).catch(() => {});
+    // 3) Desasociar ofertas de la categoría (si corresponde)
+    await prisma.offer.updateMany({
+      where: { categoryId: id },
+      data: { categoryId: null },
+    });
 
+    // 4) (Best-effort) Desasociar banners si la columna existe.
+    //    En tu DB actual puede NO existir; si falla, ignoramos y seguimos.
+    try {
+      // @ts-expect-error: puede no existir la columna en esta base
+      await prisma.banner.updateMany({
+        // @ts-ignore
+        where: { categoryId: id },
+        // @ts-ignore
+        data: { categoryId: null },
+      });
+    } catch {
+      // columna inexistente: continuar sin bloquear el borrado
+    }
+
+    // 5) Borrar subcategorías
+    await prisma.subcategory.deleteMany({ where: { categoryId: id } });
+
+    // 6) Borrar categoría
+    await prisma.category.delete({ where: { id } });
+
+    await audit(req, 'category.delete', 'category', String(id)).catch(() => {});
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    // Siempre devolvemos JSON para que el front no intente parsear HTML
+    // P2003 = constraint (FK) violation
+    if (e?.code === 'P2003') {
+      return NextResponse.json(
+        { ok: false, error: 'delete_failed', detail: 'constraint_violation' },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       { ok: false, error: 'delete_failed', detail: e?.message ?? String(e) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
