@@ -2,13 +2,18 @@
 export const runtime = 'edge';
 export const revalidate = 30;
 
-import { headers } from 'next/headers';
-
 type Cat = {
   id: number;
   name: string;
   slug: string;
   subcats?: { id: number; name: string; slug: string }[];
+};
+
+type ItemImage = {
+  url?: string | null;
+  key?: string | null;
+  r2Key?: string | null;
+  alt?: string | null;
 };
 
 type Item = {
@@ -24,7 +29,7 @@ type Item = {
     discountType: 'PERCENT' | 'AMOUNT';
     discountVal: number;
   } | null;
-  images?: { url: string; alt: string | null }[];
+  images?: ItemImage[];
 };
 
 function fmt(n: number | null) {
@@ -32,47 +37,55 @@ function fmt(n: number | null) {
   return '$ ' + n.toFixed(2).replace('.', ',');
 }
 
-/** URL absoluta segura en Edge */
-async function abs(path: string) {
-  if (path.startsWith('http')) return path;
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
-  if (base) return `${base}${path}`;
-  const h = await headers();
-  const proto = h.get('x-forwarded-proto') ?? 'https';
-  const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
-  return `${proto}://${host}${path}`;
+/** Usa absoluta si definiste NEXT_PUBLIC_BASE_URL; si no, deja relativa (ideal en Pages) */
+function api(path: string) {
+  const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
+  const base = raw ? raw.replace(/\/+$/, '') : '';
+  return base ? `${base}${path}` : path;
+}
+
+/** Prefija keys/paths con PUBLIC_R2_BASE_URL si no es URL absoluta */
+function resolveImage(raw?: string | null) {
+  const R2 = (process.env.PUBLIC_R2_BASE_URL ||
+    process.env.NEXT_PUBLIC_R2_BASE_URL ||
+    ''
+  ).replace(/\/+$/, '');
+  const v = (raw || '').toString();
+  if (!v) return '';
+  if (/^https?:\/\//i.test(v)) return v;
+  return R2 ? `${R2}/${v.replace(/^\/+/, '')}` : v;
 }
 
 async function getData(params: URLSearchParams) {
-  try {
-    const [catsRes, listRes] = await Promise.all([
-      fetch(await abs('/api/public/categories'), { next: { revalidate: 60 } }),
-      fetch(await abs(`/api/public/catalogo?${params.toString()}`), { next: { revalidate: 30 } }),
-    ]);
+  const [catsRes, listRes] = await Promise.all([
+    fetch(api('/api/public/categories'), { next: { revalidate: 60 } }).catch(() => undefined),
+    fetch(api(`/api/public/catalogo?${params.toString()}`), { next: { revalidate: 30 } }).catch(
+      () => undefined,
+    ),
+  ]);
 
-    const catsJson: any = catsRes.ok ? await catsRes.json().catch(() => ({})) : {};
-    const listJson: any = listRes.ok ? await listRes.json().catch(() => ({})) : {};
+  const catsJson = (await catsRes?.json().catch(() => ({}))) as { items?: Cat[] } | {};
+  const listJson = (await listRes?.json().catch(() => ({}))) as {
+    items?: Item[];
+    page?: number;
+    perPage?: number;
+    total?: number;
+  } | {};
 
-    const cats: Cat[] = Array.isArray(catsJson?.items)
-      ? catsJson.items
-      : Array.isArray(catsJson)
-      ? catsJson
-      : [];
-
-    return { cats, data: listJson || {} };
-  } catch {
-    return { cats: [] as Cat[], data: {} as any };
-  }
+  return { cats: (('items' in catsJson ? catsJson.items : []) || []) as Cat[], data: listJson };
 }
 
-function qp(sp: Record<string, string | string[] | undefined>) {
-  const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(sp)) {
-    if (v == null) continue;
-    if (Array.isArray(v)) v.forEach((one) => one != null && qs.append(k, one));
-    else qs.set(k, v);
+/** Quick helper para armar chips con params */
+function qp(sp: Record<string, string | string[] | undefined>, k: string, v?: string) {
+  const url = new URLSearchParams();
+  for (const [kk, vv] of Object.entries(sp)) {
+    if (vv == null) continue;
+    if (Array.isArray(vv)) vv.forEach((one) => url.append(kk, one));
+    else url.set(kk, vv);
   }
-  return qs;
+  if (v == null) url.delete(k);
+  else url.set(k, v);
+  return url.toString();
 }
 
 export default async function Page({
@@ -81,86 +94,107 @@ export default async function Page({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = (await searchParams) ?? {};
-  const qs = qp(sp);
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) v.forEach((one) => one != null && qs.append(k, one));
+    else qs.set(k, v);
+  }
+
   const { cats, data } = await getData(qs);
+  const items: Item[] = (data.items ?? []) as Item[];
+  const page = data.page ?? 1;
+  const perPage = data.perPage ?? 12;
+  const total = data.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / perPage));
 
-  const items: Item[] = Array.isArray(data?.items) ? data.items : [];
-  const page = Number(data?.page) || 1;
-  const perPage = Number(data?.perPage) || 12;
-  const total = Number(data?.total) || items.length;
-  const pages = Math.max(1, Math.ceil(total / Math.max(1, perPage)));
-
-  // Titulito dinámico
-  const catId = Number(qs.get('categoryId'));
-  const subId = Number(qs.get('subcategoryId'));
-  const cat = cats.find((c) => c.id === catId);
-  const sub = cat?.subcats?.find((s) => s.id === subId);
+  // Título/chips dinámicos
+  const currentCatId = (sp.categoryId as string | undefined) ?? '';
+  const currentSubId = (sp.subcategoryId as string | undefined) ?? '';
+  const activeCat = cats.find((c) => String(c.id) === currentCatId);
+  const activeSub = cats
+    .flatMap((c) => c.subcats || [])
+    .find((s) => String(s.id) === currentSubId);
   const title =
-    (sub ? `${sub.name} · ` : '') + (cat ? `${cat.name} — ` : '') + 'Catálogo';
+    activeCat && activeSub
+      ? `${activeCat.name} / ${activeSub.name} — Catálogo`
+      : activeCat
+      ? `${activeCat.name} — Catálogo`
+      : 'Catálogo';
+
+  // Chips (Todos + categorías + sub de la activa)
+  const subChips = activeCat?.subcats ?? [];
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
       <h1 className="text-2xl font-semibold">{title}</h1>
 
-      {/* Chips navegación */}
       <div className="flex flex-wrap gap-2">
-        <a href="/catalogo" className="px-3 py-1 rounded-full border">Todos</a>
+        <a
+          className={'px-3 py-1 rounded-full border ' + (!currentCatId ? 'bg-gray-200' : '')}
+          href={`/catalogo?${qp(sp, 'categoryId', undefined)}`}
+        >
+          Todos
+        </a>
         {cats.map((c) => (
           <a
             key={c.id}
-            href={`/catalogo?categoryId=${c.id}`}
             className={
-              'px-3 py-1 rounded-full border ' +
-              (c.id === catId ? 'bg-gray-200' : '')
+              'px-3 py-1 rounded-full border ' + (String(c.id) === currentCatId ? 'bg-gray-200' : '')
             }
+            href={`/catalogo?${qp(sp, 'categoryId', String(c.id))}`}
           >
             {c.name}
           </a>
         ))}
-        {!!cat && cat.subcats?.length ? (
-          <span className="inline-flex items-center gap-2 ml-2">
-            {cat.subcats.map((s) => (
+        {subChips.length > 0 && (
+          <>
+            <span className="opacity-60 px-2">/</span>
+            {subChips.map((s) => (
               <a
                 key={s.id}
-                href={`/catalogo?categoryId=${cat.id}&subcategoryId=${s.id}`}
                 className={
-                  'px-3 py-1 rounded-full border ' +
-                  (s.id === subId ? 'bg-gray-200' : '')
+                  'px-3 py-1 rounded-full border ' + (String(s.id) === currentSubId ? 'bg-gray-200' : '')
                 }
+                href={`/catalogo?${qp(sp, 'subcategoryId', String(s.id))}`}
               >
                 {s.name}
               </a>
             ))}
-          </span>
-        ) : null}
+          </>
+        )}
       </div>
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {items.map((p) => (
-          <a key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
-            <div className="aspect-[4/3] bg-black/5 mb-2 overflow-hidden">
-              <img
-                src={p.images?.[0]?.url || '/placeholder.png'}
-                alt={p.images?.[0]?.alt || p.name}
-                className="w-full h-full object-cover"
-                loading="lazy"
-                decoding="async"
-              />
-            </div>
-            <div className="font-medium">{p.name}</div>
-            {p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal ? (
-              <div className="text-sm">
-                <span className="text-green-600 font-semibold mr-2">{fmt(p.priceFinal)}</span>
-                <span className="line-through opacity-60">{fmt(p.priceOriginal)}</span>
-                {p.appliedOffer && (
-                  <div className="text-xs opacity-80">Oferta: {p.appliedOffer.title}</div>
-                )}
+        {items.map((p) => {
+          const firstImg = (p.images?.[0] ?? {}) as ItemImage;
+          const rawImg =
+            firstImg.url || firstImg.key || firstImg.r2Key || (p as any)?.coverKey || '';
+          const imgSrc = resolveImage(rawImg) || '/favicon.ico';
+          const imgAlt = firstImg.alt || p.name;
+
+          return (
+            <a key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
+              <div className="aspect-[4/3] bg-black/5 mb-2 overflow-hidden">
+                <img src={imgSrc} alt={imgAlt} className="w-full h-full object-cover" loading="lazy" />
               </div>
-            ) : (
-              <div className="text-sm">{fmt(p.price)}</div>
-            )}
-          </a>
-        ))}
+              <div className="font-medium">{p.name}</div>
+              {p.priceFinal != null &&
+              p.priceOriginal != null &&
+              p.priceFinal < p.priceOriginal ? (
+                <div className="text-sm">
+                  <span className="text-green-600 font-semibold mr-2">{fmt(p.priceFinal)}</span>
+                  <span className="line-through opacity-60">{fmt(p.priceOriginal)}</span>
+                  {p.appliedOffer && (
+                    <div className="text-xs opacity-80">Oferta: {p.appliedOffer.title}</div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm">{fmt(p.price)}</div>
+              )}
+            </a>
+          );
+        })}
         {!items.length && <p className="opacity-70 col-span-full">No hay resultados.</p>}
       </div>
 
