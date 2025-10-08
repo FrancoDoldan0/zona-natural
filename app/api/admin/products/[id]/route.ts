@@ -6,6 +6,7 @@ import { createPrisma } from '@/lib/prisma-edge';
 import { z } from 'zod';
 import { slugify } from '@/lib/slug';
 import { audit } from '@/lib/audit';
+import { r2List, r2Delete } from '@/lib/storage'; // 👈 limpiar objetos en R2
 
 const prisma = createPrisma();
 
@@ -113,7 +114,7 @@ export async function PUT(req: NextRequest) {
       },
     });
 
-    await audit(req, 'UPDATE', 'Product', id, data);
+    await audit(req, 'UPDATE', 'Product', id, data).catch(() => {});
     return NextResponse.json({ ok: true, item });
   } catch (e: any) {
     if (e?.code === 'P2002') {
@@ -124,6 +125,61 @@ export async function PUT(req: NextRequest) {
     }
     return NextResponse.json(
       { ok: false, error: 'update_failed', detail: e?.message ?? String(e) },
+      { status: 500 },
+    );
+  }
+}
+
+// DELETE /api/admin/products/:id -> { ok }
+export async function DELETE(req: NextRequest) {
+  const id = getIdFromUrl(req);
+  if (!id) return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
+
+  try {
+    // 1) (best-effort) Limpiar imágenes en R2 bajo products/{id}/
+    try {
+      const prefix = `products/${id}/`;
+      const objs = await r2List(prefix);
+      await Promise.allSettled(objs.map((o) => r2Delete(o.key)));
+    } catch {
+      // no bloqueamos el delete si falla R2
+    }
+
+    // 2) Desasociar ofertas del producto
+    await prisma.offer.updateMany({
+      where: { productId: id },
+      data: { productId: null },
+    });
+
+    // 3) Borrar tags del producto (tabla puente)
+    await prisma.productTag.deleteMany({
+      where: { productId: id },
+    });
+
+    // 4) (best-effort) Borrar filas de imágenes si tu DB no tiene cascade
+    try {
+      await prisma.productImage.deleteMany({
+        where: { productId: id },
+      });
+    } catch {
+      // si la relación ya está en cascade o el modelo difiere, ignoramos
+    }
+
+    // 5) Borrar el producto
+    await prisma.product.delete({ where: { id } });
+
+    await audit(req, 'DELETE', 'Product', id, null).catch(() => {});
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    if (e?.code === 'P2003') {
+      // violación de FK (por si quedó alguna relación)
+      return NextResponse.json(
+        { ok: false, error: 'delete_failed', detail: 'constraint_violation' },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json(
+      { ok: false, error: 'delete_failed', detail: e?.message ?? String(e) },
       { status: 500 },
     );
   }
