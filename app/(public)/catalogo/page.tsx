@@ -25,7 +25,6 @@ type Item = {
   images?: { url?: string | null; alt?: string | null; key?: string | null; r2Key?: string | null }[];
 };
 
-// No usamos base absoluta: en Pages el relativo funciona mejor en SSR/Edge
 const R2_BASE =
   (process.env.NEXT_PUBLIC_R2_BASE_URL || process.env.PUBLIC_R2_BASE_URL || '').replace(/\/+$/, '');
 
@@ -42,18 +41,18 @@ function resolveImg(src?: string | null) {
   return s;
 }
 
-function imgOf(p: Item): { url: string; alt: string } {
+function imgOf(p: Item) {
   const first = p.images?.[0] || {};
   const url =
-    resolveImg(first.url) ||
+    resolveImg((first as any).url) ||
     resolveImg((first as any).key) ||
     resolveImg((first as any).r2Key) ||
     '';
-  return { url: url || '/placeholder.png', alt: first.alt || p.name };
+  return { url: url || '/placeholder.png', alt: (first as any).alt || p.name };
 }
 
 async function getData(qs: URLSearchParams) {
-  // categories
+  // categorías
   let cats: Cat[] = [];
   try {
     const res = await fetch('/api/public/categories', { next: { revalidate: 60 } });
@@ -61,7 +60,7 @@ async function getData(qs: URLSearchParams) {
     cats = (j?.items ?? []) as Cat[];
   } catch {}
 
-  // list
+  // listado
   let raw: any = {};
   try {
     const res = await fetch(`/api/public/catalogo?${qs.toString()}`, { cache: 'no-store' });
@@ -77,25 +76,23 @@ async function getData(qs: URLSearchParams) {
 }
 
 export default async function Page({
+  // 👇 Tipado compatible con Next; si viene Promise lo resolvemos en runtime
   searchParams,
 }: {
-  // En Pages/Next puede venir como Promise o como objeto; soportamos ambas
-  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
+  searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const sp = (await (searchParams as any)) ?? {};
-  const qs = new URLSearchParams();
+  const spMaybe: any = searchParams as any;
+  const sp: Record<string, string | string[] | undefined> =
+    spMaybe && typeof spMaybe.then === 'function' ? await spMaybe : spMaybe ?? {};
 
-  // Copiamos todo lo que venga en la URL
+  const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(sp)) {
     if (v == null) continue;
-    if (Array.isArray(v)) {
-      for (const one of v) if (one != null) qs.append(k, one);
-    } else {
-      qs.set(k, v);
-    }
+    if (Array.isArray(v)) v.forEach((one) => one != null && qs.append(k, one));
+    else qs.set(k, v);
   }
 
-  // Normalizamos filtros (por si venís desde /categoria/[slug]?id=)
+  // normalizar alias
   const cat = (sp as any)?.categoryId ?? (sp as any)?.catId ?? (sp as any)?.category_id;
   if (cat && !qs.get('categoryId')) qs.set('categoryId', String(cat));
   const sub = (sp as any)?.subcategoryId ?? (sp as any)?.subId ?? (sp as any)?.subcategory_id;
@@ -108,22 +105,19 @@ export default async function Page({
   const total = data.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / perPage));
 
-  // chips de navegación: categorías principales
-  const chips = cats.map((c) => ({
-    id: c.id,
-    name: c.name,
-    href: `/catalogo?categoryId=${c.id}`,
-  }));
+  const chips = cats.map((c) => ({ id: c.id, name: c.name, href: `/catalogo?categoryId=${c.id}` }));
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Catálogo</h1>
 
-      {/* chips */}
       <div className="flex flex-wrap gap-2">
         <a
           href="/catalogo"
-          className={'border rounded-full px-3 py-1 text-sm ' + (!qs.get('categoryId') && !qs.get('subcategoryId') ? 'bg-gray-200' : '')}
+          className={
+            'border rounded-full px-3 py-1 text-sm ' +
+            (!qs.get('categoryId') && !qs.get('subcategoryId') ? 'bg-gray-200' : '')
+          }
         >
           Todos
         </a>
@@ -131,14 +125,16 @@ export default async function Page({
           <a
             key={c.id}
             href={c.href}
-            className={'border rounded-full px-3 py-1 text-sm ' + (String(qs.get('categoryId')) === String(c.id) ? 'bg-gray-200' : '')}
+            className={
+              'border rounded-full px-3 py-1 text-sm ' +
+              (String(qs.get('categoryId')) === String(c.id) ? 'bg-gray-200' : '')
+            }
           >
             {c.name}
           </a>
         ))}
       </div>
 
-      {/* grid */}
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {items.map((p) => {
           const img = imgOf(p);
