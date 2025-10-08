@@ -24,7 +24,8 @@ type Item = {
     discountType: 'PERCENT' | 'AMOUNT';
     discountVal: number;
   } | null;
-  images?: { url?: string; alt?: string | null; key?: string; r2Key?: string }[];
+  // imágenes del API pueden venir como { url } o { key } o { r2Key }
+  images?: Array<{ url?: string; key?: string; r2Key?: string; alt?: string | null }>;
 };
 
 function fmt(n: number | null) {
@@ -32,7 +33,7 @@ function fmt(n: number | null) {
   return '$ ' + n.toFixed(2).replace('.', ',');
 }
 
-/** URL absoluta segura en Edge para APIs internas */
+/** URL absoluta segura en Edge para APIs */
 async function abs(path: string) {
   if (path.startsWith('http')) return path;
   const base = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
@@ -43,22 +44,25 @@ async function abs(path: string) {
   return `${proto}://${host}${path}`;
 }
 
-/** Resuelve una URL de imagen viniendo de la API (acepta url/key/r2Key) */
-function imgUrl(img?: { url?: string | null; key?: string | null; r2Key?: string | null } | null) {
-  const base = (process.env.PUBLIC_R2_BASE_URL || '').replace(/\/+$/, '');
-  const raw =
-    (img?.url ?? undefined) ??
-    (img?.r2Key ?? undefined) ??
-    (img?.key ?? undefined) ??
-    '';
+/** Resolver imagen (acepta url completa o key/r2Key de R2) */
+const R2_BASE = (process.env.PUBLIC_R2_BASE_URL || '').replace(/\/+$/, '');
+function toR2Url(input: unknown): string {
+  // Puede venir como string o como objeto con {url | key | r2Key}
+  let raw = '';
+  if (typeof input === 'string') raw = input;
+  else if (input && typeof input === 'object') {
+    const o = input as any;
+    raw = (o.url ?? o.r2Key ?? o.key ?? '').toString();
+  }
 
+  raw = (raw || '').trim();
   if (!raw) return '/placeholder.png';
-  // Si ya es absoluta, data URL o ruta absoluta, usar tal cual
-  if (/^(https?:|data:|\/)/i.test(raw)) return raw;
-  // Caso key de R2
-  if (base) return `${base}/${raw.replace(/^\/+/, '')}`;
-  // Fallback: por si tenés reverse proxy que resuelva la key
-  return `/${raw.replace(/^\/+/, '')}`;
+  if (raw.startsWith('http')) return raw;
+
+  const key = raw.replace(/^\/+/, '');
+  if (R2_BASE) return `${R2_BASE}/${key}`;
+  // fallback relativo, por si servís assets estáticos con el mismo path
+  return key.startsWith('/') ? key : `/${key}`;
 }
 
 async function getData(params: URLSearchParams) {
@@ -108,7 +112,7 @@ export default async function Page({
   const total = Number(data?.total) || items.length;
   const pages = Math.max(1, Math.ceil(total / Math.max(1, perPage)));
 
-  // Titulito dinámico
+  // Título dinámico (cat/subcat si vienen en la URL)
   const catId = Number(qs.get('categoryId'));
   const subId = Number(qs.get('subcategoryId'));
   const cat = cats.find((c) => c.id === catId);
@@ -154,9 +158,13 @@ export default async function Page({
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {items.map((p) => {
-          const firstImg = p.images?.[0] ?? null;
-          const src = imgUrl(firstImg);
-          const alt = firstImg?.alt || p.name;
+          const firstImg = (p as any)?.images?.[0];
+          const src = toR2Url(firstImg);
+          const alt =
+            (firstImg?.alt as string | undefined) ||
+            (typeof firstImg === 'string' ? undefined : undefined) ||
+            p.name;
+
           return (
             <a key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
               <div className="aspect-[4/3] bg-black/5 mb-2 overflow-hidden">
@@ -173,9 +181,7 @@ export default async function Page({
               p.priceOriginal != null &&
               p.priceFinal < p.priceOriginal ? (
                 <div className="text-sm">
-                  <span className="text-green-600 font-semibold mr-2">
-                    {fmt(p.priceFinal)}
-                  </span>
+                  <span className="text-green-600 font-semibold mr-2">{fmt(p.priceFinal)}</span>
                   <span className="line-through opacity-60">{fmt(p.priceOriginal)}</span>
                   {p.appliedOffer && (
                     <div className="text-xs opacity-80">Oferta: {p.appliedOffer.title}</div>
