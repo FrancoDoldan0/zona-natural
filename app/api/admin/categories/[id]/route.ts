@@ -4,6 +4,7 @@ export const runtime = 'edge';
 import { NextResponse } from 'next/server';
 import { createPrisma } from '@/lib/prisma-edge';
 import { audit } from '@/lib/audit';
+import { r2List, r2Delete } from '@/lib/storage'; // 👈 limpiar objetos en R2
 
 const prisma = createPrisma();
 
@@ -81,18 +82,44 @@ export async function DELETE(req: Request, ctx: any) {
 
     // 4) (best-effort) Desasociar banners si la columna existe en la DB actual
     try {
+      // En algunas bases puede no existir `categoryId` en Banner
+      // @ts-ignore - tolerar cliente sin el campo
       await prisma.banner.updateMany({
+        // @ts-ignore
         where: { categoryId: id },
+        // @ts-ignore
         data: { categoryId: null },
       });
     } catch {
       // Si la columna no existe en esta base, ignoramos y seguimos
     }
 
-    // 5) Borrar subcategorías
+    // 5) (best-effort) Limpiar imágenes en R2 bajo categories/{id}/
+    try {
+      const prefix = `categories/${id}/`;
+      const objs = await r2List(prefix);
+      for (const o of objs) {
+        try {
+          await r2Delete(o.key);
+        } catch {
+          // seguimos si alguna falla
+        }
+      }
+    } catch {
+      // si falla listar/borrar en R2 no bloqueamos el borrado
+    }
+
+    // 6) (best-effort) Borrar filas de una posible tabla CategoryImage si existiera
+    try {
+      await (prisma as any)?.categoryImage?.deleteMany?.({ where: { categoryId: id } });
+    } catch {
+      // si el modelo no existe en esta base, ignoramos
+    }
+
+    // 7) Borrar subcategorías
     await prisma.subcategory.deleteMany({ where: { categoryId: id } });
 
-    // 6) Borrar categoría
+    // 8) Borrar categoría
     await prisma.category.delete({ where: { id } });
 
     await audit(req, 'category.delete', 'category', String(id)).catch(() => {});
