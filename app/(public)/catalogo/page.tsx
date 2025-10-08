@@ -24,7 +24,10 @@ type Item = {
     discountType: 'PERCENT' | 'AMOUNT';
     discountVal: number;
   } | null;
-  // imágenes del API pueden venir como { url } o { key } o { r2Key }
+  cover?: string | null;
+  coverUrl?: string | null;
+  image?: string | null;
+  imageUrl?: string | null;
   images?: Array<{ url?: string; key?: string; r2Key?: string; alt?: string | null }>;
 };
 
@@ -44,32 +47,58 @@ async function abs(path: string) {
   return `${proto}://${host}${path}`;
 }
 
-/** Resolver imagen (acepta url completa o key/r2Key de R2) */
+/** Resolver imagen (acepta url completa o key/r2Key) */
 const R2_BASE = (process.env.PUBLIC_R2_BASE_URL || '').replace(/\/+$/, '');
-function toR2Url(input: unknown): string {
-  // Puede venir como string o como objeto con {url | key | r2Key}
-  let raw = '';
-  if (typeof input === 'string') raw = input;
-  else if (input && typeof input === 'object') {
-    const o = input as any;
-    raw = (o.url ?? o.r2Key ?? o.key ?? '').toString();
+function toR2Url(input?: string | null) {
+  const raw = (input || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const key = raw.replace(/^\/+/, '');
+  return R2_BASE ? `${R2_BASE}/${key}` : `/${key}`;
+}
+
+function getProductImage(p: Partial<Item>): { src: string; alt: string } {
+  // 1) prefer cover/coverUrl/image/imageUrl (como en /productos)
+  const direct =
+    (p.cover ?? undefined) ||
+    (p.coverUrl ?? undefined) ||
+    (p.image ?? undefined) ||
+    (p.imageUrl ?? undefined);
+
+  if (typeof direct === 'string' && direct.trim()) {
+    const src = toR2Url(direct);
+    return { src: src || '/placeholder.png', alt: p.name || 'Imagen' };
   }
 
-  raw = (raw || '').trim();
-  if (!raw) return '/placeholder.png';
-  if (raw.startsWith('http')) return raw;
+  // 2) buscar en images[] compat múltiple
+  const first = (p.images ?? [])
+    .map((it) =>
+      typeof it === 'string'
+        ? { url: it, alt: p.name || 'Imagen' }
+        : {
+            url: it?.url || it?.r2Key || it?.key || '',
+            alt: it?.alt || p.name || 'Imagen',
+          },
+    )
+    .find((x) => x.url);
 
-  const key = raw.replace(/^\/+/, '');
-  if (R2_BASE) return `${R2_BASE}/${key}`;
-  // fallback relativo, por si servís assets estáticos con el mismo path
-  return key.startsWith('/') ? key : `/${key}`;
+  if (first?.url) {
+    const src = toR2Url(first.url);
+    return { src: src || '/placeholder.png', alt: first.alt || p.name || 'Imagen' };
+  }
+
+  // 3) fallback
+  return { src: '/placeholder.png', alt: p.name || 'Imagen' };
 }
 
 async function getData(params: URLSearchParams) {
   try {
     const [catsRes, listRes] = await Promise.all([
       fetch(await abs('/api/public/categories'), { next: { revalidate: 60 } }),
-      fetch(await abs(`/api/public/catalogo?${params.toString()}`), { next: { revalidate: 30 } }),
+      fetch(await abs(`/api/public/catalogo?${params.toString()}`), {
+        next: { revalidate: 30 },
+        headers: { Accept: 'application/json' },
+      }),
     ]);
 
     const catsJson: any = catsRes.ok ? await catsRes.json().catch(() => ({})) : {};
@@ -112,7 +141,7 @@ export default async function Page({
   const total = Number(data?.total) || items.length;
   const pages = Math.max(1, Math.ceil(total / Math.max(1, perPage)));
 
-  // Título dinámico (cat/subcat si vienen en la URL)
+  // Título dinámico
   const catId = Number(qs.get('categoryId'));
   const subId = Number(qs.get('subcategoryId'));
   const cat = cats.find((c) => c.id === catId);
@@ -132,9 +161,7 @@ export default async function Page({
           <a
             key={c.id}
             href={`/catalogo?categoryId=${c.id}`}
-            className={
-              'px-3 py-1 rounded-full border ' + (c.id === catId ? 'bg-gray-200' : '')
-            }
+            className={'px-3 py-1 rounded-full border ' + (c.id === catId ? 'bg-gray-200' : '')}
           >
             {c.name}
           </a>
@@ -145,9 +172,7 @@ export default async function Page({
               <a
                 key={s.id}
                 href={`/catalogo?categoryId=${cat.id}&subcategoryId=${s.id}`}
-                className={
-                  'px-3 py-1 rounded-full border ' + (s.id === subId ? 'bg-gray-200' : '')
-                }
+                className={'px-3 py-1 rounded-full border ' + (s.id === subId ? 'bg-gray-200' : '')}
               >
                 {s.name}
               </a>
@@ -158,28 +183,21 @@ export default async function Page({
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {items.map((p) => {
-          const firstImg = (p as any)?.images?.[0];
-          const src = toR2Url(firstImg);
-          const alt =
-            (firstImg?.alt as string | undefined) ||
-            (typeof firstImg === 'string' ? undefined : undefined) ||
-            p.name;
-
+          const { src, alt } = getProductImage(p);
           return (
             <a key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
               <div className="aspect-[4/3] bg-black/5 mb-2 overflow-hidden">
                 <img
-                  src={src}
+                  src={src || '/placeholder.png'}
                   alt={alt}
                   className="w-full h-full object-cover"
                   loading="lazy"
                   decoding="async"
+                  draggable={false}
                 />
               </div>
               <div className="font-medium">{p.name}</div>
-              {p.priceFinal != null &&
-              p.priceOriginal != null &&
-              p.priceFinal < p.priceOriginal ? (
+              {p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal ? (
                 <div className="text-sm">
                   <span className="text-green-600 font-semibold mr-2">{fmt(p.priceFinal)}</span>
                   <span className="line-through opacity-60">{fmt(p.priceOriginal)}</span>
