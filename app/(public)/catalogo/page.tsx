@@ -18,23 +18,25 @@ type Item = {
   price: number | null;
   priceOriginal: number | null;
   priceFinal: number | null;
+  status?: 'ACTIVE' | 'AGOTADO' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' | string;
   appliedOffer?: {
     id: number;
     title: string;
     discountType: 'PERCENT' | 'AMOUNT';
     discountVal: number;
   } | null;
+  // imágenes del API pueden venir como { url } o { key } o { r2Key }
+  images?: Array<{ url?: string; key?: string; r2Key?: string; alt?: string | null }>;
+  // algunos backends incluyen estas props
   cover?: string | null;
   coverUrl?: string | null;
   image?: string | null;
-  imageUrl?: string | null;
-  images?: Array<{ url?: string; key?: string; r2Key?: string; alt?: string | null }>;
 };
 
-function fmt(n: number | null) {
-  if (n == null) return '-';
-  return '$ ' + n.toFixed(2).replace('.', ',');
-}
+const fmt = (n: number | null) =>
+  n == null
+    ? '-'
+    : new Intl.NumberFormat('es-UY', { style: 'currency', currency: 'UYU' }).format(n);
 
 /** URL absoluta segura en Edge para APIs */
 async function abs(path: string) {
@@ -47,58 +49,29 @@ async function abs(path: string) {
   return `${proto}://${host}${path}`;
 }
 
-/** Resolver imagen (acepta url completa o key/r2Key) */
+/** Resolver imagen (acepta url completa o key/r2Key de R2) */
 const R2_BASE = (process.env.PUBLIC_R2_BASE_URL || '').replace(/\/+$/, '');
-function toR2Url(input?: string | null) {
-  const raw = (input || '').trim();
-  if (!raw) return '';
-  if (/^https?:\/\//i.test(raw)) return raw;
+function toR2Url(input: unknown): string {
+  let raw = '';
+  if (typeof input === 'string') raw = input;
+  else if (input && typeof input === 'object') {
+    const o = input as any;
+    raw = (o.url ?? o.r2Key ?? o.key ?? '').toString();
+  }
+  raw = (raw || '').trim();
+  if (!raw) return '/placeholder.png';
+  if (raw.startsWith('http')) return raw;
+
   const key = raw.replace(/^\/+/, '');
-  return R2_BASE ? `${R2_BASE}/${key}` : `/${key}`;
-}
-
-function getProductImage(p: Partial<Item>): { src: string; alt: string } {
-  // 1) prefer cover/coverUrl/image/imageUrl (como en /productos)
-  const direct =
-    (p.cover ?? undefined) ||
-    (p.coverUrl ?? undefined) ||
-    (p.image ?? undefined) ||
-    (p.imageUrl ?? undefined);
-
-  if (typeof direct === 'string' && direct.trim()) {
-    const src = toR2Url(direct);
-    return { src: src || '/placeholder.png', alt: p.name || 'Imagen' };
-  }
-
-  // 2) buscar en images[] compat múltiple
-  const first = (p.images ?? [])
-    .map((it) =>
-      typeof it === 'string'
-        ? { url: it, alt: p.name || 'Imagen' }
-        : {
-            url: it?.url || it?.r2Key || it?.key || '',
-            alt: it?.alt || p.name || 'Imagen',
-          },
-    )
-    .find((x) => x.url);
-
-  if (first?.url) {
-    const src = toR2Url(first.url);
-    return { src: src || '/placeholder.png', alt: first.alt || p.name || 'Imagen' };
-  }
-
-  // 3) fallback
-  return { src: '/placeholder.png', alt: p.name || 'Imagen' };
+  if (R2_BASE) return `${R2_BASE}/${key}`;
+  return key.startsWith('/') ? key : `/${key}`;
 }
 
 async function getData(params: URLSearchParams) {
   try {
     const [catsRes, listRes] = await Promise.all([
       fetch(await abs('/api/public/categories'), { next: { revalidate: 60 } }),
-      fetch(await abs(`/api/public/catalogo?${params.toString()}`), {
-        next: { revalidate: 30 },
-        headers: { Accept: 'application/json' },
-      }),
+      fetch(await abs(`/api/public/catalogo?${params.toString()}`), { next: { revalidate: 30 } }),
     ]);
 
     const catsJson: any = catsRes.ok ? await catsRes.json().catch(() => ({})) : {};
@@ -141,7 +114,7 @@ export default async function Page({
   const total = Number(data?.total) || items.length;
   const pages = Math.max(1, Math.ceil(total / Math.max(1, perPage)));
 
-  // Título dinámico
+  // Título dinámico (cat/subcat si vienen en la URL)
   const catId = Number(qs.get('categoryId'));
   const subId = Number(qs.get('subcategoryId'));
   const cat = cats.find((c) => c.id === catId);
@@ -183,23 +156,41 @@ export default async function Page({
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {items.map((p) => {
-          const { src, alt } = getProductImage(p);
+          const raw: any = p;
+          const firstImg = raw.cover ?? raw.coverUrl ?? raw.image ?? raw.images?.[0];
+          const src = toR2Url(firstImg);
+          const alt =
+            (typeof firstImg === 'object' && firstImg?.alt) || (typeof firstImg === 'string' ? '' : '') || p.name;
+
+          const isOOS =
+            typeof raw.status === 'string' && raw.status.toUpperCase() === 'AGOTADO';
+
           return (
             <a key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
-              <div className="aspect-[4/3] bg-black/5 mb-2 overflow-hidden">
+              <div className="relative aspect-[4/3] bg-black/5 mb-2 overflow-hidden rounded">
                 <img
-                  src={src || '/placeholder.png'}
-                  alt={alt}
+                  src={src}
+                  alt={alt || p.name}
                   className="w-full h-full object-cover"
                   loading="lazy"
                   decoding="async"
-                  draggable={false}
+                  sizes="(min-width:1024px) 22vw, (min-width:640px) 33vw, 50vw"
                 />
+                {isOOS && (
+                  <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-xs text-white">
+                    Agotado
+                  </span>
+                )}
               </div>
+
               <div className="font-medium">{p.name}</div>
-              {p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal ? (
+              {p.priceFinal != null &&
+              p.priceOriginal != null &&
+              p.priceFinal < p.priceOriginal ? (
                 <div className="text-sm">
-                  <span className="text-green-600 font-semibold mr-2">{fmt(p.priceFinal)}</span>
+                  <span className="text-green-600 font-semibold mr-2">
+                    {fmt(p.priceFinal)}
+                  </span>
                   <span className="line-through opacity-60">{fmt(p.priceOriginal)}</span>
                   {p.appliedOffer && (
                     <div className="text-xs opacity-80">Oferta: {p.appliedOffer.title}</div>
