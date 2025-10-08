@@ -24,7 +24,7 @@ type Item = {
     discountType: 'PERCENT' | 'AMOUNT';
     discountVal: number;
   } | null;
-  images?: { url: string; alt: string | null }[];
+  images?: { url?: string; alt?: string | null; key?: string; r2Key?: string }[];
 };
 
 function fmt(n: number | null) {
@@ -32,7 +32,7 @@ function fmt(n: number | null) {
   return '$ ' + n.toFixed(2).replace('.', ',');
 }
 
-/** URL absoluta segura en Edge */
+/** URL absoluta segura en Edge para APIs internas */
 async function abs(path: string) {
   if (path.startsWith('http')) return path;
   const base = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
@@ -41,6 +41,24 @@ async function abs(path: string) {
   const proto = h.get('x-forwarded-proto') ?? 'https';
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? '';
   return `${proto}://${host}${path}`;
+}
+
+/** Resuelve una URL de imagen viniendo de la API (acepta url/key/r2Key) */
+function imgUrl(img?: { url?: string | null; key?: string | null; r2Key?: string | null } | null) {
+  const base = (process.env.PUBLIC_R2_BASE_URL || '').replace(/\/+$/, '');
+  const raw =
+    (img?.url ?? undefined) ??
+    (img?.r2Key ?? undefined) ??
+    (img?.key ?? undefined) ??
+    '';
+
+  if (!raw) return '/placeholder.png';
+  // Si ya es absoluta, data URL o ruta absoluta, usar tal cual
+  if (/^(https?:|data:|\/)/i.test(raw)) return raw;
+  // Caso key de R2
+  if (base) return `${base}/${raw.replace(/^\/+/, '')}`;
+  // Fallback: por si tenés reverse proxy que resuelva la key
+  return `/${raw.replace(/^\/+/, '')}`;
 }
 
 async function getData(params: URLSearchParams) {
@@ -84,7 +102,7 @@ export default async function Page({
   const qs = qp(sp);
   const { cats, data } = await getData(qs);
 
-  const items: Item[] = Array.isArray(data?.items) ? data.items : [];
+  const items: Item[] = Array.isArray(data?.items) ? (data.items as Item[]) : [];
   const page = Number(data?.page) || 1;
   const perPage = Number(data?.perPage) || 12;
   const total = Number(data?.total) || items.length;
@@ -95,8 +113,7 @@ export default async function Page({
   const subId = Number(qs.get('subcategoryId'));
   const cat = cats.find((c) => c.id === catId);
   const sub = cat?.subcats?.find((s) => s.id === subId);
-  const title =
-    (sub ? `${sub.name} · ` : '') + (cat ? `${cat.name} — ` : '') + 'Catálogo';
+  const title = (sub ? `${sub.name} · ` : '') + (cat ? `${cat.name} — ` : '') + 'Catálogo';
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
@@ -104,14 +121,15 @@ export default async function Page({
 
       {/* Chips navegación */}
       <div className="flex flex-wrap gap-2">
-        <a href="/catalogo" className="px-3 py-1 rounded-full border">Todos</a>
+        <a href="/catalogo" className="px-3 py-1 rounded-full border">
+          Todos
+        </a>
         {cats.map((c) => (
           <a
             key={c.id}
             href={`/catalogo?categoryId=${c.id}`}
             className={
-              'px-3 py-1 rounded-full border ' +
-              (c.id === catId ? 'bg-gray-200' : '')
+              'px-3 py-1 rounded-full border ' + (c.id === catId ? 'bg-gray-200' : '')
             }
           >
             {c.name}
@@ -124,8 +142,7 @@ export default async function Page({
                 key={s.id}
                 href={`/catalogo?categoryId=${cat.id}&subcategoryId=${s.id}`}
                 className={
-                  'px-3 py-1 rounded-full border ' +
-                  (s.id === subId ? 'bg-gray-200' : '')
+                  'px-3 py-1 rounded-full border ' + (s.id === subId ? 'bg-gray-200' : '')
                 }
               >
                 {s.name}
@@ -136,31 +153,40 @@ export default async function Page({
       </div>
 
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {items.map((p) => (
-          <a key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
-            <div className="aspect-[4/3] bg-black/5 mb-2 overflow-hidden">
-              <img
-                src={p.images?.[0]?.url || '/placeholder.png'}
-                alt={p.images?.[0]?.alt || p.name}
-                className="w-full h-full object-cover"
-                loading="lazy"
-                decoding="async"
-              />
-            </div>
-            <div className="font-medium">{p.name}</div>
-            {p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal ? (
-              <div className="text-sm">
-                <span className="text-green-600 font-semibold mr-2">{fmt(p.priceFinal)}</span>
-                <span className="line-through opacity-60">{fmt(p.priceOriginal)}</span>
-                {p.appliedOffer && (
-                  <div className="text-xs opacity-80">Oferta: {p.appliedOffer.title}</div>
-                )}
+        {items.map((p) => {
+          const firstImg = p.images?.[0] ?? null;
+          const src = imgUrl(firstImg);
+          const alt = firstImg?.alt || p.name;
+          return (
+            <a key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
+              <div className="aspect-[4/3] bg-black/5 mb-2 overflow-hidden">
+                <img
+                  src={src}
+                  alt={alt}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
               </div>
-            ) : (
-              <div className="text-sm">{fmt(p.price)}</div>
-            )}
-          </a>
-        ))}
+              <div className="font-medium">{p.name}</div>
+              {p.priceFinal != null &&
+              p.priceOriginal != null &&
+              p.priceFinal < p.priceOriginal ? (
+                <div className="text-sm">
+                  <span className="text-green-600 font-semibold mr-2">
+                    {fmt(p.priceFinal)}
+                  </span>
+                  <span className="line-through opacity-60">{fmt(p.priceOriginal)}</span>
+                  {p.appliedOffer && (
+                    <div className="text-xs opacity-80">Oferta: {p.appliedOffer.title}</div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm">{fmt(p.price)}</div>
+              )}
+            </a>
+          );
+        })}
         {!items.length && <p className="opacity-70 col-span-full">No hay resultados.</p>}
       </div>
 
