@@ -57,17 +57,19 @@ async function getData(params: URLSearchParams) {
   let cats: Cat[] = [];
   try {
     const ok = catsRes.status === 'fulfilled' && catsRes.value.ok;
-    const j = ok ? await catsRes.value.json() : {};
+    const j: any = ok ? await catsRes.value.json() : ({} as any);
     cats = (j?.items ?? []) as Cat[];
-  } catch {}
+  } catch {
+    // ignore
+  }
 
-  let data:
-    | { items?: Item[]; page?: number; perPage?: number; total?: number }
-    | Record<string, never> = {};
+  let data: any = {};
   try {
     const ok = listRes.status === 'fulfilled' && listRes.value.ok;
-    data = ok ? (await listRes.value.json()) : {};
-  } catch {}
+    data = ok ? ((await listRes.value.json()) as any) : ({} as any);
+  } catch {
+    // ignore
+  }
 
   return { cats, data };
 }
@@ -83,10 +85,10 @@ function qp(src: URLSearchParams, kv: Record<string, string | null | undefined>)
 }
 
 export default async function Page(props: {
-  // 👇 Firma que tu build espera (Promise) para que compile en Cloudflare
+  // Firma que el build espera (Promise) para Cloudflare Pages
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  // Tolerante: si llega un objeto normal, await lo retorna igual; si falla JSON/lo que sea, caemos a {}
+  // Tolerante: si llega un objeto normal, await devuelve el mismo objeto
   let sp: Record<string, string | string[] | undefined> = {};
   try {
     sp = ((await props.searchParams) ?? {}) as any;
@@ -106,10 +108,10 @@ export default async function Page(props: {
 
   const { cats, data } = await getData(qs);
 
-  const items: Item[] = (data as any)?.items ?? [];
-  const page = (data as any)?.page ?? 1;
-  const perPage = (data as any)?.perPage ?? 12;
-  const total = (data as any)?.total ?? 0;
+  const items: Item[] = (data?.items ?? []) as Item[];
+  const page = data?.page ?? 1;
+  const perPage = data?.perPage ?? 12;
+  const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / perPage));
 
   // Título según categoryId/subcategoryId
@@ -122,7 +124,7 @@ export default async function Page(props: {
   const title =
     subName ? `${subName} — Catálogo` : catName ? `${catName} — Catálogo` : 'Catálogo';
 
-  // Normalizamos imagen principal de cada item
+  // Normalizar imagen principal de cada item
   const normalized = items.map((p) => {
     const first = p.images?.[0] ?? undefined;
     const imgUrl = resolveImageUrl(first);
@@ -133,7 +135,7 @@ export default async function Page(props: {
     } as any;
   });
 
-  // Chips de navegación (categorías + subcategorías si corresponde)
+  // Chips de navegación
   const chips = [
     { label: 'Todos', href: '/catalogo', active: !catId && !subId },
     ...cats.map((c) => ({
@@ -196,9 +198,7 @@ export default async function Page(props: {
             )}
           </a>
         ))}
-        {!normalized.length && (
-          <p className="opacity-70 col-span-full">No hay resultados.</p>
-        )}
+        {!normalized.length && <p className="opacity-70 col-span-full">No hay resultados.</p>}
       </div>
 
       {pages > 1 && (
