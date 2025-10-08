@@ -30,7 +30,7 @@ function fmt(n: number | null) {
   return '$ ' + n.toFixed(2).replace('.', ',');
 }
 
-// Helper: usa absoluta si definiste NEXT_PUBLIC_BASE_URL; si no, usa relativa (ideal en Pages)
+// Usa absoluta si definiste NEXT_PUBLIC_BASE_URL; si no, relativa
 function api(path: string) {
   const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
   const base = raw ? raw.replace(/\/+$/, '') : '';
@@ -43,27 +43,37 @@ async function getData(params: URLSearchParams) {
     fetch(api(`/api/public/catalogo?${params.toString()}`), { next: { revalidate: 30 } }),
   ]);
 
-  const catsJson = await catsRes.json<{ items?: Cat[] }>().catch(() => ({}));
-  const listJson = await listRes
-    .json<{ items?: Item[]; page?: number; perPage?: number; total?: number }>()
-    .catch(() => ({}));
+  // Parseo robusto sin crear un tipo unión molesto para TS
+  let catsJson: any = {};
+  let listJson: any = {};
+  try {
+    catsJson = await catsRes.json();
+  } catch {}
+  try {
+    listJson = await listRes.json();
+  } catch {}
 
-  return { cats: (catsJson.items ?? []) as Cat[], data: listJson ?? {} };
+  const cats: Cat[] = Array.isArray(catsJson?.items) ? (catsJson.items as Cat[]) : [];
+  return { cats, data: (listJson ?? {}) as any };
 }
 
 function qp(
   base: URLSearchParams,
-  updates: Record<string, string | number | null | undefined>
+  patch: Record<string, string | number | null | undefined>,
 ) {
-  const p = new URLSearchParams(base);
-  for (const [k, v] of Object.entries(updates)) {
-    if (v === null || v === undefined || v === '') p.delete(k);
-    else p.set(k, String(v));
+  const q = new URLSearchParams(base); // clone
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    if (v === null || v === '') q.delete(k);
+    else q.set(k, String(v));
   }
-  // Si cambia filtro (cat o subcat), reseteamos página
-  if ('categoryId' in updates || 'subcategoryId' in updates) p.delete('page');
-  const qs = p.toString();
-  return `/catalogo${qs ? `?${qs}` : ''}`;
+  // reset page si cambiás filtros
+  if ('categoryId' in patch || 'subcategoryId' in patch) q.delete('page');
+  return q;
+}
+
+function first(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
 }
 
 export default async function Page({
@@ -83,83 +93,80 @@ export default async function Page({
     }
   }
 
-  const currentCategoryId = Number(qs.get('categoryId') || '') || null;
-  const currentSubcatId = Number(qs.get('subcategoryId') || '') || null;
-
   const { cats, data } = await getData(qs);
+
+  const catIdStr = first(sp.categoryId);
+  const subIdStr = first(sp.subcategoryId);
+  const catId = catIdStr && /^\d+$/.test(catIdStr) ? Number(catIdStr) : undefined;
+  const subcategoryId = subIdStr && /^\d+$/.test(subIdStr) ? Number(subIdStr) : undefined;
+
+  const currentCat = catId != null ? cats.find((c) => c.id === catId) : undefined;
+  const currentSub =
+    currentCat && subcategoryId != null
+      ? currentCat.subcats?.find((s) => s.id === subcategoryId)
+      : undefined;
+
+  const title =
+    currentCat && currentSub
+      ? `Catálogo — ${currentCat.name} / ${currentSub.name}`
+      : currentCat
+      ? `Catálogo — ${currentCat.name}`
+      : 'Catálogo';
+
   const items: Item[] = data.items ?? [];
   const page = data.page ?? 1;
   const perPage = data.perPage ?? 12;
   const total = data.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / perPage));
 
-  const currentCat = currentCategoryId
-    ? cats.find((c) => c.id === currentCategoryId) ?? null
-    : null;
-  const currentSub =
-    currentCat && currentSubcatId
-      ? currentCat.subcats?.find((s) => s.id === currentSubcatId) ?? null
-      : null;
-
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">
-          Catálogo
-          {currentCat ? ` — ${currentCat.name}` : ''}
-          {currentSub ? ` / ${currentSub.name}` : ''}
-        </h1>
-        <p className="text-sm text-ink-500">
-          {total > 0 ? `${total} resultado${total === 1 ? '' : 's'}` : 'Sin resultados'}
-        </p>
-      </header>
+      <h1 className="text-2xl font-semibold">{title}</h1>
 
       {/* Chips de categorías */}
-      <div className="flex gap-2 overflow-x-auto py-1" style={{ scrollbarWidth: 'none' }}>
-        <a
-          href={qp(qs, { categoryId: null, subcategoryId: null })}
-          className={
-            'px-3 py-1 rounded-full border text-sm shrink-0 ' +
-            (!currentCat ? 'bg-gray-200' : '')
-          }
-        >
-          Todas
-        </a>
-        {cats.map((c) => (
+      {cats.length > 0 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
           <a
-            key={c.id}
-            href={qp(qs, { categoryId: c.id, subcategoryId: null })}
-            className={
-              'px-3 py-1 rounded-full border text-sm shrink-0 ' +
-              (currentCat?.id === c.id ? 'bg-gray-200' : '')
-            }
-            title={c.name}
+            href={`/catalogo?${qp(qs, { categoryId: null, subcategoryId: null }).toString()}`}
+            className={`px-3 py-1 rounded-full border text-sm whitespace-nowrap ${
+              !currentCat ? 'bg-gray-900 text-white border-gray-900' : 'hover:bg-gray-100'
+            }`}
           >
-            {c.name}
+            Todas
           </a>
-        ))}
-      </div>
+          {cats.map((c) => (
+            <a
+              key={c.id}
+              href={`/catalogo?${qp(qs, { categoryId: c.id, subcategoryId: null }).toString()}`}
+              className={`px-3 py-1 rounded-full border text-sm whitespace-nowrap ${
+                currentCat?.id === c.id ? 'bg-gray-900 text-white border-gray-900' : 'hover:bg-gray-100'
+              }`}
+              title={c.name}
+            >
+              {c.name}
+            </a>
+          ))}
+        </div>
+      )}
 
-      {/* Chips de subcategorías (solo si hay categoría seleccionada) */}
+      {/* Chips de subcategorías cuando hay categoría seleccionada */}
       {currentCat?.subcats?.length ? (
-        <div className="flex gap-2 overflow-x-auto py-1" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex items-center gap-2 overflow-x-auto -mt-2 pb-2" style={{ scrollbarWidth: 'none' }}>
           <a
-            href={qp(qs, { subcategoryId: null })}
-            className={
-              'px-3 py-1 rounded-full border text-sm shrink-0 ' +
-              (!currentSub ? 'bg-gray-200' : '')
-            }
+            href={`/catalogo?${qp(qs, { subcategoryId: null }).toString()}`}
+            className={`px-3 py-1 rounded-full border text-xs whitespace-nowrap ${
+              !currentSub ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-blue-50'
+            }`}
           >
             Todas las subcategorías
           </a>
           {currentCat.subcats.map((s) => (
             <a
               key={s.id}
-              href={qp(qs, { subcategoryId: s.id })}
-              className={
-                'px-3 py-1 rounded-full border text-sm shrink-0 ' +
-                (currentSub?.id === s.id ? 'bg-gray-200' : '')
-              }
+              href={`/catalogo?${qp(qs, { subcategoryId: s.id }).toString()}`}
+              className={`px-3 py-1 rounded-full border text-xs whitespace-nowrap ${
+                currentSub?.id === s.id ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-blue-50'
+              }`}
               title={s.name}
             >
               {s.name}
@@ -168,7 +175,7 @@ export default async function Page({
         </div>
       ) : null}
 
-      {/* Grid de productos */}
+      {/* Grilla */}
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {items.map((p) => (
           <a key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
@@ -179,10 +186,9 @@ export default async function Page({
                 className="w-full h-full object-cover"
                 loading="lazy"
                 decoding="async"
-                draggable={false}
               />
             </div>
-            <div className="font-medium line-clamp-2 min-h-[2.5rem]">{p.name}</div>
+            <div className="font-medium">{p.name}</div>
             {p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal ? (
               <div className="text-sm">
                 <span className="text-green-600 font-semibold mr-2">{fmt(p.priceFinal)}</span>
@@ -210,7 +216,7 @@ export default async function Page({
               <a
                 key={n}
                 href={`/catalogo?${url.toString()}`}
-                className={'border rounded px-3 py-1 ' + (n === page ? 'bg-gray-200' : '')}
+                className={'border rounded px-3 ' + (n === page ? 'bg-gray-200' : '')}
               >
                 {n}
               </a>
