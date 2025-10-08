@@ -30,7 +30,7 @@ function fmt(n: number | null) {
   return '$ ' + n.toFixed(2).replace('.', ',');
 }
 
-// Helper: usa absoluta si definiste NEXT_PUBLIC_BASE_URL; si no, usa relativa (ideal en Pages)
+// Helper: absoluta si definiste NEXT_PUBLIC_BASE_URL; si no, relativa (ideal en Pages)
 function api(path: string) {
   const raw = process.env.NEXT_PUBLIC_BASE_URL?.trim();
   const base = raw ? raw.replace(/\/+$/, '') : '';
@@ -83,13 +83,16 @@ function qp(src: URLSearchParams, kv: Record<string, string | null | undefined>)
 }
 
 export default async function Page(props: {
-  // 👇 Tip oficial de Next (no Promise) para cumplir con PageProps
-  searchParams?: Record<string, string | string[] | undefined>;
+  // 👇 Firma que tu build espera (Promise) para que compile en Cloudflare
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  // Pero toleramos si en runtime llega como Promise (algunos toolchains lo hacen)
-  const maybe = (props as any)?.searchParams;
-  const sp: Record<string, string | string[] | undefined> =
-    maybe && typeof maybe.then === 'function' ? ((await maybe) as any) : (maybe ?? {});
+  // Tolerante: si llega un objeto normal, await lo retorna igual; si falla JSON/lo que sea, caemos a {}
+  let sp: Record<string, string | string[] | undefined> = {};
+  try {
+    sp = ((await props.searchParams) ?? {}) as any;
+  } catch {
+    sp = {};
+  }
 
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(sp)) {
