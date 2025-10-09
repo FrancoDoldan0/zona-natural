@@ -74,11 +74,9 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
     const catsJson: any = catsRes.ok ? await catsRes.json().catch(() => ({})) : {};
     const cats: Cat[] = Array.isArray(catsJson?.items) ? catsJson.items : Array.isArray(catsJson) ? catsJson : [];
 
-    // catálogo con estrategia de intentos:
-    // - estados: all -> raw
-    // - nombre del parámetro de búsqueda: query | q | search | term
+    // catálogo con estrategia de intentos
     const baseQS = new URLSearchParams(params);
-    baseQS.delete("page"); // page la metemos abajo
+    baseQS.delete("page");
     baseQS.delete("perPage");
 
     const page = Number(params.get("page") || "1");
@@ -123,15 +121,16 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
 export default async function Page({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
+  // 👇 En tu setup de CF/Next el tipo esperado es un Promise:
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const sp = searchParams ?? {};
+  const sp = (await searchParams) ?? {};
   const qs = qp(sp);
-  const term = (typeof sp.query === "string" ? sp.query : Array.isArray(sp.query) ? sp.query[0] : "")?.trim() || "";
+  const term =
+    (typeof sp.query === "string" ? sp.query : Array.isArray(sp.query) ? sp.query[0] : "")?.trim() || "";
 
   const { cats, items, page, perPage, total } = await getData(qs, term);
 
-  // Para título y chips
   const catId = Number(qs.get("categoryId"));
   const subId = Number(qs.get("subcategoryId"));
   const cat = cats.find((c) => c.id === catId);
@@ -159,7 +158,6 @@ export default async function Page({
           className="flex-1 rounded-full border px-4 py-2"
           aria-label="Buscar en el catálogo"
         />
-        {/* Preservar cat/subcat si estaban seleccionadas */}
         {catId ? <input type="hidden" name="categoryId" value={String(catId)} /> : null}
         {subId ? <input type="hidden" name="subcategoryId" value={String(subId)} /> : null}
         <button className="rounded-full bg-emerald-700 text-white px-4 py-2 text-sm">Buscar</button>
