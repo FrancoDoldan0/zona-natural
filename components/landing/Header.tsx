@@ -29,7 +29,7 @@ export default function Header() {
       }`}
     >
       <div className="mx-auto max-w-7xl px-3 py-3 flex items-center gap-3">
-        {/* Logo (usar Link para rutas internas) */}
+        {/* Logo */}
         <Link
           href="/"
           className="shrink-0 flex items-center gap-2"
@@ -64,12 +64,15 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Acciones derechas (placeholders) */}
-        <nav className="hidden sm:flex items-center gap-5 text-sm">
-          <a className="hover:underline" href="#cuenta">Cuenta</a>
-          <a className="hover:underline" href="#favoritos">Favoritos</a>
-          <a className="hover:underline" href="#carrito">Carrito (0)</a>
-        </nav>
+        {/* Botón único a Sobre nosotros */}
+        <div className="shrink-0">
+          <Link
+            href="/sobre-nosotros"
+            className="inline-flex items-center rounded-full border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
+          >
+            Sobre nosotros
+          </Link>
+        </div>
       </div>
     </header>
   );
