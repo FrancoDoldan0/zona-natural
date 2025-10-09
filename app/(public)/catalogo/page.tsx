@@ -66,6 +66,18 @@ function qp(sp: Record<string, string | string[] | undefined>) {
   return qs;
 }
 
+// normalizar para búsqueda (casefold + sin acentos)
+const norm = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}+/gu, "");
+
+function matchesItem(p: Item, term: string) {
+  const t = norm(term);
+  return norm(p.name).includes(t) || norm(p.slug || "").includes(t);
+}
+
 /* ---------- Fetch con soporte de búsqueda ---------- */
 async function getData(params: URLSearchParams, queryTerm?: string) {
   try {
@@ -97,8 +109,15 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
         const url = await abs(`/api/public/catalogo?${qs.toString()}`);
         const res = await fetch(url, { cache: "no-store", next: { revalidate: 0 } });
         const json: any = res.ok ? await res.json().catch(() => ({})) : {};
-        const items: Item[] = Array.isArray(json?.items) ? json.items : [];
+        let items: Item[] = Array.isArray(json?.items) ? json.items : [];
+
+        // Fallback de FILTRO en el front si el backend no filtró
+        if (queryTerm) {
+          items = items.filter((p) => matchesItem(p, queryTerm));
+        }
+
         const total =
+          queryTerm ? items.length :
           typeof json?.filteredTotal === "number"
             ? json.filteredTotal
             : typeof json?.total === "number"
@@ -121,7 +140,7 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
 export default async function Page({
   searchParams,
 }: {
-  // 👇 En tu setup de CF/Next el tipo esperado es un Promise:
+  // En este proyecto es Promise por el runtime
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = (await searchParams) ?? {};
@@ -158,36 +177,48 @@ export default async function Page({
           className="flex-1 rounded-full border px-4 py-2"
           aria-label="Buscar en el catálogo"
         />
+        {/* conservamos filtros */}
         {catId ? <input type="hidden" name="categoryId" value={String(catId)} /> : null}
         {subId ? <input type="hidden" name="subcategoryId" value={String(subId)} /> : null}
         <button className="rounded-full bg-emerald-700 text-white px-4 py-2 text-sm">Buscar</button>
       </form>
 
-      {/* Chips de navegación */}
+      {/* Chips de navegación (preservan query si existe) */}
       <div className="flex flex-wrap gap-2">
-        <Link href="/catalogo" className="px-3 py-1 rounded-full border">
+        <Link href={term ? `/catalogo?query=${encodeURIComponent(term)}` : "/catalogo"} className="px-3 py-1 rounded-full border">
           Todos
         </Link>
-        {cats.map((c) => (
-          <Link
-            key={c.id}
-            href={`/catalogo?categoryId=${c.id}`}
-            className={"px-3 py-1 rounded-full border " + (c.id === catId ? "bg-gray-200" : "")}
-          >
-            {c.name}
-          </Link>
-        ))}
+        {cats.map((c) => {
+          const url = new URLSearchParams();
+          url.set("categoryId", String(c.id));
+          if (term) url.set("query", term);
+          return (
+            <Link
+              key={c.id}
+              href={`/catalogo?${url.toString()}`}
+              className={"px-3 py-1 rounded-full border " + (c.id === catId ? "bg-gray-200" : "")}
+            >
+              {c.name}
+            </Link>
+          );
+        })}
         {!!cat && cat.subcats?.length ? (
           <span className="inline-flex items-center gap-2 ml-2">
-            {cat.subcats.map((s) => (
-              <Link
-                key={s.id}
-                href={`/catalogo?categoryId=${cat.id}&subcategoryId=${s.id}`}
-                className={"px-3 py-1 rounded-full border " + (s.id === subId ? "bg-gray-200" : "")}
-              >
-                {s.name}
-              </Link>
-            ))}
+            {cat.subcats.map((s) => {
+              const url = new URLSearchParams();
+              url.set("categoryId", String(cat.id));
+              url.set("subcategoryId", String(s.id));
+              if (term) url.set("query", term);
+              return (
+                <Link
+                  key={s.id}
+                  href={`/catalogo?${url.toString()}`}
+                  className={"px-3 py-1 rounded-full border " + (s.id === subId ? "bg-gray-200" : "")}
+                >
+                  {s.name}
+                </Link>
+              );
+            })}
           </span>
         ) : null}
       </div>
@@ -237,8 +268,8 @@ export default async function Page({
         {!items.length && <p className="opacity-70 col-span-full">No hay resultados.</p>}
       </div>
 
-      {/* Paginación básica */}
-      {total > perPage && (
+      {/* Paginación (si no hay query usamos la del backend; con query filtramos en front y no paginamos) */}
+      {!term && total > perPage && (
         <nav className="flex gap-2 items-center">
           {Array.from({ length: Math.ceil(total / Math.max(1, perPage)) }).map((_, i) => {
             const n = i + 1;
