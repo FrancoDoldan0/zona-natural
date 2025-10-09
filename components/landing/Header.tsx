@@ -28,19 +28,20 @@ export default function Header() {
         scrolled ? "shadow-sm" : ""
       }`}
     >
-      <div className="mx-auto max-w-7xl px-3 py-3 flex items-center gap-3">
-        {/* Logo */}
+      <div className="mx-auto max-w-7xl px-3 py-3 md:py-4 flex items-center gap-3 md:gap-5">
+        {/* Logo grande */}
         <Link
           href="/"
-          className="shrink-0 flex items-center gap-2"
+          className="shrink-0 flex items-center"
           aria-label="Zona Natural – inicio"
         >
           <img
             src="/brand/logo-zonanatural.png"
             alt="Zona Natural"
-            className="h-8 md:h-10 w-auto"
+            className="h-10 md:h-14 lg:h-16 w-auto object-contain"
             loading="eager"
             decoding="async"
+            draggable={false}
           />
         </Link>
 
@@ -48,7 +49,7 @@ export default function Header() {
         <div className="flex-1 flex items-center">
           <div className="w-full flex items-stretch rounded-full ring-1 ring-emerald-200 overflow-hidden">
             <input
-              className="flex-1 px-4 py-2 outline-none text-sm"
+              className="flex-1 px-4 py-2 md:py-3 outline-none text-sm"
               placeholder="Estoy buscando…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -57,14 +58,14 @@ export default function Header() {
             />
             <button
               onClick={doSearch}
-              className="px-4 py-2 text-sm font-medium bg-emerald-700 text-white hover:bg-emerald-800 focus:bg-emerald-800"
+              className="px-4 md:px-6 py-2 md:py-3 text-sm font-medium bg-emerald-700 text-white hover:bg-emerald-800 focus:bg-emerald-800"
             >
               Buscar
             </button>
           </div>
         </div>
 
-        {/* CTA derecha: Sobre nosotros */}
+        {/* Botón único a Sobre nosotros */}
         <div className="shrink-0">
           <Link
             href="/sobre-nosotros"
