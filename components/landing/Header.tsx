@@ -36,10 +36,10 @@ export default function Header() {
           aria-label="Zona Natural – inicio"
         >
           <img
-            src="/logo.svg"
+            src="/brand/logo-zonanatural.png"
             alt="Zona Natural"
-            className="h-8 w-auto"
-            loading="lazy"
+            className="h-8 md:h-10 w-auto"
+            loading="eager"
             decoding="async"
           />
         </Link>
@@ -64,7 +64,7 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Botón único a Sobre nosotros */}
+        {/* CTA derecha: Sobre nosotros */}
         <div className="shrink-0">
           <Link
             href="/sobre-nosotros"
