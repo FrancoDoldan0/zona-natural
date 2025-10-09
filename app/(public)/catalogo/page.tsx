@@ -66,16 +66,54 @@ function qp(sp: Record<string, string | string[] | undefined>) {
   return qs;
 }
 
-// normalizar para búsqueda (casefold + sin acentos)
-const norm = (s: string) =>
-  s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}+/gu, "");
+/* ---------- Búsqueda: normalizar + fuzzy ---------- */
+// normalizar (minúsculas + sin acentos)
+const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}+/gu, "");
+
+// tokenizar en [a-z0-9]
+const tokenize = (s: string) => norm(s).split(/[^a-z0-9]+/g).filter(Boolean);
+
+// distancia de Levenshtein simple
+function lev(a: string, b: string) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1, // delete
+        dp[i][j - 1] + 1, // insert
+        dp[i - 1][j - 1] + cost // replace
+      );
+    }
+  }
+  return dp[m][n];
+}
+
+// similitud tolerante a typos (tolerancia por longitud)
+function similar(a: string, b: string) {
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  const maxLen = Math.max(a.length, b.length);
+  const dist = lev(a, b);
+  const thr = maxLen <= 5 ? 1 : maxLen <= 8 ? 2 : 3;
+  return dist <= thr;
+}
 
 function matchesItem(p: Item, term: string) {
-  const t = norm(term);
-  return norm(p.name).includes(t) || norm(p.slug || "").includes(t);
+  const pTokens = new Set([...tokenize(p.name || ""), ...tokenize(p.slug || "")]);
+  const qTokens = tokenize(term);
+  // Cada token buscado debe “parecerse” a algún token del producto
+  return qTokens.every((qt) => {
+    for (const pt of pTokens) {
+      if (similar(pt, qt)) return true;
+    }
+    return false;
+  });
 }
 
 /* ---------- Fetch con soporte de búsqueda ---------- */
@@ -111,14 +149,15 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
         const json: any = res.ok ? await res.json().catch(() => ({})) : {};
         let items: Item[] = Array.isArray(json?.items) ? json.items : [];
 
-        // Fallback de FILTRO en el front si el backend no filtró
+        // Fallback de FILTRO en el front si el backend no filtra por query
         if (queryTerm) {
           items = items.filter((p) => matchesItem(p, queryTerm));
         }
 
         const total =
-          queryTerm ? items.length :
-          typeof json?.filteredTotal === "number"
+          queryTerm
+            ? items.length
+            : typeof json?.filteredTotal === "number"
             ? json.filteredTotal
             : typeof json?.total === "number"
             ? json.total
@@ -185,7 +224,10 @@ export default async function Page({
 
       {/* Chips de navegación (preservan query si existe) */}
       <div className="flex flex-wrap gap-2">
-        <Link href={term ? `/catalogo?query=${encodeURIComponent(term)}` : "/catalogo"} className="px-3 py-1 rounded-full border">
+        <Link
+          href={term ? `/catalogo?query=${encodeURIComponent(term)}` : "/catalogo"}
+          className="px-3 py-1 rounded-full border"
+        >
           Todos
         </Link>
         {cats.map((c) => {
