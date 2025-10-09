@@ -29,18 +29,12 @@ export default function Header() {
       }`}
     >
       <div className="mx-auto max-w-7xl px-3 py-3 md:py-4 flex items-center gap-3 md:gap-5">
-        {/* Logo (escala para compensar padding del PNG) */}
+        {/* Logo (usar imagen recortada, sin escala) */}
         <Link href="/" aria-label="Zona Natural – inicio" className="shrink-0 flex items-center">
           <img
-            src="/brand/logo-zonanatural.png"
+            src="/brand/logo-zonanatural.png"  // <-- debe ser el PNG recortado
             alt="Zona Natural"
-            className="
-              h-12 md:h-16 lg:h-20 w-auto
-              object-contain
-              transform origin-left
-              scale-[1.35] md:scale-[1.5]
-              select-none
-            "
+            className="block h-12 sm:h-14 md:h-16 w-auto object-contain select-none"
             loading="eager"
             decoding="async"
             draggable={false}
