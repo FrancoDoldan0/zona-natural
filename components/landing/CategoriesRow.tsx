@@ -14,22 +14,29 @@ type Cat = {
 
 export default function CategoriesRow({ cats }: { cats: Cat[] }) {
   if (!cats?.length) return null;
-  const top = cats.slice(0, 8);
+
+  const list = cats.slice(0, 8);
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <h2 className="text-2xl md:text-3xl font-semibold text-center mb-8">
+      <div className="mx-auto max-w-7xl px-4 py-12">
+        <h2 className="text-center text-2xl md:text-3xl font-semibold mb-8">
           Categorías Destacadas
         </h2>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-x-8 gap-y-8 place-items-center">
-          {top.map((c) => {
+        {/* Distribución fluida: centra en mobile, separa en desktop */}
+        <div className="flex flex-wrap items-start justify-center md:justify-between gap-x-10 gap-y-8">
+          {list.map((c) => {
             const imgCandidate =
-              c.images?.[0]?.url ? { url: c.images[0].url } :
-              c.imageUrl ? c.imageUrl :
-              c.image ? c.image :
-              c.cover ? c.cover : null;
+              c.images?.[0]?.url
+                ? { url: c.images[0].url }
+                : c.imageUrl
+                ? c.imageUrl
+                : c.image
+                ? c.image
+                : c.cover
+                ? c.cover
+                : null;
 
             const src = toR2Url(imgCandidate as any);
 
@@ -37,9 +44,9 @@ export default function CategoriesRow({ cats }: { cats: Cat[] }) {
               <Link
                 key={c.id}
                 href={`/catalogo?categoryId=${c.id}`}
-                className="group flex flex-col items-center"
+                className="w-[108px] md:w-[120px] flex flex-col items-center text-center group"
               >
-                <div className="relative h-24 w-24 lg:h-28 lg:w-28 rounded-full ring-2 ring-emerald-200 overflow-hidden transition-transform group-hover:scale-105 bg-emerald-50">
+                <div className="relative h-[108px] w-[108px] md:h-[120px] md:w-[120px] rounded-full ring-2 ring-emerald-200/70 overflow-hidden bg-white transition-transform group-hover:scale-[1.03]">
                   {src ? (
                     <img
                       src={src}
@@ -48,9 +55,13 @@ export default function CategoriesRow({ cats }: { cats: Cat[] }) {
                       loading="lazy"
                       decoding="async"
                     />
-                  ) : null}
+                  ) : (
+                    <div className="absolute inset-0 grid place-items-center bg-emerald-50 text-emerald-700 text-sm">
+                      {c.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
                 </div>
-                <span className="mt-2 text-center text-sm">{c.name}</span>
+                <span className="mt-2 text-sm">{c.name}</span>
               </Link>
             );
           })}

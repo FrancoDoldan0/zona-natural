@@ -15,25 +15,31 @@ type Item = {
 };
 
 const fmtUYU = (n: number | null) =>
-  n == null ? "-" : new Intl.NumberFormat("es-UY", { style: "currency", currency: "UYU" }).format(n);
+  n == null
+    ? "-"
+    : new Intl.NumberFormat("es-UY", {
+        style: "currency",
+        currency: "UYU",
+      }).format(n);
 
 export default function OffersCarousel({ items }: { items: Item[] }) {
   if (!items?.length) return null;
 
-  const list = items.slice(0, 8); // mostramos hasta 8 en grilla
+  const top = items.slice(0, 8);
 
   return (
     <section className="bg-white" aria-label="Ofertas destacadas">
-      <div className="mx-auto max-w-6xl px-4 py-10">
+      <div className="mx-auto max-w-7xl px-4 py-12">
         <div className="mb-6 flex items-baseline justify-between">
           <h2 className="text-2xl md:text-3xl font-semibold">Las Mejores Ofertas</h2>
-          <Link href="/catalogo" className="text-sm text-emerald-800 hover:underline">
+          <Link href="/catalogo" className="text-emerald-700 hover:underline text-sm">
             Más productos »
           </Link>
         </div>
 
-        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {list.map((p) => {
+        {/* Grilla fluida: llena el ancho con tarjetas de min 260px */}
+        <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
+          {top.map((p) => {
             const imgObj =
               (p.images?.[0]?.url ? { url: p.images[0].url } : undefined) ??
               (p.imageUrl ? { url: p.imageUrl } : undefined) ??
@@ -41,7 +47,9 @@ export default function OffersCarousel({ items }: { items: Item[] }) {
 
             const src = toR2Url(imgObj as any);
             const isOffer =
-              p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal;
+              p.priceFinal != null &&
+              p.priceOriginal != null &&
+              p.priceFinal < p.priceOriginal;
 
             return (
               <Link
@@ -70,7 +78,6 @@ export default function OffersCarousel({ items }: { items: Item[] }) {
 
                 <div className="p-3">
                   <h3 className="text-sm line-clamp-2 min-h-[2.5rem]">{p.name}</h3>
-
                   <div className="mt-1 flex items-baseline gap-2">
                     <span className="text-emerald-700 font-semibold">
                       {fmtUYU(p.priceFinal ?? p.priceOriginal)}
