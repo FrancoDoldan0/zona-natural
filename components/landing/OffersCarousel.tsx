@@ -20,28 +20,26 @@ const fmtUYU = (n: number | null) =>
 export default function OffersCarousel({ items }: { items: Item[] }) {
   if (!items?.length) return null;
 
+  const list = items.slice(0, 8); // mostramos hasta 8 en grilla
+
   return (
     <section className="bg-white" aria-label="Ofertas destacadas">
-      <div className="mx-auto max-w-7xl px-4 py-10">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl md:text-[28px] font-semibold text-center w-full md:w-auto">
-            Las Mejores Ofertas
-          </h2>
-          <Link
-            href="/catalogo"
-            className="hidden md:inline-block text-sm text-emerald-800 hover:underline ml-auto"
-          >
+      <div className="mx-auto max-w-6xl px-4 py-10">
+        <div className="mb-6 flex items-baseline justify-between">
+          <h2 className="text-2xl md:text-3xl font-semibold">Las Mejores Ofertas</h2>
+          <Link href="/catalogo" className="text-sm text-emerald-800 hover:underline">
             Más productos »
           </Link>
         </div>
 
-        {/* Grilla 2/3/4 al estilo QN (en mobile igual queda bien) */}
-        <div className="grid gap-6 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {items.map((p) => {
-            const fromImgs = p.images?.[0]?.url ? { url: p.images[0].url } : undefined;
-            const fromField = p.imageUrl ? { url: p.imageUrl } : undefined;
-            const src = toR2Url((fromImgs ?? fromField ?? null) as any);
+        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          {list.map((p) => {
+            const imgObj =
+              (p.images?.[0]?.url ? { url: p.images[0].url } : undefined) ??
+              (p.imageUrl ? { url: p.imageUrl } : undefined) ??
+              null;
 
+            const src = toR2Url(imgObj as any);
             const isOffer =
               p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal;
 
@@ -49,7 +47,7 @@ export default function OffersCarousel({ items }: { items: Item[] }) {
               <Link
                 key={p.id}
                 href={`/producto/${p.slug}`}
-                className="rounded-2xl overflow-hidden ring-1 ring-emerald-100 bg-white hover:shadow transition-shadow"
+                className="rounded-xl ring-1 ring-emerald-100 overflow-hidden bg-white hover:shadow transition-shadow"
               >
                 <div className="relative aspect-square bg-emerald-50">
                   {src ? (
@@ -63,7 +61,6 @@ export default function OffersCarousel({ items }: { items: Item[] }) {
                   ) : (
                     <div className="w-full h-full bg-gray-100" />
                   )}
-
                   {isOffer && (
                     <span className="absolute top-2 left-2 text-[11px] rounded-full bg-emerald-700 text-white px-2 py-0.5">
                       Oferta
@@ -88,13 +85,6 @@ export default function OffersCarousel({ items }: { items: Item[] }) {
               </Link>
             );
           })}
-        </div>
-
-        {/* link “Más productos” visible en mobile */}
-        <div className="mt-6 text-center md:hidden">
-          <Link href="/catalogo" className="text-sm text-emerald-800 hover:underline">
-            Más productos »
-          </Link>
         </div>
       </div>
     </section>
