@@ -29,16 +29,18 @@ export default function Header() {
       }`}
     >
       <div className="mx-auto max-w-7xl px-3 py-3 md:py-4 flex items-center gap-3 md:gap-5">
-        {/* Logo grande */}
-        <Link
-          href="/"
-          className="shrink-0 flex items-center"
-          aria-label="Zona Natural – inicio"
-        >
+        {/* Logo (escala para compensar padding del PNG) */}
+        <Link href="/" aria-label="Zona Natural – inicio" className="shrink-0 flex items-center">
           <img
             src="/brand/logo-zonanatural.png"
             alt="Zona Natural"
-            className="h-10 md:h-14 lg:h-16 w-auto object-contain"
+            className="
+              h-12 md:h-16 lg:h-20 w-auto
+              object-contain
+              transform origin-left
+              scale-[1.35] md:scale-[1.5]
+              select-none
+            "
             loading="eager"
             decoding="async"
             draggable={false}
@@ -65,7 +67,7 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Botón único a Sobre nosotros */}
+        {/* Sobre nosotros */}
         <div className="shrink-0">
           <Link
             href="/sobre-nosotros"
