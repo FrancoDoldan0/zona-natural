@@ -56,10 +56,7 @@ async function getData(params: URLSearchParams) {
   try {
     const catsUrl = await abs("/api/public/categories");
     const listUrl1 = await abs(`/api/public/catalogo?status=all&${params.toString()}`);
-    const [catsRes, listRes1] = await Promise.all([
-      noStoreFetch(catsUrl),
-      noStoreFetch(listUrl1),
-    ]);
+    const [catsRes, listRes1] = await Promise.all([noStoreFetch(catsUrl), noStoreFetch(listUrl1)]);
 
     const catsJson: any = catsRes.ok ? await catsRes.json().catch(() => ({})) : {};
     let listJson: any = listRes1.ok ? await listRes1.json().catch(() => ({})) : {};
@@ -86,9 +83,10 @@ async function getData(params: URLSearchParams) {
 export default async function Page({
   searchParams,
 }: {
-  searchParams?: Record<string, string | string[] | undefined>;
+  // En Next 15 con PPR, searchParams es Promise<>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const sp = searchParams ?? {};
+  const sp = (await searchParams) ?? {};
   const qs = qp(sp);
   if (!qs.has("page")) qs.set("page", "1");
   if (!qs.has("perPage")) qs.set("perPage", "12");
