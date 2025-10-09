@@ -1,5 +1,6 @@
 // components/landing/OffersCarousel.tsx
 import { toR2Url } from "@/lib/img";
+import Link from "next/link";
 
 type Item = {
   id: number;
@@ -31,10 +32,13 @@ export default function OffersCarousel({ items }: { items: Item[] }) {
             {items.map((p) => {
               const img = p.images?.[0]?.url ? { url: p.images[0].url } : p.imageUrl || null;
               const src = toR2Url(img as any);
-              const isOffer = p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal;
+              const isOffer =
+                p.priceFinal != null &&
+                p.priceOriginal != null &&
+                p.priceFinal < p.priceOriginal;
 
               return (
-                <a
+                <Link
                   key={p.id}
                   href={`/producto/${p.slug}`}
                   className="w-44 shrink-0 rounded-lg ring-1 ring-emerald-100 overflow-hidden bg-white hover:shadow"
@@ -64,7 +68,7 @@ export default function OffersCarousel({ items }: { items: Item[] }) {
                       ) : null}
                     </div>
                   </div>
-                </a>
+                </Link>
               );
             })}
           </div>

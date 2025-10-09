@@ -2,6 +2,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function Header() {
   const [q, setQ] = useState("");
@@ -22,12 +23,26 @@ export default function Header() {
   };
 
   return (
-    <header className={`sticky top-0 z-50 bg-white/80 supports-[backdrop-filter]:backdrop-blur-md transition-shadow ${scrolled ? "shadow-sm" : ""}`}>
+    <header
+      className={`sticky top-0 z-50 bg-white/80 supports-[backdrop-filter]:backdrop-blur-md transition-shadow ${
+        scrolled ? "shadow-sm" : ""
+      }`}
+    >
       <div className="mx-auto max-w-7xl px-3 py-3 flex items-center gap-3">
-        {/* Logo */}
-        <a href="/" className="shrink-0 flex items-center gap-2" aria-label="Zona Natural – inicio">
-          <img src="/logo.svg" alt="Zona Natural" className="h-8 w-auto" loading="lazy" decoding="async" />
-        </a>
+        {/* Logo (usar Link para rutas internas) */}
+        <Link
+          href="/"
+          className="shrink-0 flex items-center gap-2"
+          aria-label="Zona Natural – inicio"
+        >
+          <img
+            src="/logo.svg"
+            alt="Zona Natural"
+            className="h-8 w-auto"
+            loading="lazy"
+            decoding="async"
+          />
+        </Link>
 
         {/* Buscador */}
         <div className="flex-1 flex items-center">
@@ -49,7 +64,7 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Acciones derechas */}
+        {/* Acciones derechas (placeholders) */}
         <nav className="hidden sm:flex items-center gap-5 text-sm">
           <a className="hover:underline" href="#cuenta">Cuenta</a>
           <a className="hover:underline" href="#favoritos">Favoritos</a>

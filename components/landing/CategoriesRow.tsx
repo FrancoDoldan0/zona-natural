@@ -1,5 +1,6 @@
 // components/landing/CategoriesRow.tsx
 import { toR2Url } from "@/lib/img";
+import Link from "next/link";
 
 type Cat = {
   id: number;
@@ -30,7 +31,11 @@ export default function CategoriesRow({ cats }: { cats: Cat[] }) {
             const src = toR2Url(imgCandidate as any);
 
             return (
-              <a key={c.id} href={`/catalogo?categoryId=${c.id}`} className="group flex flex-col items-center gap-2">
+              <Link
+                key={c.id}
+                href={`/catalogo?categoryId=${c.id}`}
+                className="group flex flex-col items-center gap-2"
+              >
                 <div className="relative h-20 w-20 md:h-24 md:w-24 rounded-full ring-1 ring-emerald-200 overflow-hidden transition-transform group-hover:scale-105">
                   {src ? (
                     <img
@@ -47,7 +52,7 @@ export default function CategoriesRow({ cats }: { cats: Cat[] }) {
                   )}
                 </div>
                 <span className="text-center text-sm">{c.name}</span>
-              </a>
+              </Link>
             );
           })}
         </div>
