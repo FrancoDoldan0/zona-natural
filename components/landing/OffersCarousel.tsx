@@ -8,8 +8,12 @@ type Item = {
   slug: string;
   priceOriginal: number | null;
   priceFinal: number | null;
-  images?: { url?: string; alt?: string | null }[];
+  images?: { url?: string; alt?: string | null; key?: string; r2Key?: string }[];
   imageUrl?: string | null;
+  // algunos backends:
+  image?: any | null;
+  cover?: any | null;
+  coverUrl?: string | null;
   appliedOffer?: any | null;
   offer?: any | null;
 };
@@ -17,10 +21,7 @@ type Item = {
 const fmtUYU = (n: number | null) =>
   n == null
     ? "-"
-    : new Intl.NumberFormat("es-UY", {
-        style: "currency",
-        currency: "UYU",
-      }).format(n);
+    : new Intl.NumberFormat("es-UY", { style: "currency", currency: "UYU" }).format(n);
 
 export default function OffersCarousel({ items }: { items: Item[] }) {
   if (!items?.length) return null;
@@ -37,15 +38,20 @@ export default function OffersCarousel({ items }: { items: Item[] }) {
           </Link>
         </div>
 
-        {/* Grilla fluida: llena el ancho con tarjetas de min 260px */}
+        {/* Grilla fluida que llena el ancho */}
         <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
           {top.map((p) => {
-            const imgObj =
-              (p.images?.[0]?.url ? { url: p.images[0].url } : undefined) ??
-              (p.imageUrl ? { url: p.imageUrl } : undefined) ??
+            const anyP = p as any;
+            const imgCandidate =
+              anyP.cover ??
+              anyP.coverUrl ??
+              anyP.image ??
+              anyP.imageUrl ??
+              anyP.images?.[0] ??
               null;
 
-            const src = toR2Url(imgObj as any);
+            const src = toR2Url(imgCandidate as any);
+
             const isOffer =
               p.priceFinal != null &&
               p.priceOriginal != null &&
