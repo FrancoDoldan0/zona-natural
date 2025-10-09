@@ -33,3 +33,7 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ───── Utilitario: ocultar scrollbars en carruseles ───── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
