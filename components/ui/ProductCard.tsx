@@ -3,18 +3,21 @@ import Link from "next/link";
 import Image from "next/image";
 import { toR2Url } from "@/lib/img";
 
+const toNum = (v: any): number | null =>
+  v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v);
+
 export default function ProductCard({
   slug,
   title,
-  price, // precio final (con descuento)
-  originalPrice, // precio original (se muestra tachado si > price)
+  price,          // precio final (con descuento) o precio base
+  originalPrice,  // precio original (se muestra tachado si > price)
   image,
   outOfStock,
 }: {
   slug?: string;
   title: string;
-  price?: number;
-  originalPrice?: number;
+  price?: number | null;
+  originalPrice?: number | null;
   image?: any; // acepta string | {url|key|r2Key}
   outOfStock?: boolean;
 }) {
@@ -26,10 +29,11 @@ export default function ProductCard({
       : "/productos";
 
   const fmt = (n: number) => `$${Intl.NumberFormat("es-UY").format(n)}`;
-  const showStrike =
-    typeof originalPrice === "number" &&
-    typeof price === "number" &&
-    originalPrice > price;
+
+  const p = toNum(price);
+  const po = toNum(originalPrice);
+  const isOffer = p != null && po != null && p < po;
+  const best = p ?? po ?? null;
 
   const src = toR2Url(image);
 
@@ -62,20 +66,13 @@ export default function ProductCard({
       <div className="mt-2 space-y-1">
         <h3 className="line-clamp-2 text-sm font-medium">{title}</h3>
 
-        {/* Precios */}
-        {typeof price === "number" ? (
+        {best != null ? (
           <div className="flex items-baseline gap-2">
-            {showStrike && (
-              <span className="text-xs text-ink-500 line-through">
-                {fmt(originalPrice!)}
-              </span>
-            )}
-            <span className="text-brand font-semibold">{fmt(price)}</span>
+            {isOffer && po != null && <span className="text-xs text-ink-500 line-through">{fmt(po)}</span>}
+            <span className="text-brand font-semibold">{fmt(best)}</span>
           </div>
         ) : (
-          typeof originalPrice === "number" && (
-            <p className="text-brand font-semibold">{fmt(originalPrice)}</p>
-          )
+          <p className="text-ink-500 text-sm">Sin precio</p>
         )}
       </div>
     </Link>

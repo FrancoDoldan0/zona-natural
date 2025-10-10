@@ -66,54 +66,20 @@ function qp(sp: Record<string, string | string[] | undefined>) {
   return qs;
 }
 
-/* ---------- Búsqueda: normalizar + fuzzy ---------- */
-// normalizar (minúsculas + sin acentos)
-const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}+/gu, "");
+// normalizar para búsqueda (casefold + sin acentos)
+const norm = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}+/gu, "");
 
-// tokenizar en [a-z0-9]
-const tokenize = (s: string) => norm(s).split(/[^a-z0-9]+/g).filter(Boolean);
-
-// distancia de Levenshtein simple
-function lev(a: string, b: string) {
-  const m = a.length, n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1, // delete
-        dp[i][j - 1] + 1, // insert
-        dp[i - 1][j - 1] + cost // replace
-      );
-    }
-  }
-  return dp[m][n];
-}
-
-// similitud tolerante a typos (tolerancia por longitud)
-function similar(a: string, b: string) {
-  if (a === b) return true;
-  if (a.includes(b) || b.includes(a)) return true;
-  const maxLen = Math.max(a.length, b.length);
-  const dist = lev(a, b);
-  const thr = maxLen <= 5 ? 1 : maxLen <= 8 ? 2 : 3;
-  return dist <= thr;
-}
+// number-safe (acepta string/number)
+const toNum = (v: any): number | null =>
+  v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v);
 
 function matchesItem(p: Item, term: string) {
-  const pTokens = new Set([...tokenize(p.name || ""), ...tokenize(p.slug || "")]);
-  const qTokens = tokenize(term);
-  // Cada token buscado debe “parecerse” a algún token del producto
-  return qTokens.every((qt) => {
-    for (const pt of pTokens) {
-      if (similar(pt, qt)) return true;
-    }
-    return false;
-  });
+  const t = norm(term);
+  return norm(p.name).includes(t) || norm(p.slug || "").includes(t);
 }
 
 /* ---------- Fetch con soporte de búsqueda ---------- */
@@ -149,7 +115,7 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
         const json: any = res.ok ? await res.json().catch(() => ({})) : {};
         let items: Item[] = Array.isArray(json?.items) ? json.items : [];
 
-        // Fallback de FILTRO en el front si el backend no filtra por query
+        // Fallback de FILTRO en el front si el backend no filtró
         if (queryTerm) {
           items = items.filter((p) => matchesItem(p, queryTerm));
         }
@@ -224,10 +190,7 @@ export default async function Page({
 
       {/* Chips de navegación (preservan query si existe) */}
       <div className="flex flex-wrap gap-2">
-        <Link
-          href={term ? `/catalogo?query=${encodeURIComponent(term)}` : "/catalogo"}
-          className="px-3 py-1 rounded-full border"
-        >
+        <Link href={term ? `/catalogo?query=${encodeURIComponent(term)}` : "/catalogo"} className="px-3 py-1 rounded-full border">
           Todos
         </Link>
         {cats.map((c) => {
@@ -275,7 +238,16 @@ export default async function Page({
             (typeof firstImg === "object" && firstImg?.alt) ||
             (typeof firstImg === "string" ? "" : "") ||
             p.name;
+
           const isOOS = typeof raw.status === "string" && raw.status.toUpperCase() === "AGOTADO";
+
+          // --- NUEVO: lógica robusta de precios ---
+          const price = toNum(raw.price);
+          const priceFinal = toNum(raw.priceFinal);
+          const priceOriginal = toNum(raw.priceOriginal);
+          const hasOffer = priceFinal != null && priceOriginal != null && priceFinal < priceOriginal;
+          // mejor precio disponible cuando NO hay oferta
+          const best = priceFinal ?? price ?? priceOriginal;
 
           return (
             <Link key={p.id} href={`/producto/${p.slug}`} className="border rounded p-2 hover:shadow">
@@ -296,13 +268,13 @@ export default async function Page({
               </div>
 
               <div className="font-medium">{p.name}</div>
-              {p.priceFinal != null && p.priceOriginal != null && p.priceFinal < p.priceOriginal ? (
+              {hasOffer ? (
                 <div className="text-sm">
-                  <span className="text-green-600 font-semibold mr-2">{fmt(p.priceFinal)}</span>
-                  <span className="line-through opacity-60">{fmt(p.priceOriginal)}</span>
+                  <span className="text-green-600 font-semibold mr-2">{fmt(priceFinal)}</span>
+                  <span className="line-through opacity-60">{fmt(priceOriginal)}</span>
                 </div>
               ) : (
-                <div className="text-sm">{fmt(p.price)}</div>
+                <div className="text-sm">{fmt(best)}</div>
               )}
             </Link>
           );
