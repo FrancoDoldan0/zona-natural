@@ -8,10 +8,15 @@ import MainNav from "@/components/landing/MainNav";
 import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
 import OffersCarousel from "@/components/landing/OffersCarousel";
+import BestSellersGrid from "@/components/landing/BestSellersGrid";
+import RecipesPopular from "@/components/landing/RecipesPopular";
+import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
+import MapHours from "@/components/landing/MapHours";
+import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
 
-/** ───────── helpers comunes ───────── */
+/* ───────── helpers comunes ───────── */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
@@ -32,7 +37,7 @@ async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   }
 }
 
-/** ───────── helpers de shuffle con seed diaria ───────── */
+/* ───────── helpers de shuffle con seed diaria ───────── */
 function hash(s: string) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -52,7 +57,7 @@ function shuffleSeed<T>(arr: T[], seed: string) {
   return a;
 }
 
-/** ───────── tipos ───────── */
+/* ───────── tipos ───────── */
 type Cat = {
   id: number;
   name: string;
@@ -62,30 +67,42 @@ type Cat = {
   image?: any;
   cover?: any;
 };
+
 type Prod = {
   id: number;
   name: string;
   slug: string;
+  price?: number | null;
   priceOriginal: number | null;
   priceFinal: number | null;
   images?: { url: string; alt?: string | null }[];
   imageUrl?: string | null;
+  cover?: any;
+  coverUrl?: any;
+  image?: any;
+  status?: string;
   appliedOffer?: any | null;
   offer?: any | null;
 };
 
-/** ───────── data fetchers ───────── */
+/* ───────── data fetchers ───────── */
 async function getBanners(): Promise<BannerItem[]> {
-  const data = await safeJson<any>(await abs("/api/public/banners"));
+  const data = await safeJson<any>(await abs("/api/public/banners"), {
+    cache: "no-store",
+    next: { revalidate: 0 },
+  });
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return (list as any[])
     .map((b, i) => ({
       id: Number(b.id ?? i),
       title: String(b.title ?? b.name ?? ""),
-      image: b.image ?? b.imageUrl ? (b.image ?? b.imageUrl) : { url: b.url ?? "" },
+      image:
+        b.image ?? b.imageUrl
+          ? (b.image ?? b.imageUrl)
+          : ({ url: b.url ?? "" } as any),
       linkUrl: b.linkUrl ?? b.href ?? null,
     }))
-    .filter((x) => !!(x.image?.url || x.image));
+    .filter((x) => !!(typeof x.image === "string" || (x.image as any)?.url));
 }
 
 async function getCategories(): Promise<Cat[]> {
@@ -95,26 +112,49 @@ async function getCategories(): Promise<Cat[]> {
 }
 
 async function getOffersRaw(): Promise<Prod[]> {
-  const data = await safeJson<any>(await abs("/api/public/catalogo?perPage=24&sort=-id"));
-  const items: Prod[] = (data?.items ?? []) as Prod[];
-  // Devolvemos TODO el conjunto de ofertas (sin cortar),
-  // así luego aplicamos el shuffle con seed y cortamos en la UI.
+  const data = await safeJson<any>(
+    await abs("/api/public/catalogo?perPage=48&sort=-id"),
+    { cache: "no-store", next: { revalidate: 0 } }
+  );
+  const items: Prod[] = ((data as any)?.items ?? []) as Prod[];
+  // Devolvemos TODO y filtramos por oferta
   return items.filter((p) => {
     const priced =
       p.priceFinal != null &&
       p.priceOriginal != null &&
-      p.priceFinal < p.priceOriginal;
+      Number(p.priceFinal) < Number(p.priceOriginal);
     const flagged = !!(p.appliedOffer || p.offer);
     return priced || flagged;
   });
 }
 
-/** ───────── página ───────── */
+async function getCatalog(perPage = 48): Promise<Prod[]> {
+  const statuses = ["all", "raw"];
+  for (const status of statuses) {
+    const data = await safeJson<any>(
+      await abs(
+        `/api/public/catalogo?status=${status}&perPage=${perPage}&sort=-id&_ts=${Date.now()}`
+      ),
+      { cache: "no-store", next: { revalidate: 0 } }
+    );
+    const items: any[] =
+      (data as any)?.items ??
+      (data as any)?.data ??
+      (data as any)?.products ??
+      (data as any)?.results ??
+      [];
+    if (Array.isArray(items) && items.length) return items as Prod[];
+  }
+  return [];
+}
+
+/* ───────── página ───────── */
 export default async function LandingPage() {
-  const [banners, cats, offersAll] = await Promise.all([
+  const [banners, cats, offersAll, catalog] = await Promise.all([
     getBanners(),
     getCategories(),
     getOffersRaw(),
+    getCatalog(48),
   ]);
 
   // Semilla diaria estable (AAAA-MM-DD)
@@ -122,8 +162,6 @@ export default async function LandingPage() {
 
   // Rotación diaria: categorías (8) y ofertas (3)
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
-
-  // Elegí el número que querés mostrar (3 como en tus capturas)
   const OFFERS_COUNT = 3;
   const offersDaily = shuffleSeed(offersAll, `${seed}:offers`).slice(
     0,
@@ -141,30 +179,69 @@ export default async function LandingPage() {
         <HeroSlider items={banners} />
       </div>
 
-      {/* Secciones */}
+      {/* Categorías con rotación diaria */}
       <CategoriesRow cats={catsDaily} />
+
+      {/* Ofertas (rotación diaria) */}
       <OffersCarousel items={offersDaily} />
+
+      {/* Más vendidos (simulado por clics locales + heurística) */}
+      <BestSellersGrid items={catalog} />
+
+      {/* Recetas populares */}
+      <RecipesPopular />
+
+      {/* Testimonios + badges de confianza */}
+      <TestimonialsBadges />
+
+      {/* Mapa + horarios */}
+      <MapHours />
+
+      {/* Sello sustentable */}
+      <Sustainability />
 
       {/* Footer mínimo */}
       <footer className="mt-8 bg-emerald-50">
         <div className="mx-auto max-w-7xl px-4 py-10 grid gap-6 sm:grid-cols-3 text-sm">
           <div>
             <h3 className="font-semibold mb-2">Zona Natural</h3>
-            <p className="text-gray-600">Productos naturales, saludables y ricos.</p>
+            <p className="text-gray-600">
+              Productos naturales, saludables y ricos.
+            </p>
           </div>
           <div>
             <h3 className="font-semibold mb-2">Links</h3>
             <ul className="space-y-1 text-gray-700">
-              <li><a className="hover:underline" href="/catalogo">Tienda</a></li>
-              <li><a className="hover:underline" href="#">Recetas</a></li>
-              <li><a className="hover:underline" href="#">Contacto</a></li>
+              <li>
+                <a className="hover:underline" href="/catalogo">
+                  Tienda
+                </a>
+              </li>
+              <li>
+                <a className="hover:underline" href="/recetas">
+                  Recetas
+                </a>
+              </li>
+              <li>
+                <a className="hover:underline" href="/sobre-nosotros">
+                  Sobre nosotros
+                </a>
+              </li>
             </ul>
           </div>
           <div>
             <h3 className="font-semibold mb-2">Redes</h3>
             <ul className="space-y-1 text-gray-700">
-              <li><a className="hover:underline" href="#ig">Instagram</a></li>
-              <li><a className="hover:underline" href="#fb">Facebook</a></li>
+              <li>
+                <a className="hover:underline" href="#ig">
+                  Instagram
+                </a>
+              </li>
+              <li>
+                <a className="hover:underline" href="#fb">
+                  Facebook
+                </a>
+              </li>
             </ul>
           </div>
         </div>

@@ -1,24 +1,21 @@
 // components/ui/ProductCard.tsx
-import Link from "next/link";
 import Image from "next/image";
 import { toR2Url } from "@/lib/img";
-
-const toNum = (v: any): number | null =>
-  v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v);
+import TrackLink from "@/components/ui/TrackLink";
 
 export default function ProductCard({
   slug,
   title,
-  price,          // precio final (con descuento) o precio base
-  originalPrice,  // precio original (se muestra tachado si > price)
+  price,
+  originalPrice,
   image,
   outOfStock,
 }: {
   slug?: string;
   title: string;
-  price?: number | null;
-  originalPrice?: number | null;
-  image?: any; // acepta string | {url|key|r2Key}
+  price?: number;
+  originalPrice?: number;
+  image?: any;
   outOfStock?: boolean;
 }) {
   const href =
@@ -29,16 +26,19 @@ export default function ProductCard({
       : "/productos";
 
   const fmt = (n: number) => `$${Intl.NumberFormat("es-UY").format(n)}`;
-
-  const p = toNum(price);
-  const po = toNum(originalPrice);
-  const isOffer = p != null && po != null && p < po;
-  const best = p ?? po ?? null;
+  const showStrike =
+    typeof originalPrice === "number" &&
+    typeof price === "number" &&
+    originalPrice > price;
 
   const src = toR2Url(image);
 
+  // usar slug limpio para tracking
+  const trackSlug =
+    slug && slug.startsWith("/") ? slug.split("/").pop() || slug : slug;
+
   return (
-    <Link href={href} className="block group">
+    <TrackLink href={href} slug={trackSlug} className="block group">
       <div className="relative aspect-square rounded-2xl overflow-hidden border">
         {src ? (
           <Image
@@ -66,15 +66,21 @@ export default function ProductCard({
       <div className="mt-2 space-y-1">
         <h3 className="line-clamp-2 text-sm font-medium">{title}</h3>
 
-        {best != null ? (
+        {typeof price === "number" ? (
           <div className="flex items-baseline gap-2">
-            {isOffer && po != null && <span className="text-xs text-ink-500 line-through">{fmt(po)}</span>}
-            <span className="text-brand font-semibold">{fmt(best)}</span>
+            {showStrike && (
+              <span className="text-xs text-ink-500 line-through">
+                {fmt(originalPrice!)}
+              </span>
+            )}
+            <span className="text-brand font-semibold">{fmt(price)}</span>
           </div>
         ) : (
-          <p className="text-ink-500 text-sm">Sin precio</p>
+          typeof originalPrice === "number" && (
+            <p className="text-brand font-semibold">{fmt(originalPrice)}</p>
+          )
         )}
       </div>
-    </Link>
+    </TrackLink>
   );
 }
