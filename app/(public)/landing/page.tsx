@@ -11,7 +11,7 @@ import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
 import RecipesPopular from "@/components/landing/RecipesPopular";
 import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
-import MapHours from "@/components/landing/MapHours";
+import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
@@ -117,7 +117,6 @@ async function getOffersRaw(): Promise<Prod[]> {
     { cache: "no-store", next: { revalidate: 0 } }
   );
   const items: Prod[] = ((data as any)?.items ?? []) as Prod[];
-  // Devolvemos TODO y filtramos por oferta
   return items.filter((p) => {
     const priced =
       p.priceFinal != null &&
@@ -160,13 +159,72 @@ export default async function LandingPage() {
   // Semilla diaria estable (AAAA-MM-DD)
   const seed = new Date().toISOString().slice(0, 10);
 
-  // Rotación diaria: categorías (8) y ofertas (3)
+  // Rotación diaria
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
   const OFFERS_COUNT = 3;
   const offersDaily = shuffleSeed(offersAll, `${seed}:offers`).slice(
     0,
     OFFERS_COUNT
   );
+
+  // ───────── Sucursales (tabs) — usando tus enlaces reales ─────────
+  const hours: [string, string][] = [
+    ["Lun–Vie", "09:00–19:00"],
+    ["Sábado", "09:00–13:00"],
+    ["Domingo", "Cerrado"],
+  ];
+  const encode = (s: string) => encodeURIComponent(s);
+
+  const branches: Branch[] = [
+    {
+      name: "Las Piedras",
+      address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "Maroñas",
+      address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "La Paz",
+      address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "Progreso",
+      address: "Av. José Artigas, 15900 Progreso, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Av. José Artigas, 15900 Progreso, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Av. José Artigas, 15900 Progreso, Canelones") +
+        "&output=embed",
+      hours,
+    },
+  ];
 
   return (
     <>
@@ -194,8 +252,8 @@ export default async function LandingPage() {
       {/* Testimonios + badges de confianza */}
       <TestimonialsBadges />
 
-      {/* Mapa + horarios */}
-      <MapHours />
+      {/* Mapa + horarios con múltiples sucursales */}
+      <MapHours locations={branches} />
 
       {/* Sello sustentable */}
       <Sustainability />
