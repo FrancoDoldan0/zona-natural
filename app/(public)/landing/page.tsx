@@ -15,6 +15,7 @@ import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
+import Link from "next/link";
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -167,7 +168,7 @@ export default async function LandingPage() {
     OFFERS_COUNT
   );
 
-  // ───────── Sucursales (tabs) — usando tus enlaces reales ─────────
+  // ───────── Sucursales (tabs) ─────────
   const hours: [string, string][] = [
     ["Lun–Vie", "09:00–19:00"],
     ["Sábado", "09:00–13:00"],
@@ -271,19 +272,19 @@ export default async function LandingPage() {
             <h3 className="font-semibold mb-2">Links</h3>
             <ul className="space-y-1 text-gray-700">
               <li>
-                <a className="hover:underline" href="/catalogo">
+                <Link className="hover:underline" href="/catalogo">
                   Tienda
-                </a>
+                </Link>
               </li>
               <li>
-                <a className="hover:underline" href="/recetas">
+                <Link className="hover:underline" href="/recetas">
                   Recetas
-                </a>
+                </Link>
               </li>
               <li>
-                <a className="hover:underline" href="/sobre-nosotros">
+                <Link className="hover:underline" href="/sobre-nosotros">
                   Sobre nosotros
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
