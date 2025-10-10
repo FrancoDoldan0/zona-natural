@@ -6,25 +6,33 @@ import { recipes, type Recipe } from "../recipes";
 
 export const revalidate = 3600;
 
+// SSG de los slugs
 export async function generateStaticParams() {
   return recipes.map((r) => ({ slug: r.slug }));
 }
 
+// Metadata (usamos 'desc' que sí existe)
 export async function generateMetadata({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
-  const r = recipes.find((x) => x.slug === params.slug);
+  const { slug } = await params;
+  const r = recipes.find((x) => x.slug === slug);
   return {
     title: r ? `${r.title} — Recetas` : "Receta no encontrada — Zona Natural",
-    // Usamos 'desc' (que sí existe) en lugar de 'excerpt'
     description: r?.desc || "Recetas ricas y naturales.",
   };
 }
 
-export default function RecipePage({ params }: { params: { slug: string } }) {
-  const r: Recipe | undefined = recipes.find((x) => x.slug === params.slug);
+// ⚠️ En este proyecto 'params' es Promise en PageProps
+export default async function RecipePage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const r: Recipe | undefined = recipes.find((x) => x.slug === slug);
   if (!r) return notFound();
 
   return (
