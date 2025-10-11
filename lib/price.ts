@@ -1,4 +1,5 @@
 // lib/price.ts
+
 /** Formatea a moneda UYU (o "-" si no hay precio) */
 export function fmtPrice(n: number | null | undefined): string {
   if (n == null) return "-";
@@ -12,6 +13,9 @@ export function fmtPrice(n: number | null | undefined): string {
   }
 }
 
+/** Alias para compatibilidad con componentes existentes */
+export const fmtPriceUYU = fmtPrice;
+
 /** Porcentaje de descuento redondeado (o null si no aplica) */
 export function percentOff(
   finalPrice: number | null | undefined,
@@ -23,3 +27,6 @@ export function percentOff(
   if (!Number.isFinite(f) || !Number.isFinite(o) || o <= 0 || f >= o) return null;
   return Math.round(((o - f) / o) * 100);
 }
+
+/** Alias para compatibilidad con componentes existentes */
+export const discountPercent = percentOff;
