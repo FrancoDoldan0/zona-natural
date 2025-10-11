@@ -1,6 +1,5 @@
 // app/(public)/landing/page.tsx
-export const runtime = "edge";
-export const revalidate = 60;
+export const revalidate = 60; // cache incremental
 
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
@@ -20,12 +19,22 @@ import Link from "next/link";
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
+
+  // Si está seteada la base pública, la usamos.
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   if (base) return `${base}${path}`;
-  const h = await headers();
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
-  return `${proto}://${host}${path}`;
+
+  // En SSR/hidratación puede que no haya Request context; evitamos tirar error.
+  try {
+    const h = await headers();
+    const proto = h.get("x-forwarded-proto") ?? "https";
+    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+    if (host) return `${proto}://${host}${path}`;
+  } catch {
+    // sin headers(): devolvemos ruta relativa (Next la resuelve en runtime)
+  }
+
+  return path;
 }
 
 async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
