@@ -19,7 +19,7 @@ export const recipes: Recipe[] = [
     title: "Budín de banana integral",
     desc: "Una opción húmeda y nutritiva ideal para la merienda.",
     timeMin: 45,
-    img: "https://images.unsplash.com/photo-1608198093002-ad4e005484ec?q=80&w=1200&auto=format&fit=crop",
+    img: "https://m.ftscrt.com/static/recipe/9a63a850-219e-495c-83b1-0d7362ec1cbd_fs2.jpg",
     heroAlt: "Budín de banana integral casero",
     ingredients: [
       "2 bananas maduras",
@@ -40,7 +40,7 @@ export const recipes: Recipe[] = [
     title: "Galletitas de avena y miel",
     desc: "Crocantes por fuera, tiernas por dentro.",
     timeMin: 25,
-    img: "https://images.unsplash.com/photo-1473181488821-2d23949a045a?q=80&w=1200&auto=format&fit=crop",
+    img: "https://www.gourmet.cl/wp-content/uploads/2019/01/Galletas.jpg",
     heroAlt: "Galletitas de avena y miel",
     ingredients: [
       "1 taza de avena",
