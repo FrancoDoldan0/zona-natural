@@ -1,3 +1,5 @@
+'use client';
+
 // Bloque de “Recetas populares” para la landing.
 // Ahora trae el dataset y tiene fallback de imagen.
 
@@ -12,10 +14,7 @@ export default function RecipesPopular() {
       <div className="mx-auto max-w-7xl px-4 py-8">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl md:text-2xl font-semibold">Recetas populares</h2>
-          <Link
-            href="/recetas"
-            className="text-sm text-emerald-800 hover:underline"
-          >
+          <Link href="/recetas" className="text-sm text-emerald-800 hover:underline">
             Ver todas »
           </Link>
         </div>
