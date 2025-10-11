@@ -12,6 +12,10 @@ import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Link from "next/link";
 import { headers } from "next/headers";
 
+// 🆕 unificadas
+import ProductCard from "@/components/ui/ProductCard";
+import { normalizeProduct } from "@/lib/product";
+
 /* ---------- Tipos ---------- */
 type Cat = {
   id: number;
@@ -34,11 +38,6 @@ type Item = {
   image?: string | null;
 };
 
-const fmt = (n: number | null) =>
-  n == null
-    ? "-"
-    : new Intl.NumberFormat("es-UY", { style: "currency", currency: "UYU" }).format(n);
-
 /* ---------- helpers ---------- */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
@@ -48,21 +47,6 @@ async function abs(path: string) {
   const proto = h.get("x-forwarded-proto") ?? "https";
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
   return `${proto}://${host}${path}`;
-}
-
-const R2_BASE = (process.env.PUBLIC_R2_BASE_URL || "").replace(/\/+$/, "");
-function toR2Url(input: unknown): string {
-  let raw = "";
-  if (typeof input === "string") raw = input;
-  else if (input && typeof input === "object") {
-    const o = input as any;
-    raw = (o.url ?? o.r2Key ?? o.key ?? "").toString();
-  }
-  raw = (raw || "").trim();
-  if (!raw) return "/placeholder.png";
-  if (/^https?:\/\//i.test(raw)) return raw;
-  const key = raw.replace(/^\/+/, "");
-  return R2_BASE ? `${R2_BASE}/${key}` : `/${key}`;
 }
 
 function qp(sp: Record<string, string | string[] | undefined>) {
@@ -84,9 +68,7 @@ const norm = (s: string) =>
 
 // number-safe (acepta string/number)
 const toNum = (v: any): number | null =>
-  v === null || v === undefined || v === "" || Number.isNaN(Number(v))
-    ? null
-    : Number(v);
+  v === null || v === undefined || v === "" || Number.isNaN(Number(v)) ? null : Number(v);
 
 function matchesItem(p: Item, term: string) {
   const t = norm(term);
@@ -97,8 +79,7 @@ function priceFields(raw: any) {
   const price = toNum(raw.price);
   const priceFinal = toNum(raw.priceFinal);
   const priceOriginal = toNum(raw.priceOriginal);
-  const hasOffer =
-    priceFinal != null && priceOriginal != null && priceFinal < priceOriginal;
+  const hasOffer = priceFinal != null && priceOriginal != null && priceFinal < priceOriginal;
   const best = priceFinal ?? price ?? priceOriginal;
   return { price, priceFinal, priceOriginal, best, hasOffer };
 }
@@ -150,15 +131,9 @@ function applyLocalSortFilter(
 async function getData(params: URLSearchParams, queryTerm?: string) {
   try {
     // categorías
-    const catsRes = await fetch(await abs("/api/public/categories"), {
-      next: { revalidate: 60 },
-    });
+    const catsRes = await fetch(await abs("/api/public/categories"), { next: { revalidate: 60 } });
     const catsJson: any = catsRes.ok ? await catsRes.json().catch(() => ({})) : {};
-    const cats: Cat[] = Array.isArray(catsJson?.items)
-      ? catsJson.items
-      : Array.isArray(catsJson)
-      ? catsJson
-      : [];
+    const cats: Cat[] = Array.isArray(catsJson?.items) ? catsJson.items : Array.isArray(catsJson) ? catsJson : [];
 
     // catálogo con estrategia de intentos
     const baseQS = new URLSearchParams(params);
@@ -211,16 +186,7 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
       }
     }
 
-    return {
-      cats,
-      items: [] as Item[],
-      page,
-      perPage,
-      total: 0,
-      sort,
-      minPrice,
-      maxPrice,
-    };
+    return { cats, items: [] as Item[], page, perPage, total: 0, sort, minPrice, maxPrice };
   } catch {
     return {
       cats: [] as Cat[],
@@ -257,16 +223,9 @@ export default async function Page({
   const sp = (await searchParams) ?? {};
   const qs = qp(sp);
   const term =
-    (typeof sp.query === "string"
-      ? sp.query
-      : Array.isArray(sp.query)
-      ? sp.query[0]
-      : "")?.trim() || "";
+    (typeof sp.query === "string" ? sp.query : Array.isArray(sp.query) ? sp.query[0] : "")?.trim() || "";
 
-  const { cats, items, page, perPage, total, sort, minPrice, maxPrice } = await getData(
-    qs,
-    term
-  );
+  const { cats, items, page, perPage, total, sort, minPrice, maxPrice } = await getData(qs, term);
 
   // best sellers: intento por API; si viene vacío uso heurística sobre el set actual
   let bestSellers = await getBestSellers();
@@ -278,8 +237,7 @@ export default async function Page({
   const subId = Number(qs.get("subcategoryId"));
   const cat = cats.find((c) => c.id === catId);
   const sub = cat?.subcats?.find((s) => s.id === subId);
-  const baseTitle =
-    (sub ? `${sub.name} · ` : "") + (cat ? `${cat.name} — ` : "") + "Catálogo";
+  const baseTitle = (sub ? `${sub.name} · ` : "") + (cat ? `${cat.name} — ` : "") + "Catálogo";
 
   // ───────── Sucursales (igual que en landing) ─────────
   const hours: [string, string][] = [
@@ -340,16 +298,6 @@ export default async function Page({
     },
   ];
 
-  // helpers para construir URLs preservando filtros
-  const urlWith = (patch: Record<string, string | null>) => {
-    const u = new URLSearchParams(qs);
-    for (const [k, v] of Object.entries(patch)) {
-      if (v === null) u.delete(k);
-      else u.set(k, v);
-    }
-    return `/catalogo?${u.toString()}`;
-  };
-
   return (
     <>
       {/* Header completo como la landing */}
@@ -370,11 +318,7 @@ export default async function Page({
         </h1>
 
         {/* Barra de búsqueda + orden + filtro por precio */}
-        <form
-          action="/catalogo"
-          method="get"
-          className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto_auto] items-center"
-        >
+        <form action="/catalogo" method="get" className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto_auto] items-center">
           {/* Buscador */}
           <div className="flex items-center gap-2">
             <input
@@ -385,12 +329,8 @@ export default async function Page({
               aria-label="Buscar en el catálogo"
             />
             {/* preservamos filtros de categoría */}
-            {catId ? (
-              <input type="hidden" name="categoryId" value={String(catId)} />
-            ) : null}
-            {subId ? (
-              <input type="hidden" name="subcategoryId" value={String(subId)} />
-            ) : null}
+            {catId ? <input type="hidden" name="categoryId" value={String(catId)} /> : null}
+            {subId ? <input type="hidden" name="subcategoryId" value={String(subId)} /> : null}
           </div>
 
           {/* Ordenamiento */}
@@ -398,12 +338,7 @@ export default async function Page({
             <label htmlFor="sort" className="text-sm text-gray-600">
               Ordenar por:
             </label>
-            <select
-              id="sort"
-              name="sort"
-              defaultValue={sort || "-id"}
-              className="rounded-full border px-3 py-2 text-sm"
-            >
+            <select id="sort" name="sort" defaultValue={sort || "-id"} className="rounded-full border px-3 py-2 text-sm">
               <option value="-sold">Más vendidos</option>
               <option value="-id">Novedades</option>
               <option value="price">Precio: menor a mayor</option>
@@ -434,18 +369,13 @@ export default async function Page({
           </div>
 
           <div className="justify-self-start md:justify-self-end">
-            <button className="rounded-full bg-emerald-700 text-white px-4 py-2 text-sm">
-              Aplicar
-            </button>
+            <button className="rounded-full bg-emerald-700 text-white px-4 py-2 text-sm">Aplicar</button>
           </div>
         </form>
 
         {/* Chips de categorías y subcategorías */}
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link
-            href={term ? `/catalogo?query=${encodeURIComponent(term)}` : "/catalogo"}
-            className="px-3 py-1 rounded-full border"
-          >
+          <Link href={term ? `/catalogo?query=${encodeURIComponent(term)}` : "/catalogo"} className="px-3 py-1 rounded-full border">
             Todos
           </Link>
           {cats.map((c) => {
@@ -459,10 +389,7 @@ export default async function Page({
               <Link
                 key={c.id}
                 href={`/catalogo?${url.toString()}`}
-                className={
-                  "px-3 py-1 rounded-full border " +
-                  (c.id === catId ? "bg-gray-200" : "")
-                }
+                className={"px-3 py-1 rounded-full border " + (c.id === catId ? "bg-gray-200" : "")}
               >
                 {c.name}
               </Link>
@@ -482,10 +409,7 @@ export default async function Page({
                   <Link
                     key={s.id}
                     href={`/catalogo?${url.toString()}`}
-                    className={
-                      "px-3 py-1 rounded-full border " +
-                      (s.id === subId ? "bg-gray-200" : "")
-                    }
+                    className={"px-3 py-1 rounded-full border " + (s.id === subId ? "bg-gray-200" : "")}
                   >
                     {s.name}
                   </Link>
@@ -500,134 +424,63 @@ export default async function Page({
           {/* Sidebar: Más vendidos */}
           <aside className="lg:sticky lg:top-4 self-start">
             <h3 className="mb-3 font-semibold">Más vendidos</h3>
+
+            {/* ✅ unificado con ProductCard (variant="row") */}
             <ul className="space-y-3">
-              {bestSellers.map((p) => {
-                const raw: any = p;
-                const firstImg = raw.cover ?? raw.coverUrl ?? raw.image ?? raw.images?.[0];
-                const src = toR2Url(firstImg);
-                const { best, priceFinal, priceOriginal, hasOffer } = priceFields(raw);
+              {bestSellers.map((raw) => {
+                const p = normalizeProduct(raw);
                 return (
                   <li key={p.id}>
-                    <Link
-                      href={`/producto/${p.slug}`}
-                      className="flex gap-3 rounded-xl ring-1 ring-emerald-100 p-2 hover:shadow bg-white"
-                    >
-                      <div className="shrink-0 w-16 h-16 rounded overflow-hidden bg-black/5">
-                        <img
-                          src={src}
-                          alt={p.name}
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm line-clamp-2">{p.name}</div>
-                        <div className="text-xs mt-0.5">
-                          {hasOffer ? (
-                            <>
-                              <span className="text-green-700 font-semibold mr-1">
-                                {fmt(priceFinal)}
-                              </span>
-                              <span className="line-through opacity-60">
-                                {fmt(priceOriginal)}
-                              </span>
-                            </>
-                          ) : (
-                            <span>{fmt(best)}</span>
-                          )}
-                        </div>
-                      </div>
-                    </Link>
+                    <ProductCard
+                      slug={p.slug}
+                      title={p.title}
+                      image={p.image}
+                      price={p.price ?? undefined}
+                      originalPrice={p.originalPrice ?? undefined}
+                      outOfStock={p.outOfStock}
+                      brand={p.brand ?? undefined}
+                      subtitle={p.subtitle ?? undefined}
+                      variant="row"
+                    />
                   </li>
                 );
               })}
-              {!bestSellers.length && (
-                <li className="text-sm text-gray-500">Sin datos por ahora.</li>
-              )}
+              {!bestSellers.length && <li className="text-sm text-gray-500">Sin datos por ahora.</li>}
             </ul>
           </aside>
 
           {/* Grid de resultados */}
           <section>
+            {/* ✅ unificado con ProductCard */}
             <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {items.map((p) => {
-                const raw: any = p;
-                const firstImg =
-                  raw.cover ?? raw.coverUrl ?? raw.image ?? raw.images?.[0];
-                const src = toR2Url(firstImg);
-                const alt =
-                  (typeof firstImg === "object" && firstImg?.alt) ||
-                  (typeof firstImg === "string" ? "" : "") ||
-                  p.name;
-
-                const isOOS =
-                  typeof raw.status === "string" &&
-                  raw.status.toUpperCase() === "AGOTADO";
-
-                const { priceFinal, priceOriginal, hasOffer, best } = priceFields(raw);
-
+              {items.map((raw) => {
+                const p = normalizeProduct(raw);
                 return (
-                  <Link
+                  <ProductCard
                     key={p.id}
-                    href={`/producto/${p.slug}`}
-                    className="border rounded p-2 hover:shadow bg-white"
-                  >
-                    <div className="relative aspect-[4/3] bg-black/5 mb-2 overflow-hidden rounded">
-                      <img
-                        src={src}
-                        alt={alt || p.name}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                        decoding="async"
-                        sizes="(min-width:1024px) 22vw, (min-width:640px) 33vw, 50vw"
-                      />
-                      {isOOS && (
-                        <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-xs text-white">
-                          Agotado
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="font-medium">{p.name}</div>
-                    {hasOffer ? (
-                      <div className="text-sm">
-                        <span className="text-green-600 font-semibold mr-2">
-                          {fmt(priceFinal)}
-                        </span>
-                        <span className="line-through opacity-60">
-                          {fmt(priceOriginal)}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="text-sm">{fmt(best)}</div>
-                    )}
-                  </Link>
+                    slug={p.slug}
+                    title={p.title}
+                    image={p.image}
+                    price={p.price ?? undefined}
+                    originalPrice={p.originalPrice ?? undefined}
+                    outOfStock={p.outOfStock}
+                    brand={p.brand ?? undefined}
+                    subtitle={p.subtitle ?? undefined}
+                  />
                 );
               })}
-              {!items.length && (
-                <p className="opacity-70 col-span-full">No hay resultados.</p>
-              )}
+              {!items.length && <p className="opacity-70 col-span-full">No hay resultados.</p>}
             </div>
 
             {/* Paginación (si no hay query y no filtramos en front, usamos la del backend) */}
             {!term && minPrice == null && maxPrice == null && total > perPage && (
               <nav className="mt-6 flex gap-2 items-center">
-                {Array.from({
-                  length: Math.ceil(total / Math.max(1, perPage)),
-                }).map((_, i) => {
+                {Array.from({ length: Math.ceil(total / Math.max(1, perPage)) }).map((_, i) => {
                   const n = i + 1;
                   const url = new URLSearchParams(qs);
                   url.set("page", String(n));
                   return (
-                    <Link
-                      key={n}
-                      href={`/catalogo?${url.toString()}`}
-                      className={
-                        "border rounded px-3 py-1 " +
-                        (n === page ? "bg-gray-200" : "")
-                      }
-                    >
+                    <Link key={n} href={`/catalogo?${url.toString()}`} className={"border rounded px-3 py-1 " + (n === page ? "bg-gray-200" : "")}>
                       {n}
                     </Link>
                   );
