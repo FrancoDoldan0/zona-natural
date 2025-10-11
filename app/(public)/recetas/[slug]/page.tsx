@@ -3,20 +3,33 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { recipes, FALLBACK_IMG } from "../recipes";
 
+// SSG: generamos las rutas estáticas
 export async function generateStaticParams() {
   return recipes.map((r) => ({ slug: r.slug }));
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }) {
-  const r = recipes.find((x) => x.slug === params.slug);
+// Metadata: params es Promise en Next 15
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const r = recipes.find((x) => x.slug === slug);
   return {
     title: r ? `${r.title} — Recetas` : "Receta — Zona Natural",
     description: r?.desc || "Recetas ricas y naturales.",
   };
 }
 
-export default function RecipePage({ params }: { params: { slug: string } }) {
-  const r = recipes.find((x) => x.slug === params.slug);
+// Page: params es Promise en Next 15
+export default async function RecipePage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
+  const r = recipes.find((x) => x.slug === slug);
   if (!r) return notFound();
 
   const img = r.img || FALLBACK_IMG;
@@ -42,7 +55,9 @@ export default function RecipePage({ params }: { params: { slug: string } }) {
               className="absolute inset-0 h-full w-full object-cover"
               loading="lazy"
               decoding="async"
-              onError={(e) => ((e.currentTarget as HTMLImageElement).src = FALLBACK_IMG)}
+              onError={(e) =>
+                ((e.currentTarget as HTMLImageElement).src = FALLBACK_IMG)
+              }
             />
           </div>
         </div>
