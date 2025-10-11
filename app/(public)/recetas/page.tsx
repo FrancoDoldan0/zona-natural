@@ -1,53 +1,44 @@
-// app/(public)/recetas/page.tsx
-export const runtime = "edge";
-export const revalidate = 3600;
-
 import Link from "next/link";
-import { recipes } from "./recipes";
+import { recipes, FALLBACK_IMG } from "./recipes";
 
 export default function RecipesIndex() {
   return (
-    <main className="max-w-6xl mx-auto p-6 space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Recetas</h1>
-        <Link
-          href="/"
-          className="text-sm text-emerald-800 underline"
-        >
+    <div className="mx-auto max-w-7xl px-4 py-8">
+      <div className="mb-4">
+        <Link href="/landing" className="text-sm text-emerald-800 hover:underline">
           ← Volver al inicio
         </Link>
-      </header>
+      </div>
 
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+      <h1 className="text-2xl md:text-3xl font-semibold mb-6">Recetas</h1>
+
+      <div className="grid gap-4 md:gap-6 md:grid-cols-3">
         {recipes.map((r) => (
           <Link
             key={r.slug}
             href={`/recetas/${r.slug}`}
-            className="group block rounded-xl overflow-hidden ring-1 ring-emerald-100 hover:shadow"
+            className="block rounded-2xl ring-1 ring-emerald-100 bg-white overflow-hidden hover:shadow transition-shadow"
           >
-            <div className="relative aspect-[4/3] bg-emerald-50">
-              {r.image ? (
-                <img
-                  src={r.image}
-                  alt={r.title}
-                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  loading="lazy"
-                  decoding="async"
-                />
-              ) : null}
+            <div className="relative bg-emerald-50 aspect-[16/10]">
+              <img
+                src={r.img || FALLBACK_IMG}
+                alt={r.heroAlt || r.title}
+                className="absolute inset-0 h-full w-full object-cover"
+                loading="lazy"
+                decoding="async"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = FALLBACK_IMG;
+                }}
+              />
             </div>
-            <div className="p-3">
-              <h2 className="font-medium">{r.title}</h2>
-              {r.desc ? (
-                <p className="text-sm text-gray-600 line-clamp-2">{r.desc}</p>
-              ) : null}
-              {r.time ? (
-                <p className="mt-1 text-xs text-gray-500">⏱ {r.time}</p>
-              ) : null}
+            <div className="p-4">
+              <h3 className="font-medium">{r.title}</h3>
+              <p className="text-sm text-gray-600 line-clamp-2">{r.desc}</p>
+              <p className="mt-1 text-xs text-gray-500">⏱ {r.mins} min</p>
             </div>
           </Link>
         ))}
       </div>
-    </main>
+    </div>
   );
 }

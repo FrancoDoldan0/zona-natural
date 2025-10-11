@@ -1,46 +1,47 @@
-// components/landing/RecipesPopular.tsx
+// Bloque de “Recetas populares” para la landing.
+// Ahora trae el dataset y tiene fallback de imagen.
+
 import Link from "next/link";
-import { recipes } from "@/app/(public)/recetas/recipes";
+import { recipes as RECIPES, FALLBACK_IMG } from "@/app/(public)/recetas/recipes";
 
 export default function RecipesPopular() {
-  // Simple: mostramos las primeras 3 (puedes reordenar a gusto)
-  const top = recipes.slice(0, 3);
-
-  if (!top.length) return null;
+  const top = RECIPES.slice(0, 3);
 
   return (
     <section className="bg-white">
       <div className="mx-auto max-w-7xl px-4 py-8">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl md:text-2xl font-semibold">Recetas populares</h2>
-          <Link href="/recetas" className="text-sm text-emerald-800 underline">
-            Ver todas
+          <Link
+            href="/recetas"
+            className="text-sm text-emerald-800 hover:underline"
+          >
+            Ver todas »
           </Link>
         </div>
 
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:gap-6 md:grid-cols-3">
           {top.map((r) => (
             <Link
               key={r.slug}
               href={`/recetas/${r.slug}`}
-              className="group block rounded-xl overflow-hidden ring-1 ring-emerald-100 hover:shadow"
+              className="block rounded-2xl ring-1 ring-emerald-100 bg-white overflow-hidden hover:shadow transition-shadow"
             >
-              <div className="relative aspect-[4/3] bg-emerald-50">
-                {r.image ? (
-                  <img
-                    src={r.image}
-                    alt={r.title}
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    loading="lazy"
-                    decoding="async"
-                  />
-                ) : null}
+              <div className="relative bg-emerald-50 aspect-[16/10]">
+                <img
+                  src={r.img || FALLBACK_IMG}
+                  alt={r.heroAlt || r.title}
+                  className="absolute inset-0 h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = FALLBACK_IMG;
+                  }}
+                />
               </div>
-              <div className="p-3">
+              <div className="p-4">
                 <h3 className="font-medium">{r.title}</h3>
-                {r.desc ? (
-                  <p className="text-sm text-gray-600 line-clamp-2">{r.desc}</p>
-                ) : null}
+                <p className="text-sm text-gray-600 line-clamp-2">{r.desc}</p>
               </div>
             </Link>
           ))}

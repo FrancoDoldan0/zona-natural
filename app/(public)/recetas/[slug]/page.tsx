@@ -1,22 +1,12 @@
-// app/(public)/recetas/[slug]/page.tsx
-import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { recipes, type Recipe } from "../recipes";
+import type { Recipe } from "../recipes";
+import { recipes, FALLBACK_IMG } from "../recipes";
 
-export const revalidate = 3600;
-
-// SSG de los slugs
 export async function generateStaticParams() {
   return recipes.map((r) => ({ slug: r.slug }));
 }
 
-// Metadata (usamos 'desc' que sí existe)
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const r = recipes.find((x) => x.slug === slug);
   return {
@@ -25,63 +15,67 @@ export async function generateMetadata({
   };
 }
 
-// ⚠️ En este proyecto 'params' es Promise en PageProps
-export default async function RecipePage({
+export default async function RecipeDetail({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const r: Recipe | undefined = recipes.find((x) => x.slug === slug);
-  if (!r) return notFound();
+  const r = recipes.find((x) => x.slug === slug) as Recipe | undefined;
+
+  if (!r) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-10">
+        <p className="mb-4">
+          <Link href="/recetas" className="text-sm text-emerald-800 hover:underline">
+            ← Volver a recetas
+          </Link>
+        </p>
+        <h1 className="text-2xl font-semibold">Receta no encontrada</h1>
+      </div>
+    );
+  }
 
   return (
-    <main className="max-w-3xl mx-auto p-6 space-y-5">
-      <Link href="/recetas" className="text-sm text-emerald-800 underline">
-        ← Volver a recetas
-      </Link>
+    <div className="mx-auto max-w-3xl px-4 py-10">
+      <p className="mb-4">
+        <Link href="/recetas" className="text-sm text-emerald-800 hover:underline">
+          ← Volver a recetas
+        </Link>
+      </p>
 
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">{r.title}</h1>
-        {r.desc ? <p className="text-gray-700">{r.desc}</p> : null}
-        {r.time ? (
-          <p className="text-sm text-gray-600">Tiempo estimado: {r.time}</p>
-        ) : null}
-      </header>
+      <h1 className="text-3xl font-semibold">{r.title}</h1>
+      <p className="text-gray-600">{r.desc}</p>
+      <p className="mt-1 text-sm text-gray-500">Tiempo estimado: {r.mins} min</p>
 
-      {r.image ? (
-        <div className="overflow-hidden rounded-xl ring-1 ring-emerald-100">
+      <div className="mt-4 rounded-2xl ring-1 ring-emerald-100 overflow-hidden">
+        <div className="relative bg-emerald-50 aspect-[16/9]">
           <img
-            src={r.image}
-            alt={r.title}
-            className="w-full h-auto object-cover"
-            loading="lazy"
+            src={r.img || FALLBACK_IMG}
+            alt={r.heroAlt || r.title}
+            className="absolute inset-0 h-full w-full object-cover"
+            loading="eager"
             decoding="async"
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).src = FALLBACK_IMG;
+            }}
           />
         </div>
-      ) : null}
+      </div>
 
-      {Array.isArray(r.ingredients) && r.ingredients.length > 0 ? (
-        <section>
-          <h2 className="font-semibold mb-2">Ingredientes</h2>
-          <ul className="list-disc ml-6 space-y-1">
-            {r.ingredients.map((it, i) => (
-              <li key={i}>{it}</li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <h2 className="mt-8 text-xl font-semibold">Ingredientes</h2>
+      <ul className="list-disc pl-6 space-y-1 mt-2">
+        {r.ingredients.map((it, i) => (
+          <li key={i}>{it}</li>
+        ))}
+      </ul>
 
-      {Array.isArray(r.steps) && r.steps.length > 0 ? (
-        <section>
-          <h2 className="font-semibold mb-2">Pasos</h2>
-          <ol className="list-decimal ml-6 space-y-2">
-            {r.steps.map((st, i) => (
-              <li key={i}>{st}</li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
-    </main>
+      <h2 className="mt-6 text-xl font-semibold">Pasos</h2>
+      <ol className="list-decimal pl-6 space-y-2 mt-2">
+        {r.steps.map((it, i) => (
+          <li key={i}>{it}</li>
+        ))}
+      </ol>
+    </div>
   );
 }
