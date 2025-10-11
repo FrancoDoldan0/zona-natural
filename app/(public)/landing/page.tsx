@@ -268,7 +268,7 @@ export default async function LandingPage() {
       {/* Sello sustentable */}
       <Sustainability />
 
-      {/* Footer mínimo */}
+      {/* Footer (verde) con copyright */}
       <footer className="mt-8 bg-emerald-50">
         <div className="mx-auto max-w-7xl px-4 py-10 grid gap-6 sm:grid-cols-3 text-sm">
           <div>
@@ -311,6 +311,13 @@ export default async function LandingPage() {
                 </a>
               </li>
             </ul>
+          </div>
+        </div>
+
+        {/* línea de copyright */}
+        <div className="border-t border-emerald-100">
+          <div className="mx-auto max-w-7xl px-4 py-4 text-center text-xs text-emerald-900/70">
+            © 2025 Zona Natural — Todos los derechos reservados.
           </div>
         </div>
       </footer>
