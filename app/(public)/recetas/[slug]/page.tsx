@@ -3,12 +3,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { recipes, FALLBACK_IMG } from "../recipes";
 
+// Fuerza SSG para esta ruta dinámica
+export const dynamic = "force-static";
+
 // SSG: generamos las rutas estáticas
 export async function generateStaticParams() {
   return recipes.map((r) => ({ slug: r.slug }));
 }
 
-// Metadata: params es Promise en Next 15
+// Metadata (en Next 15, params es Promise)
 export async function generateMetadata({
   params,
 }: {
@@ -22,7 +25,7 @@ export async function generateMetadata({
   };
 }
 
-// Page: params es Promise en Next 15
+// Página (en Next 15, params es Promise)
 export default async function RecipePage({
   params,
 }: {
@@ -48,30 +51,27 @@ export default async function RecipePage({
         ) : null}
 
         <div className="relative mt-4 overflow-hidden rounded-2xl ring-1 ring-emerald-100">
-          <div className="aspect-[16/9] bg-emerald-50">
+          <div className="aspect-[16/9] bg-emerald-50 relative">
             <img
               src={img}
               alt={r.heroAlt || r.title}
               className="absolute inset-0 h-full w-full object-cover"
               loading="lazy"
               decoding="async"
-              onError={(e) =>
-                ((e.currentTarget as HTMLImageElement).src = FALLBACK_IMG)
-              }
             />
           </div>
         </div>
 
         <h2 className="mt-6 text-lg font-semibold">Ingredientes</h2>
         <ul className="list-disc pl-6 space-y-1">
-          {r.ingredients.map((it, i) => (
+          {(r.ingredients ?? []).map((it, i) => (
             <li key={i}>{it}</li>
           ))}
         </ul>
 
         <h2 className="mt-6 text-lg font-semibold">Pasos</h2>
         <ol className="list-decimal pl-6 space-y-2">
-          {r.steps.map((it, i) => (
+          {(r.steps ?? []).map((it, i) => (
             <li key={i}>{it}</li>
           ))}
         </ol>

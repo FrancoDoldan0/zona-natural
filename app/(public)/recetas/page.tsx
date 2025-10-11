@@ -26,7 +26,6 @@ export default function RecipesIndex() {
                   className="absolute inset-0 h-full w-full object-cover"
                   loading="lazy"
                   decoding="async"
-                  onError={(e) => ((e.currentTarget as HTMLImageElement).src = FALLBACK_IMG)}
                 />
               </div>
               <div className="p-4">
