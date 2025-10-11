@@ -14,12 +14,22 @@ import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
+import { headers } from "next/headers";
 import Link from "next/link";
 
-/* ───────── util de fetch segura ───────── */
+/* ───────── helpers comunes ───────── */
+async function abs(path: string) {
+  if (path.startsWith("http")) return path;
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  if (base) return `${base}${path}`;
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+  return `${proto}://${host}${path}`;
+}
+
 async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
-    // Usamos rutas relativas internas: funcionan en Edge/SSR sin depender de headers()
     const res = await fetch(url, { next: { revalidate: 60 }, ...init });
     if (!res.ok) return null;
     return (await res.json()) as T;
@@ -78,7 +88,7 @@ type Prod = {
 
 /* ───────── data fetchers ───────── */
 async function getBanners(): Promise<BannerItem[]> {
-  const data = await safeJson<any>("/api/public/banners", {
+  const data = await safeJson<any>(await abs("/api/public/banners"), {
     cache: "no-store",
     next: { revalidate: 0 },
   });
@@ -88,21 +98,23 @@ async function getBanners(): Promise<BannerItem[]> {
       id: Number(b.id ?? i),
       title: String(b.title ?? b.name ?? ""),
       image:
-        (b.image ?? b.imageUrl) || ({ url: b.url ?? "" } as any),
+        b.image ?? b.imageUrl
+          ? (b.image ?? b.imageUrl)
+          : ({ url: b.url ?? "" } as any),
       linkUrl: b.linkUrl ?? b.href ?? null,
     }))
     .filter((x) => !!(typeof x.image === "string" || (x.image as any)?.url));
 }
 
 async function getCategories(): Promise<Cat[]> {
-  const data = await safeJson<any>("/api/public/categories");
+  const data = await safeJson<any>(await abs("/api/public/categories"));
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return list as Cat[];
 }
 
 async function getOffersRaw(): Promise<Prod[]> {
   const data = await safeJson<any>(
-    "/api/public/catalogo?perPage=48&sort=-id",
+    await abs("/api/public/catalogo?perPage=48&sort=-id"),
     { cache: "no-store", next: { revalidate: 0 } }
   );
   const items: Prod[] = ((data as any)?.items ?? []) as Prod[];
@@ -120,7 +132,9 @@ async function getCatalog(perPage = 48): Promise<Prod[]> {
   const statuses = ["all", "raw"];
   for (const status of statuses) {
     const data = await safeJson<any>(
-      `/api/public/catalogo?status=${status}&perPage=${perPage}&sort=-id&_ts=${Date.now()}`,
+      await abs(
+        `/api/public/catalogo?status=${status}&perPage=${perPage}&sort=-id&_ts=${Date.now()}`
+      ),
       { cache: "no-store", next: { revalidate: 0 } }
     );
     const items: any[] =
@@ -233,7 +247,7 @@ export default async function LandingPage() {
       {/* Más vendidos (simulado por clics + heurística) */}
       <BestSellersGrid items={catalog} />
 
-      {/* Recetas populares (server-safe) */}
+      {/* Recetas populares */}
       <RecipesPopular />
 
       {/* Testimonios + badges */}
