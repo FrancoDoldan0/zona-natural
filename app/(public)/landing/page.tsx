@@ -9,7 +9,7 @@ import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
 import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
-import RecipesPopular from "@/components/landing/RecipesPopular"; // ⬅️ import normal (Client Component)
+import RecipesPopular from "@/components/landing/RecipesPopular";
 import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
@@ -247,7 +247,7 @@ export default async function LandingPage() {
       {/* Más vendidos (simulado por clics + heurística) */}
       <BestSellersGrid items={catalog} />
 
-      {/* Recetas populares (Client Component) */}
+      {/* Recetas populares */}
       <RecipesPopular />
 
       {/* Testimonios + badges */}
