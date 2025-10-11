@@ -9,7 +9,13 @@ import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
 import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
-import RecipesPopular from "@/components/landing/RecipesPopular";
+// ⬇️ Recetas populares se carga solo en cliente para evitar errores en SSR
+import dynamic from "next/dynamic";
+const RecipesPopular = dynamic(
+  () => import("@/components/landing/RecipesPopular"),
+  { ssr: false }
+);
+
 import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
@@ -244,13 +250,13 @@ export default async function LandingPage() {
       {/* Ofertas (rotación diaria) */}
       <OffersCarousel items={offersDaily} />
 
-      {/* Más vendidos (simulado por clics locales + heurística) */}
+      {/* Más vendidos (simulado por clics + heurística) */}
       <BestSellersGrid items={catalog} />
 
-      {/* Recetas populares */}
+      {/* Recetas populares (client-only para evitar SSR crash) */}
       <RecipesPopular />
 
-      {/* Testimonios + badges de confianza */}
+      {/* Testimonios + badges */}
       <TestimonialsBadges />
 
       {/* Mapa + horarios con múltiples sucursales */}
