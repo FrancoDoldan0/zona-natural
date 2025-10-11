@@ -14,7 +14,6 @@ import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
-import Link from "next/link";
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -268,60 +267,8 @@ export default async function LandingPage() {
       {/* Sello sustentable */}
       <Sustainability />
 
-      {/* Footer (verde) con copyright */}
-      <footer className="mt-8 bg-emerald-50">
-        <div className="mx-auto max-w-7xl px-4 py-10 grid gap-6 sm:grid-cols-3 text-sm">
-          <div>
-            <h3 className="font-semibold mb-2">Zona Natural</h3>
-            <p className="text-gray-600">
-              Productos naturales, saludables y ricos.
-            </p>
-          </div>
-          <div>
-            <h3 className="font-semibold mb-2">Links</h3>
-            <ul className="space-y-1 text-gray-700">
-              <li>
-                <Link className="hover:underline" href="/catalogo">
-                  Tienda
-                </Link>
-              </li>
-              <li>
-                <Link className="hover:underline" href="/recetas">
-                  Recetas
-                </Link>
-              </li>
-              <li>
-                <Link className="hover:underline" href="/sobre-nosotros">
-                  Sobre nosotros
-                </Link>
-              </li>
-            </ul>
-          </div>
-          <div>
-            <h3 className="font-semibold mb-2">Redes</h3>
-            <ul className="space-y-1 text-gray-700">
-              <li>
-                <a className="hover:underline" href="#ig">
-                  Instagram
-                </a>
-              </li>
-              <li>
-                <a className="hover:underline" href="#fb">
-                  Facebook
-                </a>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        {/* línea de copyright */}
-        <div className="border-t border-emerald-100">
-          <div className="mx-auto max-w-7xl px-4 py-4 text-center text-xs text-emerald-900/70">
-            © 2025 Zona Natural — Todos los derechos reservados.
-          </div>
-        </div>
-      </footer>
-
+      {/* ⚠️ Footer verde eliminado para evitar el doble pie.
+          El footer blanco global permanece. */}
       <WhatsAppFloat />
     </>
   );
