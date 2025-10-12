@@ -1,4 +1,7 @@
 // app/(public)/recetas/page.tsx
+
+export const runtime = "edge";
+
 import Link from "next/link";
 import { headers } from "next/headers";
 

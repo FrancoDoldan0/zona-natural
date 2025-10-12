@@ -1,4 +1,7 @@
 // app/(public)/recetas/[slug]/page.tsx
+
+export const runtime = "edge";
+
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { recipes, FALLBACK_IMG } from "../recipes";
