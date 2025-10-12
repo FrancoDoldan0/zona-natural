@@ -242,7 +242,7 @@ export default async function LandingPage() {
       <MainNav />
 
       {/* HERO full-bleed */}
-      <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen">
+      <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen overflow-hidden">
         <HeroSlider items={banners} />
       </div>
 
