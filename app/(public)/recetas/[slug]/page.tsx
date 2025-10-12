@@ -1,6 +1,7 @@
 // app/(public)/recetas/[slug]/page.tsx
 
 export const runtime = "edge";
+export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -8,11 +9,6 @@ import { recipes, FALLBACK_IMG } from "../recipes";
 
 // Fuerza SSG para esta ruta dinámica
 export const dynamic = "force-static";
-
-// SSG: generamos las rutas estáticas
-export async function generateStaticParams() {
-  return recipes.map((r) => ({ slug: r.slug }));
-}
 
 // Metadata (en Next 15, params es Promise)
 export async function generateMetadata({
