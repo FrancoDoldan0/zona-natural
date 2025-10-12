@@ -113,7 +113,12 @@ export default async function ProductPage({
         <MainNav />
         <main className="mx-auto max-w-7xl px-4 py-10">
           <h1 className="text-2xl font-semibold">Producto no encontrado</h1>
-          <p className="mt-2 text-gray-600">Volvé al <Link href="/catalogo" className="text-emerald-700 underline">catálogo</Link>.</p>
+          <p className="mt-2 text-gray-600">
+            Volvé al{" "}
+            <Link href="/catalogo" className="text-emerald-700 underline">
+              catálogo
+            </Link>.
+          </p>
         </main>
       </>
     );
@@ -121,6 +126,7 @@ export default async function ProductPage({
 
   const p = normalizeProduct(raw);
   const img = toR2Url(p.image);
+  const canonical = await abs(`/producto/${slug}`);
 
   const relatedRaw = await getRelated(raw);
   const related = relatedRaw.map(normalizeProduct);
@@ -192,8 +198,10 @@ export default async function ProductPage({
       <main className="mx-auto max-w-7xl px-4 py-8">
         {/* migas */}
         <nav className="text-sm text-gray-600">
-          <Link href="/catalogo" className="hover:underline">Catálogo</Link> /{" "}
-          <span className="text-gray-800">{p.title}</span>
+          <Link href="/catalogo" className="hover:underline">
+            Catálogo
+          </Link>{" "}
+          / <span className="text-gray-800">{p.title}</span>
         </nav>
 
         {/* cabecera */}
@@ -220,11 +228,17 @@ export default async function ProductPage({
             <div className="text-xl">
               {p.originalPrice && p.price && p.price < p.originalPrice ? (
                 <>
-                  <span className="text-emerald-700 font-semibold">{fmtPrice(p.price)}</span>{" "}
-                  <span className="text-gray-500 line-through text-base">{fmtPrice(p.originalPrice)}</span>
+                  <span className="text-emerald-700 font-semibold">
+                    {fmtPrice(p.price)}
+                  </span>{" "}
+                  <span className="text-gray-500 line-through text-base">
+                    {fmtPrice(p.originalPrice)}
+                  </span>
                 </>
               ) : (
-                <span className="text-emerald-700 font-semibold">{fmtPrice(p.price ?? p.originalPrice ?? null)}</span>
+                <span className="text-emerald-700 font-semibold">
+                  {fmtPrice(p.price ?? p.originalPrice ?? null)}
+                </span>
               )}
             </div>
 
@@ -235,11 +249,10 @@ export default async function ProductPage({
 
             {/* cantidad + WhatsApp */}
             <QtyWhatsApp
-              productName={p.title}
-              defaultQty={1}
-              phone="+59897531583"
-              // mensaje prellenado incluye slug por si quieren link
-              prefilledNote={`Quisiera coordinar la compra de: ${p.title} (${p.slug}).`}
+              phoneE164="+59897531583"
+              productTitle={p.title}
+              productUrl={canonical}
+              disabled={p.outOfStock}
             />
 
             <div className="pt-2">
@@ -268,22 +281,24 @@ export default async function ProductPage({
               />
             ))}
             {!related.length && (
-              <p className="col-span-full text-gray-500">No encontramos productos relacionados.</p>
+              <p className="col-span-full text-gray-500">
+                No encontramos productos relacionados.
+              </p>
             )}
           </div>
         </section>
 
-        {/* NUEVO: Recetas populares */}
+        {/* Recetas populares */}
         <div className="mt-12">
           <RecipesPopular />
         </div>
 
-        {/* NUEVO: Ubicaciones */}
+        {/* Ubicaciones */}
         <div className="mt-12">
           <MapHours locations={branches} />
         </div>
 
-        {/* NUEVO: Compromiso sustentable */}
+        {/* Compromiso sustentable */}
         <div className="mt-12">
           <Sustainability />
         </div>
