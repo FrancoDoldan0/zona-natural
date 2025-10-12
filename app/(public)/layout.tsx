@@ -2,6 +2,7 @@
 import "../globals.css";
 import { Poppins } from "next/font/google";
 import Footer from "@/components/site/Footer";
+import CartProvider from "@/components/cart/CartProvider";
 
 export const runtime = "edge";
 
@@ -11,9 +12,11 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
   return (
     <html lang="es" className={font.className}>
       <body className="bg-white text-ink-900">
-        {/* Eliminado el Header global antiguo para evitar el buscador superior duplicado */}
-        <main className="min-h-screen">{children}</main>
-        <Footer />
+        <CartProvider>
+          {/* Evitamos encabezado global para no duplicar buscador */}
+          <main className="min-h-screen">{children}</main>
+          <Footer />
+        </CartProvider>
       </body>
     </html>
   );

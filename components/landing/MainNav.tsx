@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import CartButton from "@/components/cart/CartButton"; // ← NUEVO
 
 type Subcat = { id: number; name: string; slug?: string };
 type Cat = {
@@ -49,7 +50,6 @@ export default function MainNav() {
   const [open, setOpen] = useState(false);
   const [activeCatId, setActiveCatId] = useState<number | null>(null);
 
-  // Al abrir, seleccionamos la 1ra categoría si no hay una activa
   useEffect(() => {
     if (open && !activeCatId && cats.length) setActiveCatId(cats[0].id);
   }, [open, cats, activeCatId]);
@@ -71,10 +71,9 @@ export default function MainNav() {
     closeTimer.current = setTimeout(() => {
       setOpen(false);
       closeTimer.current = null;
-    }, 200); // gracia para mover el mouse
+    }, 200);
   };
 
-  // Cerrar si clic fuera
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (!rootRef.current) return;
@@ -87,7 +86,6 @@ export default function MainNav() {
   return (
     <div className="w-full border-b border-emerald-100 bg-white">
       <div className="mx-auto max-w-7xl px-3 py-2 flex items-center gap-4 text-sm">
-        {/* Contenedor que gobierna botón + panel */}
         <div
           ref={rootRef}
           className="relative"
@@ -96,25 +94,21 @@ export default function MainNav() {
         >
           <button
             className="rounded-md bg-emerald-50 px-3 py-1 ring-1 ring-emerald-200 hover:bg-emerald-100"
-            onClick={() => (open ? setOpen(false) : setOpen(true))} // mobile toggle
+            onClick={() => (open ? setOpen(false) : setOpen(true))}
             aria-haspopup="menu"
             aria-expanded={open}
           >
             Categorías
           </button>
 
-          {/* Mega dropdown */}
           {open && (
             <div
               className="absolute left-0 top-full w-[min(92vw,820px)] z-40 rounded-xl border border-emerald-100 bg-white shadow-lg mt-2"
               role="menu"
-              // Mantener abierto al entrar al panel (por si hay gap)
               onMouseEnter={openNow}
               onMouseLeave={scheduleClose}
             >
-              {/* Layout de 2/3 columnas */}
               <div className="grid grid-cols-1 md:grid-cols-3">
-                {/* Columna categorías */}
                 <ul className="md:col-span-1 max-h-[60vh] overflow-auto py-2 no-scrollbar">
                   {cats.map((c) => (
                     <li key={c.id}>
@@ -136,7 +130,6 @@ export default function MainNav() {
                   )}
                 </ul>
 
-                {/* Columna subcategorías */}
                 <div className="md:col-span-2 border-t md:border-t-0 md:border-l border-emerald-100 p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="font-semibold">
@@ -166,7 +159,6 @@ export default function MainNav() {
                         {s.name}
                       </Link>
                     ))}
-
                     {!!activeCat &&
                       !(activeCat.subcats?.length ||
                         activeCat.subcategories?.length ||
@@ -191,6 +183,11 @@ export default function MainNav() {
         <a href="#" className="hover:underline">
           Recetas
         </a>
+
+        {/* Carrito al extremo derecho */}
+        <div className="ml-auto">
+          <CartButton />
+        </div>
       </div>
     </div>
   );

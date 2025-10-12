@@ -6,7 +6,7 @@ import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
 import MainNav from "@/components/landing/MainNav";
 
-// NUEVO: secciones pedidas
+// Secciones adicionales
 import RecipesPopular from "@/components/landing/RecipesPopular";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
@@ -18,7 +18,7 @@ import Link from "next/link";
 import { fmtPrice } from "@/lib/price";
 import { normalizeProduct, toR2Url } from "@/lib/product";
 import ProductCard from "@/components/ui/ProductCard";
-import QtyWhatsApp from "@/components/product/QtyWhatsApp";
+import AddToCart from "@/components/cart/AddToCart"; // ← NUEVO
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -44,11 +44,10 @@ async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   }
 }
 
-/* ───────── fetch de producto por slug (robusto a API) ───────── */
+/* ───────── fetch de producto por slug ───────── */
 type RawItem = Record<string, any>;
 
 async function fetchOneBySlug(slug: string): Promise<RawItem | null> {
-  // 1) endpoints de detalle conocidos
   for (const pth of [`/api/public/producto/${slug}`, `/api/public/product/${slug}`]) {
     const data = await safeJson<any>(await abs(pth));
     if (data && typeof data === "object") {
@@ -56,8 +55,6 @@ async function fetchOneBySlug(slug: string): Promise<RawItem | null> {
       if (raw && (raw.slug === slug || raw.id)) return raw;
     }
   }
-
-  // 2) búsqueda en catálogo por distintos parámetros
   const keys = ["slug", "query", "q", "search", "term", "name"];
   const statuses = ["all", "raw"];
   for (const status of statuses) {
@@ -82,12 +79,8 @@ async function fetchOneBySlug(slug: string): Promise<RawItem | null> {
   return null;
 }
 
-/* ───────── metadata (Next 15: params es Promise) ───────── */
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+/* ───────── metadata ───────── */
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const raw = await fetchOneBySlug(slug);
   const p = raw ? normalizeProduct(raw) : null;
@@ -97,27 +90,15 @@ export async function generateMetadata({
   };
 }
 
-/* ───────── utilidades (sku/categorías/descripcion/ids) ───────── */
+/* ───────── utilidades ───────── */
 function getSku(raw: RawItem): string | null {
-  const v =
-    raw.sku ?? raw.SKU ?? raw.codigo ?? raw.code ?? raw.productCode ?? null;
+  const v = raw.sku ?? raw.SKU ?? raw.codigo ?? raw.code ?? raw.productCode ?? null;
   return v ? String(v) : null;
 }
 function getCategories(raw: RawItem): string[] {
   const one =
-    raw.category?.name ??
-    raw.categoria?.name ??
-    raw.categoryName ??
-    raw.categoria ??
-    null;
-
-  const many: any[] =
-    raw.categories ??
-    raw.categorias ??
-    raw.cats ??
-    raw.tags ??
-    [];
-
+    raw.category?.name ?? raw.categoria?.name ?? raw.categoryName ?? raw.categoria ?? null;
+  const many: any[] = raw.categories ?? raw.categorias ?? raw.cats ?? raw.tags ?? [];
   const names = [
     ...(one ? [one] : []),
     ...many.map((c: any) => (typeof c === "string" ? c : c?.name)).filter(Boolean),
@@ -126,14 +107,7 @@ function getCategories(raw: RawItem): string[] {
 }
 function getDescription(raw: RawItem): { html?: string; text?: string } {
   const desc =
-    raw.description ??
-    raw.desc ??
-    raw.bodyHtml ??
-    raw.body ??
-    raw.content ??
-    raw.detalle ??
-    raw.details ??
-    null;
+    raw.description ?? raw.desc ?? raw.bodyHtml ?? raw.body ?? raw.content ?? raw.detalle ?? raw.details ?? null;
   if (!desc) return {};
   const s = String(desc).trim();
   if (/<[a-z][\s\S]*>/i.test(s)) return { html: s };
@@ -141,10 +115,7 @@ function getDescription(raw: RawItem): { html?: string; text?: string } {
 }
 function getFirstCategoryId(raw: RawItem): number | null {
   const id =
-    raw.categoryId ??
-    raw.categoriaId ??
-    raw.category?.id ??
-    raw.categoria?.id ??
+    raw.categoryId ?? raw.categoriaId ?? raw.category?.id ?? raw.categoria?.id ??
     (Array.isArray(raw.categories) && raw.categories[0]?.id) ??
     (Array.isArray(raw.categorias) && raw.categorias[0]?.id) ??
     null;
@@ -152,10 +123,7 @@ function getFirstCategoryId(raw: RawItem): number | null {
 }
 function getFirstSubcategoryId(raw: RawItem): number | null {
   const id =
-    raw.subcategoryId ??
-    raw.subcategoriaId ??
-    raw.subcategory?.id ??
-    raw.subcategoria?.id ??
+    raw.subcategoryId ?? raw.subcategoriaId ?? raw.subcategory?.id ?? raw.subcategoria?.id ??
     (Array.isArray(raw.subcategories) && raw.subcategories[0]?.id) ??
     (Array.isArray(raw.subcategorias) && raw.subcategorias[0]?.id) ??
     null;
@@ -164,7 +132,6 @@ function getFirstSubcategoryId(raw: RawItem): number | null {
 
 /* ───────── relacionados ───────── */
 async function fetchRelated(raw: RawItem, excludeSlug: string): Promise<RawItem[]> {
-  // 1) por IDs de categoría/subcategoría si están disponibles
   const catId = getFirstCategoryId(raw);
   const subId = getFirstSubcategoryId(raw);
   if (catId || subId) {
@@ -179,11 +146,8 @@ async function fetchRelated(raw: RawItem, excludeSlug: string): Promise<RawItem[
     items = items.filter((x) => (x.slug ?? "") !== excludeSlug).slice(0, 8);
     if (items.length) return items;
   }
-
-  // 2) fallback por nombre de categoría
   const names = getCategories(raw);
   if (names.length) {
-    // probamos con el primer nombre
     const name = names[0];
     for (const key of ["q", "query", "search", "term"]) {
       const qs = new URLSearchParams();
@@ -197,17 +161,11 @@ async function fetchRelated(raw: RawItem, excludeSlug: string): Promise<RawItem[
       if (items.length) return items.slice(0, 8);
     }
   }
-
-  // 3) nada cercano: devolvemos vacío
   return [];
 }
 
 /* ───────── Página ───────── */
-export default async function ProductPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const raw = await fetchOneBySlug(slug);
   if (!raw) return notFound();
@@ -216,20 +174,15 @@ export default async function ProductPage({
   const img = toR2Url(p.image);
   const productUrl = await abs(`/producto/${p.slug}`);
 
-  const hasOffer =
-    p.price != null &&
-    p.originalPrice != null &&
-    Number(p.price) < Number(p.originalPrice);
-
+  const hasOffer = p.price != null && p.originalPrice != null && Number(p.price) < Number(p.originalPrice);
   const sku = getSku(raw);
   const cats = getCategories(raw);
   const desc = getDescription(raw);
 
-  // relacionados
   const relatedRaw = await fetchRelated(raw, p.slug);
   const related = relatedRaw.map((r) => normalizeProduct(r));
 
-  // NUEVO: datos para Ubicaciones (igual que en landing)
+  // Datos de ubicaciones (como en landing)
   const hours: [string, string][] = [
     ["Lun–Vie", "09:00–19:00"],
     ["Sábado", "09:00–13:00"],
@@ -240,49 +193,29 @@ export default async function ProductPage({
     {
       name: "Las Piedras",
       address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
-      mapsUrl:
-        "https://www.google.com/maps/search/?api=1&query=" +
-        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
-      embedUrl:
-        "https://www.google.com/maps?q=" +
-        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
-        "&output=embed",
+      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
+      embedUrl: "https://www.google.com/maps?q=" + encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") + "&output=embed",
       hours,
     },
     {
       name: "Maroñas",
       address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
-      mapsUrl:
-        "https://www.google.com/maps/search/?api=1&query=" +
-        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
-      embedUrl:
-        "https://www.google.com/maps?q=" +
-        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
-        "&output=embed",
+      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
+      embedUrl: "https://www.google.com/maps?q=" + encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") + "&output=embed",
       hours,
     },
     {
       name: "La Paz",
       address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
-      mapsUrl:
-        "https://www.google.com/maps/search/?api=1&query=" +
-        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
-      embedUrl:
-        "https://www.google.com/maps?q=" +
-        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
-        "&output=embed",
+      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
+      embedUrl: "https://www.google.com/maps?q=" + encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") + "&output=embed",
       hours,
     },
     {
       name: "Progreso",
       address: "Av. José Artigas, 15900 Progreso, Canelones",
-      mapsUrl:
-        "https://www.google.com/maps/search/?api=1&query=" +
-        encode("Av. José Artigas, 15900 Progreso, Canelones"),
-      embedUrl:
-        "https://www.google.com/maps?q=" +
-        encode("Av. José Artigas, 15900 Progreso, Canelones") +
-        "&output=embed",
+      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encode("Av. José Artigas, 15900 Progreso, Canelones"),
+      embedUrl: "https://www.google.com/maps?q=" + encode("Av. José Artigas, 15900 Progreso, Canelones") + "&output=embed",
       hours,
     },
   ];
@@ -298,7 +231,7 @@ export default async function ProductPage({
           ← Volver al catálogo
         </Link>
 
-        {/* Imagen más angosta + centrado vertical de ambos items */}
+        {/* Imagen más angosta + items centrados verticalmente */}
         <section className="mt-4 grid gap-6 items-center lg:grid-cols-[minmax(280px,460px)_1fr]">
           {/* Imagen principal */}
           <div className="rounded-2xl overflow-hidden ring-1 ring-emerald-100 bg-emerald-50">
@@ -322,41 +255,28 @@ export default async function ProductPage({
           {/* Panel de info y acción */}
           <div className="rounded-2xl ring-1 ring-emerald-100 bg-white p-5">
             {p.brand ? (
-              <div className="text-xs uppercase tracking-wide text-emerald-700/80">
-                {p.brand}
-              </div>
+              <div className="text-xs uppercase tracking-wide text-emerald-700/80">{p.brand}</div>
             ) : null}
 
             <h1 className="mt-1 text-2xl md:text-3xl font-semibold">{p.title}</h1>
 
-            {p.subtitle ? (
-              <p className="mt-1 text-gray-600">{p.subtitle}</p>
-            ) : null}
+            {p.subtitle ? <p className="mt-1 text-gray-600">{p.subtitle}</p> : null}
 
             {/* Precio */}
             <div className="mt-4">
               {hasOffer ? (
                 <div className="text-lg">
-                  <span className="text-emerald-700 font-semibold mr-2">
-                    {fmtPrice(p.price)}
-                  </span>
+                  <span className="text-emerald-700 font-semibold mr-2">{fmtPrice(p.price)}</span>
                   <span className="line-through opacity-60">{fmtPrice(p.originalPrice)}</span>
                   {p.originalPrice ? (
                     <span className="ml-2 rounded-full bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5">
                       -
-                      {Math.round(
-                        ((Number(p.originalPrice) - Number(p.price!)) /
-                          Number(p.originalPrice)) *
-                          100
-                      )}
-                      %
+                      {Math.round(((Number(p.originalPrice) - Number(p.price!)) / Number(p.originalPrice)) * 100)}%
                     </span>
                   ) : null}
                 </div>
               ) : (
-                <div className="text-lg">
-                  {fmtPrice(p.price ?? p.originalPrice ?? null)}
-                </div>
+                <div className="text-lg">{fmtPrice(p.price ?? p.originalPrice ?? null)}</div>
               )}
 
               {!p.outOfStock ? (
@@ -366,11 +286,13 @@ export default async function ProductPage({
               )}
             </div>
 
-            {/* CTA: cantidad + WhatsApp */}
+            {/* CTA: Agregar al carrito */}
             <div className="mt-6">
-              <QtyWhatsApp
-                phoneE164="59897531583" // +598 97 531 583
-                productTitle={p.title}
+              <AddToCart
+                slug={p.slug}
+                title={p.title}
+                price={p.price ?? p.originalPrice ?? null}
+                image={img}
                 productUrl={productUrl}
                 disabled={p.outOfStock}
               />
@@ -385,15 +307,11 @@ export default async function ProductPage({
                 </>
               ) : null}
               <dt className="font-medium text-gray-700">Disponibilidad</dt>
-              <dd className="text-gray-900">
-                {p.outOfStock ? "Sin stock" : "En stock"}
-              </dd>
+              <dd className="text-gray-900">{p.outOfStock ? "Sin stock" : "En stock"}</dd>
               {cats.length ? (
                 <>
                   <dt className="font-medium text-gray-700">Categorías</dt>
-                  <dd className="text-gray-900">
-                    {cats.join(", ")}
-                  </dd>
+                  <dd className="text-gray-900">{cats.join(", ")}</dd>
                 </>
               ) : null}
             </dl>
@@ -403,14 +321,9 @@ export default async function ProductPage({
               <div className="mt-8 pt-6 border-t">
                 <h2 className="text-lg font-semibold">Descripción</h2>
                 {desc.html ? (
-                  <div
-                    className="prose prose-sm max-w-none mt-2"
-                    dangerouslySetInnerHTML={{ __html: desc.html }}
-                  />
+                  <div className="prose prose-sm max-w-none mt-2" dangerouslySetInnerHTML={{ __html: desc.html }} />
                 ) : (
-                  <p className="mt-2 text-gray-700 whitespace-pre-wrap">
-                    {desc.text}
-                  </p>
+                  <p className="mt-2 text-gray-700 whitespace-pre-wrap">{desc.text}</p>
                 )}
               </div>
             ) : null}
@@ -434,25 +347,17 @@ export default async function ProductPage({
                 subtitle={r.subtitle ?? undefined}
               />
             ))}
-            {!related.length && (
-              <p className="col-span-full text-sm text-gray-500">
-                No encontramos productos similares por ahora.
-              </p>
-            )}
+            {!related.length && <p className="col-span-full text-sm text-gray-500">No encontramos productos similares por ahora.</p>}
           </div>
         </section>
 
-        {/* NUEVO: Recetas populares */}
+        {/* Secciones extra */}
         <div className="mt-12">
           <RecipesPopular />
         </div>
-
-        {/* NUEVO: Ubicaciones */}
         <div className="mt-12">
           <MapHours locations={branches} />
         </div>
-
-        {/* NUEVO: Compromiso sustentable */}
         <div className="mt-12">
           <Sustainability />
         </div>
