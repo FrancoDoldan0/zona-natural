@@ -298,17 +298,16 @@ export default async function ProductPage({
           ← Volver al catálogo
         </Link>
 
-        {/* Ajuste: galería limitada a ~520px para evitar pixelado */}
-        <section className="mt-4 grid gap-6 lg:grid-cols-[minmax(300px,520px)_1fr]">
-          {/* Imagen principal (object-contain + padding) */}
+        {/* Imagen más angosta / panel derecho más ancho en desktop */}
+        <section className="mt-4 grid gap-6 lg:grid-cols-[minmax(280px,460px)_1fr]">
+          {/* Imagen principal */}
           <div className="rounded-2xl overflow-hidden ring-1 ring-emerald-100 bg-emerald-50">
-            <div className="relative aspect-[3/4] md:aspect-[4/5] max-h-[560px]">
+            <div className="relative aspect-[4/3]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={img}
                 alt={p.title}
-                className="absolute inset-0 h-full w-full object-contain p-6"
-                sizes="(min-width:1024px) 520px, (min-width:768px) 60vw, 90vw"
+                className="absolute inset-0 h-full w-full object-cover"
                 loading="eager"
                 decoding="async"
               />
