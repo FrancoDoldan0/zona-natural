@@ -1,12 +1,5 @@
 // app/(public)/layout.tsx
-import type { Metadata } from "next";
-import "./globals.css";
-import CartProvider from "@/components/cart/CartProvider";
-
-export const metadata: Metadata = {
-  title: "Zona Natural",
-  description: "Tienda natural y saludable",
-};
+import "../globals.css";
 
 export default function PublicLayout({
   children,
@@ -14,11 +7,9 @@ export default function PublicLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className="h-full">
-      {/* 👇 Evita que cualquier desborde horizontal genere scroll en móvil */}
-      <body className="min-h-screen bg-white text-slate-900 antialiased overflow-x-hidden">
-        <CartProvider>{children}</CartProvider>
-      </body>
+    <html lang="es">
+      {/* Evita scroll horizontal en móvil */}
+      <body className="overflow-x-hidden">{children}</body>
     </html>
   );
 }
