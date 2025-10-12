@@ -298,8 +298,7 @@ export default async function ProductPage({
           ← Volver al catálogo
         </Link>
 
-        {/* Imagen más angosta / panel derecho más ancho en desktop */}
-        <section className="mt-4 grid gap-6 lg:grid-cols-[minmax(280px,460px)_1fr]">
+        <section className="mt-4 grid gap-6 lg:grid-cols-[1fr_420px]">
           {/* Imagen principal */}
           <div className="rounded-2xl overflow-hidden ring-1 ring-emerald-100 bg-emerald-50">
             <div className="relative aspect-[4/3]">
