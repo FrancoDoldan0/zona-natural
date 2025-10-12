@@ -48,6 +48,7 @@ async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
 type RawItem = Record<string, any>;
 
 async function fetchOneBySlug(slug: string): Promise<RawItem | null> {
+  // 1) endpoints de detalle conocidos
   for (const pth of [`/api/public/producto/${slug}`, `/api/public/product/${slug}`]) {
     const data = await safeJson<any>(await abs(pth));
     if (data && typeof data === "object") {
@@ -55,6 +56,8 @@ async function fetchOneBySlug(slug: string): Promise<RawItem | null> {
       if (raw && (raw.slug === slug || raw.id)) return raw;
     }
   }
+
+  // 2) búsqueda en catálogo por distintos parámetros
   const keys = ["slug", "query", "q", "search", "term", "name"];
   const statuses = ["all", "raw"];
   for (const status of statuses) {
@@ -79,7 +82,7 @@ async function fetchOneBySlug(slug: string): Promise<RawItem | null> {
   return null;
 }
 
-/* ───────── metadata ───────── */
+/* ───────── metadata (Next 15: params es Promise) ───────── */
 export async function generateMetadata({
   params,
 }: {
@@ -94,7 +97,7 @@ export async function generateMetadata({
   };
 }
 
-/* ───────── utilidades ───────── */
+/* ───────── utilidades (sku/categorías/descripcion/ids) ───────── */
 function getSku(raw: RawItem): string | null {
   const v =
     raw.sku ?? raw.SKU ?? raw.codigo ?? raw.code ?? raw.productCode ?? null;
@@ -161,6 +164,7 @@ function getFirstSubcategoryId(raw: RawItem): number | null {
 
 /* ───────── relacionados ───────── */
 async function fetchRelated(raw: RawItem, excludeSlug: string): Promise<RawItem[]> {
+  // 1) por IDs de categoría/subcategoría si están disponibles
   const catId = getFirstCategoryId(raw);
   const subId = getFirstSubcategoryId(raw);
   if (catId || subId) {
@@ -175,8 +179,11 @@ async function fetchRelated(raw: RawItem, excludeSlug: string): Promise<RawItem[
     items = items.filter((x) => (x.slug ?? "") !== excludeSlug).slice(0, 8);
     if (items.length) return items;
   }
+
+  // 2) fallback por nombre de categoría
   const names = getCategories(raw);
   if (names.length) {
+    // probamos con el primer nombre
     const name = names[0];
     for (const key of ["q", "query", "search", "term"]) {
       const qs = new URLSearchParams();
@@ -190,6 +197,8 @@ async function fetchRelated(raw: RawItem, excludeSlug: string): Promise<RawItem[
       if (items.length) return items.slice(0, 8);
     }
   }
+
+  // 3) nada cercano: devolvemos vacío
   return [];
 }
 
@@ -216,10 +225,11 @@ export default async function ProductPage({
   const cats = getCategories(raw);
   const desc = getDescription(raw);
 
+  // relacionados
   const relatedRaw = await fetchRelated(raw, p.slug);
   const related = relatedRaw.map((r) => normalizeProduct(r));
 
-  // datos para Ubicaciones (igual que en landing)
+  // NUEVO: datos para Ubicaciones (igual que en landing)
   const hours: [string, string][] = [
     ["Lun–Vie", "09:00–19:00"],
     ["Sábado", "09:00–13:00"],
@@ -288,10 +298,10 @@ export default async function ProductPage({
           ← Volver al catálogo
         </Link>
 
-        {/* Imagen más angosta / panel derecho más ancho en desktop + no estirar items */}
-        <section className="mt-4 grid gap-6 items-start lg:grid-cols-[minmax(280px,460px)_1fr]">
+        {/* Imagen más angosta + centrado vertical de ambos items */}
+        <section className="mt-4 grid gap-6 items-center lg:grid-cols-[minmax(280px,460px)_1fr]">
           {/* Imagen principal */}
-          <div className="self-start rounded-2xl overflow-hidden ring-1 ring-emerald-100 bg-emerald-50">
+          <div className="rounded-2xl overflow-hidden ring-1 ring-emerald-100 bg-emerald-50">
             <div className="relative aspect-[4/3]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -359,7 +369,7 @@ export default async function ProductPage({
             {/* CTA: cantidad + WhatsApp */}
             <div className="mt-6">
               <QtyWhatsApp
-                phoneE164="59897531583"
+                phoneE164="59897531583" // +598 97 531 583
                 productTitle={p.title}
                 productUrl={productUrl}
                 disabled={p.outOfStock}
