@@ -28,11 +28,12 @@ export default function Header() {
         scrolled ? "shadow-sm" : ""
       }`}
     >
-      <div className="mx-auto max-w-7xl px-3 py-3 md:py-4 flex items-center gap-3 md:gap-5">
-        {/* Logo (usar imagen recortada, sin escala) */}
+      {/* flex-wrap + gaps: evita overflow horizontal en mobile */}
+      <div className="mx-auto max-w-7xl px-3 py-3 md:py-4 flex flex-wrap items-center gap-3 md:gap-5">
+        {/* Logo */}
         <Link href="/" aria-label="Zona Natural – inicio" className="shrink-0 flex items-center">
           <img
-            src="/brand/logo-zonanatural.png"  // <-- debe ser el PNG recortado
+            src="/brand/logo-zonanatural.png"
             alt="Zona Natural"
             className="block h-12 sm:h-14 md:h-16 w-auto object-contain select-none"
             loading="eager"
@@ -41,8 +42,8 @@ export default function Header() {
           />
         </Link>
 
-        {/* Buscador */}
-        <div className="flex-1 flex items-center">
+        {/* Buscador: min-w-0 evita que el contenido fuerce ancho mínimo */}
+        <div className="min-w-0 flex-1">
           <div className="w-full flex items-stretch rounded-full ring-1 ring-emerald-200 overflow-hidden">
             <input
               className="flex-1 px-4 py-2 md:py-3 outline-none text-sm"
@@ -61,11 +62,11 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Sobre nosotros */}
-        <div className="shrink-0">
+        {/* Sobre nosotros: en mobile ocupa la línea completa; desde sm vuelve a auto */}
+        <div className="w-full sm:w-auto shrink-0">
           <Link
             href="/sobre-nosotros"
-            className="inline-flex items-center rounded-full border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
+            className="w-full sm:w-auto inline-flex items-center justify-center rounded-full border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
           >
             Sobre nosotros
           </Link>
