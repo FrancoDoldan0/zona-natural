@@ -7,9 +7,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { recipes, FALLBACK_IMG } from "../recipes";
 
-// Fuerza SSG para esta ruta dinámica
-export const dynamic = "force-static";
-
 // Metadata (en Next 15, params es Promise)
 export async function generateMetadata({
   params,
