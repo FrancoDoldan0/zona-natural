@@ -1,4 +1,5 @@
 // lib/product.ts
+
 const R2_BASE = (process.env.PUBLIC_R2_BASE_URL || "").replace(/\/+$/, "");
 
 /** Acepta {url|r2Key|key} o string y devuelve URL absoluta para R2 */
@@ -31,6 +32,7 @@ export type NormalizedProduct = {
   outOfStock?: boolean;
   brand?: string | null;
   subtitle?: string | null;
+  description?: string | null; // <- agregado
 };
 
 /** Normaliza cualquier shape del API al usado por las cards/detalle */
@@ -41,12 +43,11 @@ export function normalizeProduct(raw: any): NormalizedProduct {
     raw._id ??
     (raw.slug ? String(raw.slug) : Math.random().toString(36).slice(2));
 
-  const slug =
-    String(
-      raw.slug ?? raw.handle ?? raw.permalink ?? raw.seoSlug ?? raw.name ?? id
-    )
-      .normalize()
-      .trim();
+  const slug = String(
+    raw.slug ?? raw.handle ?? raw.permalink ?? raw.seoSlug ?? raw.name ?? id
+  )
+    .normalize()
+    .trim();
 
   const title = String(raw.name ?? raw.title ?? slug);
 
@@ -65,12 +66,25 @@ export function normalizeProduct(raw: any): NormalizedProduct {
   const outOfStock =
     status === "AGOTADO" ||
     status === "SIN STOCK" ||
-    status === "OUT_OF_STOCK";
+    status === "OUT_OF_STOCK" ||
+    status === "OOS" ||
+    raw.stock === 0;
 
   const brand = (raw.brand ?? raw.marca ?? null) as string | null;
   const subtitle = (raw.shortDescription ?? raw.subtitle ?? raw.subtitulo ?? null) as
     | string
     | null;
+
+  const description =
+    (raw.description ??
+      raw.descripcion ??
+      raw.desc ??
+      raw.details ??
+      raw.detail ??
+      raw.body ??
+      raw.content ??
+      raw.detalle ??
+      null) as string | null;
 
   return {
     id,
@@ -82,5 +96,6 @@ export function normalizeProduct(raw: any): NormalizedProduct {
     outOfStock,
     brand,
     subtitle,
+    description, // <- expuesto para la PDP
   };
 }
