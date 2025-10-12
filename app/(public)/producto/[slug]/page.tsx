@@ -6,6 +6,11 @@ import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
 import MainNav from "@/components/landing/MainNav";
 
+// NUEVO: secciones pedidas
+import RecipesPopular from "@/components/landing/RecipesPopular";
+import MapHours, { type Branch } from "@/components/landing/MapHours";
+import Sustainability from "@/components/landing/Sustainability";
+
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -224,6 +229,64 @@ export default async function ProductPage({
   const relatedRaw = await fetchRelated(raw, p.slug);
   const related = relatedRaw.map((r) => normalizeProduct(r));
 
+  // NUEVO: datos para Ubicaciones (igual que en landing)
+  const hours: [string, string][] = [
+    ["Lun–Vie", "09:00–19:00"],
+    ["Sábado", "09:00–13:00"],
+    ["Domingo", "Cerrado"],
+  ];
+  const encode = (s: string) => encodeURIComponent(s);
+  const branches: Branch[] = [
+    {
+      name: "Las Piedras",
+      address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "Maroñas",
+      address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "La Paz",
+      address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "Progreso",
+      address: "Av. José Artigas, 15900 Progreso, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Av. José Artigas, 15900 Progreso, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Av. José Artigas, 15900 Progreso, Canelones") +
+        "&output=embed",
+      hours,
+    },
+  ];
+
   return (
     <>
       <InfoBar />
@@ -377,6 +440,21 @@ export default async function ProductPage({
             )}
           </div>
         </section>
+
+        {/* NUEVO: Recetas populares */}
+        <div className="mt-12">
+          <RecipesPopular />
+        </div>
+
+        {/* NUEVO: Ubicaciones */}
+        <div className="mt-12">
+          <MapHours locations={branches} />
+        </div>
+
+        {/* NUEVO: Compromiso sustentable */}
+        <div className="mt-12">
+          <Sustainability />
+        </div>
       </main>
     </>
   );
