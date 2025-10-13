@@ -32,7 +32,7 @@ export default function SobreNosotrosPage() {
       </ul>
       <p>
         Gracias por acompañarnos. Si querés escribirnos, estamos en{" "}
-        <a href="https://wa.me/59899608808" target="_blank" rel="noopener noreferrer">
+        <a href="https://wa.me/59897531583" target="_blank" rel="noopener noreferrer">
           WhatsApp
         </a>
         .
