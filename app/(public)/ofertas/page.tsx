@@ -11,9 +11,9 @@ import { normalizeProduct } from "@/lib/product";
 import Link from "next/link";
 import { headers } from "next/headers";
 import RecipesPopular from "@/components/landing/RecipesPopular";
-import MapHoursTabs from "@/components/landing/MapHoursTabs"; // ← usa el bloque con 4 sucursales
+import MapHoursTabs from "@/components/landing/MapHoursTabs";
 
-/* ───────── helpers URL/JSON ───────── */
+/* helpers */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
@@ -36,7 +36,7 @@ async function safeJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/* ───────── fetch ofertas ───────── */
+/* fetch ofertas */
 type Raw = Record<string, any>;
 async function fetchOffers(): Promise<Raw[]> {
   const guesses = ["offers=1", "hasDiscount=1", "onSale=1"];
@@ -52,7 +52,7 @@ async function fetchOffers(): Promise<Raw[]> {
   return all;
 }
 
-/* ───────── Opiniones simples (inline) ───────── */
+/* Opiniones inline */
 function OpinionsStrip() {
   const items = [
     { q: "Me asesoraron súper bien y encontré todo para mis recetas. ¡Llegó rapidísimo!", a: "Natalia" },
@@ -87,7 +87,7 @@ function OpinionsStrip() {
   );
 }
 
-/* ───────── Página Ofertas ───────── */
+/* Página Ofertas */
 export default async function OffersPage() {
   const raw = await fetchOffers();
   const normalized = raw.map(normalizeProduct);
@@ -98,7 +98,6 @@ export default async function OffersPage() {
     return final != null && orig != null && final < orig;
   });
 
-  // Ordenar por mayor % dto.
   offers.sort((a, b) => {
     const da = (a.originalPrice ?? 0) && (a.price ?? 0) ? 1 - a.price! / a.originalPrice! : 0;
     const db = (b.originalPrice ?? 0) && (b.price ?? 0) ? 1 - b.price! / b.originalPrice! : 0;
@@ -122,8 +121,7 @@ export default async function OffersPage() {
         {/* Layout con sidebar de “Más vendidos” */}
         <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr]">
           <BestSellersSidebar />
-
-          <section aria-label="Listado de ofertas" className="rounded-2xl">
+          <section aria-label="Listado de ofertas">
             {offers.length === 0 ? (
               <p className="text-gray-600">Por ahora no hay ofertas activas. Volvé más tarde 🙂</p>
             ) : (
@@ -149,9 +147,11 @@ export default async function OffersPage() {
         {/* Opiniones */}
         <OpinionsStrip />
 
-        {/* Ubicaciones (versión con 4 sucursales, igual a la landing) */}
+        {/* Ubicaciones: wrapper “anulador” por si algún estilo global agrega borde */}
         <section className="mt-10">
-          <MapHoursTabs />
+          <div className="border-0 ring-0 shadow-none bg-transparent rounded-none">
+            <MapHoursTabs />
+          </div>
         </section>
 
         {/* Recetas populares */}

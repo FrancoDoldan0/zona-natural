@@ -78,7 +78,8 @@ export default function MapHoursTabs({ branches = BRANCHES }: { branches?: Branc
   );
 
   return (
-    <div className="rounded-2xl bg-white p-4">
+    // Contenedor FLAT: nada de borders/rings/shadows
+    <div className="rounded-2xl bg-transparent p-0 border-0 ring-0 shadow-none">
       <h2 className="text-2xl md:text-3xl font-semibold mb-3">¿Dónde estamos?</h2>
 
       {/* Tabs */}
@@ -100,7 +101,7 @@ export default function MapHoursTabs({ branches = BRANCHES }: { branches?: Branc
       </div>
 
       {/* Address + hours + map */}
-      <div className="mt-3 grid gap-6 md:grid-cols-[1fr_560px]">
+      <div className="mt-3 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,560px)] items-start">
         <div className="min-w-0">
           <p className="text-gray-700">{b.address}</p>
           <p className="mt-1">
@@ -146,8 +147,8 @@ export default function MapHoursTabs({ branches = BRANCHES }: { branches?: Branc
           </p>
         </div>
 
-        {/* Mapa: borde sutil y sin “ring” extra */}
-        <div className="w-full aspect-[4/3] rounded-xl overflow-hidden border border-emerald-100 shadow-sm bg-white">
+        {/* Mapa super flat */}
+        <div className="w-full aspect-[4/3] rounded-xl overflow-hidden bg-transparent border-0 ring-0 shadow-none">
           <iframe
             title={`Mapa ${b.name}`}
             src={b.embedUrl}
