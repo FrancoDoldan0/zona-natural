@@ -6,10 +6,10 @@ import { normalizeProduct } from "@/lib/product";
 import Link from "next/link";
 
 type Item = any;
-const VISIBLE = 8;
+const DEFAULT_VISIBLE = 8;
 
 function windowSlice<T>(arr: T[], start: number, count: number): T[] {
-  if (arr.length <= count) return arr;
+  if (arr.length <= count) return arr.slice(); // devuelve todo si entra en una “página”
   const end = start + count;
   if (end <= arr.length) return arr.slice(start, end);
   const head = arr.slice(start);
@@ -20,13 +20,16 @@ function windowSlice<T>(arr: T[], start: number, count: number): T[] {
 export default function OffersCarousel({
   items,
   rotationMs = 6000,
+  visible = DEFAULT_VISIBLE,
 }: {
   items: Item[];
   rotationMs?: number;
+  /** cuántas cards mostrar a la vez */
+  visible?: number;
 }) {
   const ref = useRef<HTMLElement>(null);
 
-  // Reveal: ya existente
+  // Reveal
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
@@ -49,20 +52,21 @@ export default function OffersCarousel({
   // Normalizar todas las ofertas que llegan
   const all = useMemo(() => {
     const list = Array.isArray(items) ? items.map(normalizeProduct) : [];
-    // si querés, priorizamos descuentos fuertes primero
     return list.sort((a, b) => {
-      const da = (a.originalPrice ?? 0) && (a.price ?? 0) ? (1 - (a.price! / a.originalPrice!)) : 0;
-      const db = (b.originalPrice ?? 0) && (b.price ?? 0) ? (1 - (b.price! / b.originalPrice!)) : 0;
+      const da = (a.originalPrice ?? 0) && (a.price ?? 0) ? 1 - a.price! / a.originalPrice! : 0;
+      const db = (b.originalPrice ?? 0) && (b.price ?? 0) ? 1 - b.price! / b.originalPrice! : 0;
       return db - da;
     });
   }, [items]);
 
-  // Rotación automática
+  // Rotación
   const [start, setStart] = useState(0);
-  const [playing, setPlaying] = useState(true); // pausa cuando no está visible/hover
-  const [visibleInView, setVisibleInView] = useState(false);
+  const [playing, setPlaying] = useState(true);
+  // Inicialmente lo consideramos visible para que empiece a rotar,
+  // y luego el IO lo ajusta cuando sea necesario.
+  const [visibleInView, setVisibleInView] = useState(true);
 
-  // Detectar visibilidad de la sección para pausar rotación fuera de viewport
+  // Detectar visibilidad para pausar fuera de viewport
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -74,15 +78,22 @@ export default function OffersCarousel({
     return () => io.disconnect();
   }, []);
 
+  const showCount = Math.max(1, Math.min(visible, all.length || visible));
+  // Paso adaptable: si hay pocas ofertas, avanzar de a 1; si hay muchas, por “página”
+  const step = all.length <= showCount ? 1 : showCount;
+
   useEffect(() => {
-    if (!playing || !visibleInView || all.length <= VISIBLE) return;
+    if (!playing || !visibleInView || all.length <= 1) return;
     const id = setInterval(() => {
-      setStart((s) => (s + VISIBLE) % all.length);
+      setStart((s) => (s + step) % all.length);
     }, Math.max(2000, rotationMs));
     return () => clearInterval(id);
-  }, [playing, visibleInView, all.length, rotationMs]);
+  }, [playing, visibleInView, all.length, rotationMs, step]);
 
-  const current = useMemo(() => windowSlice(all, start, VISIBLE), [all, start]);
+  const current = useMemo(
+    () => windowSlice(all, start, showCount),
+    [all, start, showCount]
+  );
 
   if (!all.length) return null;
 
@@ -108,7 +119,7 @@ export default function OffersCarousel({
 
         <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
           {current.map((p, i) => (
-            <div key={`${p.id}-${i}`} data-reveal style={{ "--i": i } as React.CSSProperties} className="reveal">
+            <div key={`${p.id}-${(start + i) % all.length}`} data-reveal style={{ "--i": i } as React.CSSProperties} className="reveal">
               <ProductCard
                 slug={p.slug}
                 title={p.title}
@@ -123,10 +134,9 @@ export default function OffersCarousel({
           ))}
         </div>
 
-        {/* Indicador mini (opcional): cuántas ofertas totales */}
-        {all.length > VISIBLE && (
+        {all.length > showCount && (
           <div className="mt-3 text-xs text-gray-500">
-            Mostrando {VISIBLE} de {all.length} ofertas
+            Mostrando {showCount} de {all.length} ofertas
           </div>
         )}
       </div>
