@@ -18,7 +18,7 @@ import Link from "next/link";
 import { fmtPrice } from "@/lib/price";
 import { normalizeProduct, toR2Url } from "@/lib/product";
 import ProductCard from "@/components/ui/ProductCard";
-import AddToCart from "@/components/cart/AddToCart"; // ← existe en tu repo
+import AddToCart from "@/components/cart/AddToCart";
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -210,7 +210,6 @@ export default async function ProductPage({
   const hasOffer = effectivePrice != null && effectiveOriginal != null && effectivePrice < effectiveOriginal;
 
   const sku = getSku(raw, selVar);
-  const cats = getCategories(raw);
   const desc = getDescription(raw);
 
   const relatedRaw = await fetchRelated(raw, p.slug);
@@ -296,7 +295,7 @@ export default async function ProductPage({
 
             {p.subtitle ? <p className="mt-1 text-gray-600">{p.subtitle}</p> : null}
 
-            {/* 🆕 Selector de variantes (links con query ?v=i para evitar cliente) */}
+            {/* Selector de variantes */}
             {variants.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
                 {variants.map((v, i) => {
@@ -352,6 +351,10 @@ export default async function ProductPage({
                 image={img}
                 productUrl={productUrl}
                 disabled={p.outOfStock}
+                // 🆕 pasar variante seleccionada
+                variantId={selVar?.id ?? null}
+                variantLabel={selVar?.label ?? null}
+                variantSku={selVar?.sku ?? null}
               />
             </div>
 

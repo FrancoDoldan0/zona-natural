@@ -46,7 +46,8 @@ export default function CartPage() {
     return items.map((it) => {
       const unit = it.price != null ? fmtPrice(it.price) : "Consultar";
       const link = it.productUrl || `${origin}/producto/${it.slug}`;
-      return `• ${it.title} x${it.qty} — ${unit}\n${link}`;
+      const name = it.variantLabel ? `${it.title} (${it.variantLabel})` : it.title;
+      return `• ${name} x${it.qty} — ${unit}\n${link}`;
     });
   }, [items, origin]);
 
@@ -84,7 +85,10 @@ export default function CartPage() {
               </div>
             ) : (
               items.map((it) => (
-                <div key={it.slug} className="flex items-center gap-4 rounded-xl border border-emerald-100 bg-white p-3">
+                <div
+                  key={it.itemKey /* 🆕 clave única */}
+                  className="flex items-center gap-4 rounded-xl border border-emerald-100 bg-white p-3"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={toR2Url(it.image || "")}
@@ -92,28 +96,30 @@ export default function CartPage() {
                     className="h-16 w-16 rounded-md object-cover ring-1 ring-emerald-100"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{it.title}</div>
+                    <div className="font-medium truncate">
+                      {it.title} {it.variantLabel ? <span className="text-gray-500">({it.variantLabel})</span> : null}
+                    </div>
                     <div className="text-sm text-gray-600">
                       {it.price != null ? fmtPrice(it.price) : "Consultar precio"}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setQty(it.slug, Math.max(1, it.qty - 1))}
+                      onClick={() => setQty(it.itemKey, Math.max(1, it.qty - 1))}
                       className="px-3 py-1 rounded-full ring-1 ring-emerald-200 hover:bg-emerald-50"
                     >
                       –
                     </button>
                     <div className="w-8 text-center">{it.qty}</div>
                     <button
-                      onClick={() => setQty(it.slug, Math.min(99, it.qty + 1))}
+                      onClick={() => setQty(it.itemKey, Math.min(99, it.qty + 1))}
                       className="px-3 py-1 rounded-full ring-1 ring-emerald-200 hover:bg-emerald-50"
                     >
                       +
                     </button>
                   </div>
                   <button
-                    onClick={() => remove(it.slug)}
+                    onClick={() => remove(it.itemKey)}
                     className="ml-2 text-sm text-rose-700 hover:underline"
                   >
                     Quitar
