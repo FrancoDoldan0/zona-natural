@@ -1,4 +1,3 @@
-// components/ui/ProductCard.tsx
 import Image from "next/image";
 import Link from "next/link";
 import TrackLink from "@/components/ui/TrackLink";
@@ -20,7 +19,6 @@ type Props = {
 function resolveHref(slug?: string) {
   if (!slug) return "/catalogo";
   if (slug.startsWith("/") || slug.startsWith("http")) return slug;
-  // por defecto resolvemos a /producto/:slug
   return `/producto/${slug}`;
 }
 
@@ -58,13 +56,15 @@ export default function ProductCard({
     </>
   );
 
-  // trackSlug limpio para TrackLink
   const trackSlug = slug?.startsWith("/") ? slug.split("/").pop() || slug : slug;
 
   if (variant === "row" || variant === "compact") {
-    // Ítem horizontal para sidebars (Más vendidos)
     return (
-      <TrackLink href={href} slug={trackSlug} className="flex gap-3 rounded-xl ring-1 ring-emerald-100 p-2 bg-white hover:shadow transition">
+      <TrackLink
+        href={href}
+        slug={trackSlug}
+        className="lift flex gap-3 rounded-xl ring-1 ring-emerald-100 p-2 bg-white hover:shadow"
+      >
         <div className="shrink-0 w-16 h-16 rounded overflow-hidden bg-emerald-50 relative">
           {src ? (
             <Image
@@ -93,9 +93,12 @@ export default function ProductCard({
     );
   }
 
-  // Variante por defecto: grilla
   return (
-    <TrackLink href={href} slug={trackSlug} className="block group rounded-2xl ring-1 ring-emerald-100 overflow-hidden bg-white hover:shadow transition">
+    <TrackLink
+      href={href}
+      slug={trackSlug}
+      className="lift block group rounded-2xl ring-1 ring-emerald-100 overflow-hidden bg-white hover:shadow"
+    >
       <div className="relative aspect-square bg-emerald-50">
         {src ? (
           <Image
@@ -103,7 +106,7 @@ export default function ProductCard({
             alt={title}
             fill
             sizes="(min-width:1024px) 22vw, (min-width:640px) 33vw, 50vw"
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             unoptimized
             priority={false}
           />

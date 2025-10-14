@@ -1,6 +1,6 @@
-// components/landing/BestSellersGrid.tsx
 "use client";
 
+import { useEffect, useRef } from "react";
 import ProductCard from "@/components/ui/ProductCard";
 import { getClicksMap } from "@/lib/metrics";
 
@@ -36,6 +36,27 @@ function displayPrice(p: Product): number | undefined {
 }
 
 export default function BestSellersGrid({ items }: { items: Product[] }) {
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const els = Array.from(root.querySelectorAll<HTMLElement>("[data-reveal]"));
+    const io = new IntersectionObserver(
+      (ents, obs) => {
+        ents.forEach((e) => {
+          if (e.isIntersecting) {
+            (e.target as HTMLElement).classList.add("in");
+            obs.unobserve(e.target);
+          }
+        });
+      },
+      { threshold: 0.15 }
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
   const clicks = getClicksMap();
 
   const picked =
@@ -47,7 +68,6 @@ export default function BestSellersGrid({ items }: { items: Product[] }) {
           typeof p.priceFinal === "number" &&
           typeof p.priceOriginal === "number" &&
           p.priceFinal < p.priceOriginal;
-        // Score heurístico: clics (peso fuerte) + descuento (bonus) + jitter pequeño
         const score = clicksN * 5 + (hasDiscount ? 2 : 0) + Math.random() * 0.5;
         return { p, score };
       })
@@ -58,24 +78,25 @@ export default function BestSellersGrid({ items }: { items: Product[] }) {
   if (!picked.length) return null;
 
   return (
-    <section className="bg-white" aria-label="Más vendidos">
+    <section ref={ref} className="bg-white" aria-label="Más vendidos">
       <div className="mx-auto max-w-7xl px-4 py-8">
         <div className="flex items-baseline justify-between">
-          <h2 className="text-xl md:text-2xl font-semibold">Más vendidos</h2>
+          <h2 className="text-xl md:text-2xl font-semibold reveal in">Más vendidos</h2>
         </div>
 
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {picked.map((p) => (
-            <ProductCard
-              key={p.id}
-              slug={`/producto/${p.slug}`}
-              title={p.name}
-              price={displayPrice(p)}
-              originalPrice={
-                typeof p.priceOriginal === "number" ? p.priceOriginal : undefined
-              }
-              image={chooseImage(p)}
-            />
+          {picked.map((p, i) => (
+            <div key={p.id} data-reveal style={{ "--i": i } as React.CSSProperties} className="reveal">
+              <ProductCard
+                slug={`/producto/${p.slug}`}
+                title={p.name}
+                price={displayPrice(p)}
+                originalPrice={
+                  typeof p.priceOriginal === "number" ? p.priceOriginal : undefined
+                }
+                image={chooseImage(p)}
+              />
+            </div>
           ))}
         </div>
       </div>

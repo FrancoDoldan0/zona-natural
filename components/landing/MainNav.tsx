@@ -1,4 +1,4 @@
-// components/landing/MainNav.tsx
+// components/landing/MainNav.tsx 
 "use client";
 
 import Link from "next/link";
@@ -49,6 +49,24 @@ export default function MainNav() {
 
   const [open, setOpen] = useState(false);
   const [activeCatId, setActiveCatId] = useState<number | null>(null);
+
+  // ── Estado para animación (mantiene el menú montado durante el "exit")
+  const [menuRender, setMenuRender] = useState(false);
+  const [menuIn, setMenuIn] = useState(false);
+  const TRANS_MS = 180;
+
+  useEffect(() => {
+    if (open) {
+      setMenuRender(true);
+      // esperar al siguiente frame para agregar clases "in"
+      const t = requestAnimationFrame(() => setMenuIn(true));
+      return () => cancelAnimationFrame(t);
+    } else {
+      setMenuIn(false);
+      const t = setTimeout(() => setMenuRender(false), TRANS_MS);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (open && !activeCatId && cats.length) setActiveCatId(cats[0].id);
@@ -101,12 +119,18 @@ export default function MainNav() {
             Categorías
           </button>
 
-          {open && (
+          {menuRender && (
             <div
-              className="absolute left-0 top-full w-[min(92vw,820px)] z-40 rounded-xl border border-emerald-100 bg-white shadow-lg mt-2"
+              className={
+                // Animación: fade+scale+slide con Tailwind (sin libs)
+                `absolute left-0 top-full w-[min(92vw,820px)] z-40 rounded-xl border border-emerald-100 bg-white shadow-lg mt-2
+                 transition-all duration-200 ease-out will-change-transform
+                 ${menuIn ? "opacity-100 translate-y-0 scale-100" : "opacity-0 -translate-y-1 scale-[0.98] pointer-events-none"}`
+              }
               role="menu"
               onMouseEnter={openNow}
               onMouseLeave={scheduleClose}
+              style={{ transformOrigin: "24px top" }}
             >
               <div className="grid grid-cols-1 md:grid-cols-3">
                 <ul className="md:col-span-1 max-h-[60vh] overflow-auto py-2 no-scrollbar">
