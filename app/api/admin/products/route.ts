@@ -9,6 +9,17 @@ import { audit } from '@/lib/audit';
 const prisma = createPrisma();
 
 // ✅ incluye AGOTADO
+const VariantSchema = z.object({
+  id: z.coerce.number().int().positive().optional(),
+  label: z.string().min(1),
+  price: z.coerce.number().optional().nullable(),
+  priceOriginal: z.coerce.number().optional().nullable(),
+  sku: z.string().max(120).optional().nullable(),
+  stock: z.coerce.number().int().optional().nullable(),
+  sortOrder: z.coerce.number().int().optional().default(0),
+  active: z.boolean().optional().default(true),
+});
+
 const CreateSchema = z.object({
   name: z.string().min(1),
   slug: z.string().min(1).optional(),
@@ -18,6 +29,10 @@ const CreateSchema = z.object({
   status: z.enum(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE', 'AGOTADO']).optional(),
   categoryId: z.coerce.number().optional().nullable(),
   subcategoryId: z.coerce.number().optional().nullable(),
+
+  // 🆕 variantes
+  hasVariants: z.boolean().optional().default(false),
+  variants: z.array(VariantSchema).max(3).optional(),
 });
 
 const UpdateSchema = z.object({
@@ -29,6 +44,10 @@ const UpdateSchema = z.object({
   status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED', 'AGOTADO']).optional(),
   categoryId: z.coerce.number().optional().nullable(),
   subcategoryId: z.coerce.number().optional().nullable(),
+
+  // 🆕 variantes
+  hasVariants: z.boolean().optional(),
+  variants: z.array(VariantSchema).max(3).optional(),
 });
 
 const STATUS_VALUES = new Set(['ACTIVE', 'DRAFT', 'ARCHIVED', 'INACTIVE', 'AGOTADO'] as const);
@@ -69,6 +88,21 @@ export async function GET(req: NextRequest) {
         subcategoryId: true,
         category: { select: { id: true, name: true } },
         subcategory: { select: { id: true, name: true } },
+        // 🆕 variantes para el editor
+        hasVariants: true,
+        variants: {
+          select: {
+            id: true,
+            label: true,
+            price: true,
+            priceOriginal: true,
+            sku: true,
+            stock: true,
+            sortOrder: true,
+            active: true,
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
     if (!item) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 });
@@ -237,7 +271,7 @@ export async function POST(req: NextRequest) {
       if (categoryId == null) categoryId = sub.categoryId;
     }
 
-    // Inserción
+    // Inserción (creamos variantes anidadas si corresponde)
     const created = await prisma.product.create({
       data: {
         name: b.name,
@@ -248,6 +282,23 @@ export async function POST(req: NextRequest) {
         status: safeStatus,
         categoryId,
         subcategoryId,
+        hasVariants: !!b.hasVariants && Array.isArray(b.variants) && b.variants.length > 0,
+        variants:
+          !!b.hasVariants && Array.isArray(b.variants) && b.variants.length > 0
+            ? {
+                create: b.variants
+                  .slice(0, 3)
+                  .map((v, i) => ({
+                    label: v.label,
+                    price: v.price ?? null,
+                    priceOriginal: v.priceOriginal ?? null,
+                    sku: (v.sku ?? '') || null,
+                    stock: v.stock ?? null,
+                    sortOrder: Number.isFinite(v.sortOrder as any) ? (v.sortOrder as number) : i,
+                    active: v.active ?? true,
+                  })),
+              }
+            : undefined,
       },
       select: {
         id: true,
@@ -259,6 +310,13 @@ export async function POST(req: NextRequest) {
         status: true,
         categoryId: true,
         subcategoryId: true,
+        hasVariants: true,
+        variants: {
+          select: {
+            id: true, label: true, price: true, priceOriginal: true, sku: true, stock: true, sortOrder: true, active: true,
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
 
@@ -341,9 +399,54 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    const item = await prisma.product.update({
+    // ── Actualizar producto base
+    const baseItem = await prisma.product.update({
       where: { id },
-      data,
+      data: {
+        ...data,
+        ...(typeof b.hasVariants === 'boolean' ? { hasVariants: b.hasVariants } : {}),
+      },
+      select: { id: true },
+    });
+
+    // ── Upsert de variantes (máx 3) cuando se envía hasVariants/variants
+    if (typeof b.hasVariants === 'boolean') {
+      if (!b.hasVariants) {
+        // Apagado: borramos todas las variantes
+        await prisma.productVariant.deleteMany({ where: { productId: id } });
+      } else if (Array.isArray(b.variants)) {
+        const list = b.variants.slice(0, 3);
+        const keepIds = list.filter((v) => !!v.id).map((v) => v.id!) as number[];
+
+        // Crear o actualizar uno a uno (evitamos nested upsert para mantener compatibilidad en Edge)
+        for (let i = 0; i < list.length; i++) {
+          const v = list[i];
+          const patch = {
+            label: v.label,
+            price: v.price ?? null,
+            priceOriginal: v.priceOriginal ?? null,
+            sku: (v.sku ?? '') || null,
+            stock: v.stock ?? null,
+            sortOrder: Number.isFinite(v.sortOrder as any) ? (v.sortOrder as number) : i,
+            active: v.active ?? true,
+          };
+          if (v.id) {
+            await prisma.productVariant.update({ where: { id: v.id }, data: patch });
+          } else {
+            await prisma.productVariant.create({ data: { ...patch, productId: id } });
+          }
+        }
+
+        // Eliminar las que no vinieron
+        await prisma.productVariant.deleteMany({
+          where: keepIds.length ? { productId: id, id: { notIn: keepIds } } : { productId: id },
+        });
+      }
+    }
+
+    // Devolver item completo (incluyendo variantes)
+    const item = await prisma.product.findUnique({
+      where: { id: baseItem.id },
       select: {
         id: true,
         name: true,
@@ -354,11 +457,18 @@ export async function PUT(req: NextRequest) {
         status: true,
         categoryId: true,
         subcategoryId: true,
+        hasVariants: true,
+        variants: {
+          select: {
+            id: true, label: true, price: true, priceOriginal: true, sku: true, stock: true, sortOrder: true, active: true,
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
 
     try {
-      await audit(req, 'UPDATE', 'Product', id, data);
+      await audit(req, 'UPDATE', 'Product', id, { ...data, hasVariants: b.hasVariants ?? undefined });
     } catch {}
 
     return NextResponse.json({ ok: true, item });

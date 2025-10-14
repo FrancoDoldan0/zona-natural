@@ -24,9 +24,34 @@ type Product = {
   category?: { id: number; name: string } | null;
   subcategory?: { id: number; name: string } | null;
   images?: ProductImage[];
+
+  // 🆕 campos opcionales que puede traer la API admin
+  hasVariants?: boolean;
+  variants?: Array<{
+    id: number;
+    label: string;
+    price: number | null;
+    priceOriginal: number | null;
+    sku: string | null;
+    stock: number | null;
+    sortOrder: number;
+    active: boolean;
+  }>;
 };
 
 const STATUS_OPTS: Status[] = ['ACTIVE', 'AGOTADO', 'INACTIVE', 'DRAFT', 'ARCHIVED'];
+
+// 🆕 filas del editor (strings para inputs, se parsea al guardar)
+type VariantRow = {
+  id?: number;
+  label: string;
+  price: string;          // decimal como string
+  priceOriginal: string;  // decimal como string
+  sku: string;
+  stock: string;          // entero como string
+  sortOrder: number;
+  active: boolean;
+};
 
 async function readJsonSafe(res: Response): Promise<{ json: any | null; text: string }> {
   const ct = res.headers.get('content-type') || '';
@@ -59,6 +84,20 @@ async function fetchTry(urls: string[], init?: RequestInit) {
   throw lastErr ?? new Error('No pude leer la API.');
 }
 
+// 🆕 helpers parse
+function parseDecimalOrNull(s: string): number | null {
+  const t = s.trim();
+  if (t === '') return null;
+  const n = Number(t.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+function parseIntOrNull(s: string): number | null {
+  const t = s.trim();
+  if (t === '') return null;
+  const n = parseInt(t, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 export default function AdminProductEditPage() {
   const { id: idParam } = useParams<{ id: string }>();
   const id = Number.parseInt(String(idParam ?? ''), 10);
@@ -77,6 +116,10 @@ export default function AdminProductEditPage() {
   const [status, setStatus] = useState<Status>('ACTIVE');
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [subcategoryId, setSubcategoryId] = useState<number | ''>('');
+
+  // 🆕 variantes
+  const [hasVariants, setHasVariants] = useState<boolean>(false);
+  const [variants, setVariants] = useState<VariantRow[]>([]);
 
   const subOptions = useMemo(
     () => subs.filter((s) => (categoryId === '' ? true : s.categoryId === Number(categoryId))),
@@ -116,6 +159,29 @@ export default function AdminProductEditPage() {
       setStatus(STATUS_OPTS.includes(p?.status as Status) ? (p.status as Status) : 'ACTIVE');
       setCategoryId(p?.categoryId ?? '');
       setSubcategoryId(p?.subcategoryId ?? '');
+
+      // 🆕 inicializar variantes
+      const hv = !!p?.hasVariants && Array.isArray(p?.variants);
+      setHasVariants(hv);
+      if (hv) {
+        const mapped =
+          (p.variants ?? [])
+            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+            .slice(0, 3)
+            .map((v) => ({
+              id: v.id,
+              label: v.label ?? '',
+              price: v.price != null ? String(v.price) : '',
+              priceOriginal: v.priceOriginal != null ? String(v.priceOriginal) : '',
+              sku: v.sku ?? '',
+              stock: v.stock != null ? String(v.stock) : '',
+              sortOrder: typeof v.sortOrder === 'number' ? v.sortOrder : 0,
+              active: v.active !== false,
+            })) as VariantRow[];
+        setVariants(mapped);
+      } else {
+        setVariants([]);
+      }
     } catch (e: any) {
       console.error(e);
       setErr(e?.message || 'No pude cargar el producto.');
@@ -135,6 +201,48 @@ export default function AdminProductEditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // 🆕 editor variantes helpers
+  const canAddVariant = variants.length < 3;
+  function addVariant() {
+    if (!canAddVariant) return;
+    setVariants((prev) => [
+      ...prev,
+      {
+        label: '',
+        price: '',
+        priceOriginal: '',
+        sku: '',
+        stock: '',
+        sortOrder: prev.length,
+        active: true,
+      },
+    ]);
+  }
+  function updateVariant(i: number, patch: Partial<VariantRow>) {
+    setVariants((prev) => {
+      const arr = [...prev];
+      arr[i] = { ...arr[i], ...patch };
+      return arr;
+    });
+  }
+  function removeVariant(i: number) {
+    setVariants((prev) => {
+      const arr = prev.filter((_, idx) => idx !== i).map((v, idx) => ({ ...v, sortOrder: idx }));
+      return arr;
+    });
+  }
+  function moveVariant(i: number, dir: -1 | 1) {
+    setVariants((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const arr = [...prev];
+      const tmp = arr[i].sortOrder;
+      arr[i].sortOrder = arr[j].sortOrder;
+      arr[j].sortOrder = tmp;
+      return [...arr].sort((a, b) => a.sortOrder - b.sortOrder);
+    });
+  }
+
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
     try {
@@ -144,12 +252,49 @@ export default function AdminProductEditPage() {
         // Si el slug se deja vacío, la API lo recalcula (mandamos slug: "")
         ...(slug.trim() !== '' ? { slug: slug.trim() } : { slug: '' }),
         description: description.trim() || null,
-        price: price.trim() === '' ? null : Number(price.replace(',', '.')),
+        // 🆕 si usamos variantes, no enviamos/forzamos null el price base
+        price: hasVariants
+          ? null
+          : price.trim() === ''
+            ? null
+            : Number(price.replace(',', '.')),
         sku: sku.trim() || null,
         status,
         categoryId: categoryId === '' ? null : Number(categoryId),
         subcategoryId: subcategoryId === '' ? null : Number(subcategoryId),
+
+        // 🆕 flag
+        hasVariants,
       };
+
+      if (hasVariants) {
+        if (!variants.length) {
+          alert('Agregá al menos una variante o desactiva “Usar variantes de peso”.');
+          return;
+        }
+        const normalized = variants
+          .slice(0, 3)
+          .map((v, idx) => ({
+            id: v.id, // si existe, upsert; si no, create
+            label: v.label.trim(),
+            price: parseDecimalOrNull(v.price),
+            priceOriginal: parseDecimalOrNull(v.priceOriginal),
+            sku: v.sku.trim() || null,
+            stock: parseIntOrNull(v.stock),
+            sortOrder: Number.isFinite(v.sortOrder) ? v.sortOrder : idx,
+            active: !!v.active,
+          }))
+          .filter((v) => v.label !== '');
+
+        if (!normalized.length) {
+          alert('Cada variante debe tener etiqueta (ej: “500 gr”).');
+          return;
+        }
+        body.variants = normalized;
+      } else {
+        // al apagar variantes, la API borra las existentes (no mandamos array)
+        delete body.variants;
+      }
 
       // PUT seguro por ?id= y fallback a /:id
       await fetchTry(
@@ -226,6 +371,8 @@ export default function AdminProductEditPage() {
               value={price}
               onChange={(e) => setPrice(e.target.value)}
               placeholder="ej: 199.99"
+              disabled={hasVariants} // 🆕 deshabilitar si usamos variantes
+              title={hasVariants ? 'Deshabilitado: el precio depende de la variante' : 'Precio base del producto'}
             />
           </label>
 
@@ -301,6 +448,113 @@ export default function AdminProductEditPage() {
             onChange={(e) => setDescription(e.target.value)}
           />
         </label>
+
+        {/* 🆕 Toggle variantes */}
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={hasVariants}
+            onChange={(e) => setHasVariants(e.target.checked)}
+          />
+          <span>Usar variantes de peso (hasta 3)</span>
+        </label>
+
+        {/* 🆕 Editor de variantes */}
+        {hasVariants && (
+          <div className="mt-2 space-y-3">
+            {variants.map((v, idx) => (
+              <div key={v.id ?? `var-${idx}`} className="grid gap-2 rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <strong>Variante #{idx + 1}</strong>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => moveVariant(idx, -1)}
+                      disabled={idx === 0}
+                      className="px-2 py-1 border rounded"
+                      title="Subir"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveVariant(idx, 1)}
+                      disabled={idx === variants.length - 1}
+                      className="px-2 py-1 border rounded"
+                      title="Bajar"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeVariant(idx)}
+                      className="px-2 py-1 border rounded text-red-600"
+                      title="Eliminar variante"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                  <input
+                    className="border rounded p-2 md:col-span-2"
+                    placeholder='Label (ej. "500 gr")'
+                    value={v.label}
+                    onChange={(e) => updateVariant(idx, { label: e.target.value })}
+                    required
+                  />
+                  <input
+                    className="border rounded p-2"
+                    placeholder="Precio (ej. 199.90)"
+                    inputMode="decimal"
+                    value={v.price}
+                    onChange={(e) => updateVariant(idx, { price: e.target.value })}
+                  />
+                  <input
+                    className="border rounded p-2"
+                    placeholder="Precio original (opcional)"
+                    inputMode="decimal"
+                    value={v.priceOriginal}
+                    onChange={(e) => updateVariant(idx, { priceOriginal: e.target.value })}
+                  />
+                  <input
+                    className="border rounded p-2"
+                    placeholder="SKU (opcional)"
+                    value={v.sku}
+                    onChange={(e) => updateVariant(idx, { sku: e.target.value })}
+                  />
+                  <input
+                    className="border rounded p-2"
+                    placeholder="Stock (opcional)"
+                    inputMode="numeric"
+                    value={v.stock}
+                    onChange={(e) => updateVariant(idx, { stock: e.target.value })}
+                  />
+                </div>
+
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={v.active}
+                    onChange={(e) => updateVariant(idx, { active: e.target.checked })}
+                  />
+                  <span>Activo</span>
+                </label>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={addVariant}
+              disabled={!canAddVariant}
+              className="px-3 py-2 border rounded disabled:opacity-50"
+              title={canAddVariant ? 'Agregar variante' : 'Máximo 3 variantes'}
+            >
+              Añadir variante ({variants.length}/3)
+            </button>
+          </div>
+        )}
 
         <button className="border rounded px-4 py-2" type="submit" disabled={loading}>
           {loading ? 'Cargando…' : 'Guardar cambios'}

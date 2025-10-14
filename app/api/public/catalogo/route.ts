@@ -35,6 +35,19 @@ function appendAND(
 // Tipos auxiliares para lo que seleccionamos de Prisma
 type ProductTagRow = { tagId: number };
 type ProductImageRow = { key: string | null };
+
+// 🆕 filas de variante
+type ProductVariantRow = {
+  id: number;
+  label: string;
+  price: number | null;
+  priceOriginal: number | null;
+  sku: string | null;
+  stock: number | null;
+  sortOrder: number;
+  active: boolean;
+};
+
 type ProductRow = {
   id: number;
   name: string;
@@ -44,6 +57,10 @@ type ProductRow = {
   categoryId?: number | null;
   images?: ProductImageRow[];
   productTags?: ProductTagRow[];
+
+  // 🆕
+  hasVariants?: boolean;
+  variants?: ProductVariantRow[];
 };
 
 export async function GET(req: NextRequest) {
@@ -165,11 +182,19 @@ export async function GET(req: NextRequest) {
         include: {
           images: { select: { key: true } },
           productTags: { select: { tagId: true } },
+          // 🆕 incluir variantes activas
+          variants: {
+            where: { active: true },
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              id: true, label: true, price: true, priceOriginal: true, sku: true, stock: true, sortOrder: true, active: true,
+            },
+          },
         },
       }),
     ]);
 
-    const typedItems = itemsRaw as ProductRow[];
+    const typedItems = itemsRaw as (ProductRow & { hasVariants?: boolean })[];
 
     // Precios: tolerar fallas en computePricesBatch
     const bare = typedItems.map((p) => ({
@@ -215,8 +240,32 @@ export async function GET(req: NextRequest) {
     const mapped = await Promise.all(
       typedItems.map(async (p) => {
         const pr = priced.get(p.id);
-        const priceOriginal = pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
-        const priceFinal = pr?.priceFinal ?? priceOriginal;
+        let priceOriginal = pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
+        let priceFinal = pr?.priceFinal ?? priceOriginal;
+
+        // 🆕 aplicar el mismo factor de descuento del producto a cada variante
+        const activeVariants = Array.isArray(p.variants) ? p.variants : [];
+        const ratio =
+          priceOriginal && priceFinal && priceOriginal > 0 ? priceFinal / priceOriginal : null;
+
+        // calcular precios efectivos por variante (sin tocar DB)
+        const variants = activeVariants.map((v) => {
+          const vOrig = (v.priceOriginal ?? v.price) ?? null;
+          const vFinal = vOrig != null ? (ratio != null ? vOrig * ratio : vOrig) : null;
+          return {
+            ...v,
+            priceOriginal: vOrig,
+            priceFinal: vFinal,
+          };
+        });
+
+        // si hay variantes, usar el mínimo para la card
+        if (variants.length) {
+          const finals = variants.map((v) => v.priceFinal).filter((x): x is number => typeof x === 'number');
+          const origs = variants.map((v) => v.priceOriginal).filter((x): x is number => typeof x === 'number');
+          if (finals.length) priceFinal = Math.min(...finals);
+          if (origs.length) priceOriginal = Math.min(...origs);
+        }
 
         const hasDiscount =
           priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
@@ -240,6 +289,10 @@ export async function GET(req: NextRequest) {
           offer: pr?.offer ?? null,
           hasDiscount,
           discountPercent,
+
+          // 🆕 exposición pública para UI
+          hasVariants: variants.length > 0,
+          variants,
         };
       }),
     );

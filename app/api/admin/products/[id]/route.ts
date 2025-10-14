@@ -13,6 +13,17 @@ const prisma = createPrisma();
 // Estados permitidos (incluye AGOTADO)
 const STATUS_VALUES = new Set(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED', 'AGOTADO'] as const);
 
+const VariantSchema = z.object({
+  id: z.coerce.number().int().positive().optional(),
+  label: z.string().min(1),
+  price: z.coerce.number().optional().nullable(),
+  priceOriginal: z.coerce.number().optional().nullable(),
+  sku: z.string().max(120).optional().nullable(),
+  stock: z.coerce.number().int().optional().nullable(),
+  sortOrder: z.coerce.number().int().optional().default(0),
+  active: z.boolean().optional().default(true),
+});
+
 const UpdateSchema = z.object({
   name: z.string().min(1).optional(),
   // slug vacío ("") => recalcular; si no se envía, no se toca
@@ -23,6 +34,10 @@ const UpdateSchema = z.object({
   status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT', 'ARCHIVED', 'AGOTADO']).optional(),
   categoryId: z.coerce.number().optional().nullable(),
   subcategoryId: z.coerce.number().optional().nullable(),
+
+  // 🆕 variantes
+  hasVariants: z.boolean().optional(),
+  variants: z.array(VariantSchema).max(3).optional(),
 });
 
 function getIdFromUrl(req: NextRequest): number | null {
@@ -52,6 +67,22 @@ export async function GET(req: NextRequest) {
       subcategoryId: true,
       category: { select: { id: true, name: true } },
       subcategory: { select: { id: true, name: true } },
+
+      // 🆕 variantes
+      hasVariants: true,
+      variants: {
+        select: {
+          id: true,
+          label: true,
+          price: true,
+          priceOriginal: true,
+          sku: true,
+          stock: true,
+          sortOrder: true,
+          active: true,
+        },
+        orderBy: { sortOrder: 'asc' },
+      },
     },
   });
 
@@ -98,9 +129,51 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    const item = await prisma.product.update({
+    // 1) actualizar producto (+ flag hasVariants si vino)
+    const baseItem = await prisma.product.update({
       where: { id },
-      data,
+      data: {
+        ...data,
+        ...(typeof b.hasVariants === 'boolean' ? { hasVariants: b.hasVariants } : {}),
+      },
+      select: { id: true },
+    });
+
+    // 2) variantes (máx 3) — secuencial para compatibilidad Edge
+    if (typeof b.hasVariants === 'boolean') {
+      if (!b.hasVariants) {
+        await prisma.productVariant.deleteMany({ where: { productId: id } });
+      } else if (Array.isArray(b.variants)) {
+        const list = b.variants.slice(0, 3);
+        const keepIds = list.filter((v) => !!v.id).map((v) => v.id!) as number[];
+
+        for (let i = 0; i < list.length; i++) {
+          const v = list[i];
+          const patch = {
+            label: v.label,
+            price: v.price ?? null,
+            priceOriginal: v.priceOriginal ?? null,
+            sku: (v.sku ?? '') || null,
+            stock: v.stock ?? null,
+            sortOrder: Number.isFinite(v.sortOrder as any) ? (v.sortOrder as number) : i,
+            active: v.active ?? true,
+          };
+          if (v.id) {
+            await prisma.productVariant.update({ where: { id: v.id }, data: patch });
+          } else {
+            await prisma.productVariant.create({ data: { ...patch, productId: id } });
+          }
+        }
+
+        await prisma.productVariant.deleteMany({
+          where: keepIds.length ? { productId: id, id: { notIn: keepIds } } : { productId: id },
+        });
+      }
+    }
+
+    // 3) devolver item
+    const item = await prisma.product.findUnique({
+      where: { id: baseItem.id },
       select: {
         id: true,
         name: true,
@@ -111,10 +184,17 @@ export async function PUT(req: NextRequest) {
         status: true,
         categoryId: true,
         subcategoryId: true,
+        hasVariants: true,
+        variants: {
+          select: {
+            id: true, label: true, price: true, priceOriginal: true, sku: true, stock: true, sortOrder: true, active: true,
+          },
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
 
-    await audit(req, 'UPDATE', 'Product', id, data).catch(() => {});
+    await audit(req, 'UPDATE', 'Product', id, { ...data, hasVariants: b.hasVariants ?? undefined }).catch(() => {});
     return NextResponse.json({ ok: true, item });
   } catch (e: any) {
     if (e?.code === 'P2002') {
@@ -165,7 +245,7 @@ export async function DELETE(req: NextRequest) {
       // si la relación ya está en cascade o el modelo difiere, ignoramos
     }
 
-    // 5) Borrar el producto
+    // 5) Borrar el producto (variants caen por ON DELETE CASCADE)
     await prisma.product.delete({ where: { id } });
 
     await audit(req, 'DELETE', 'Product', id, null).catch(() => {});

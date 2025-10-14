@@ -29,6 +29,14 @@ export async function GET(req: Request, { params }: any) {
           images: { select: { id: true, key: true } },
           category: { select: { id: true, name: true, slug: true } },
           productTags: { select: { tagId: true } },
+          // 🆕 variantes activas
+          variants: {
+            where: { active: true },
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              id: true, label: true, price: true, priceOriginal: true, sku: true, stock: true, sortOrder: true, active: true,
+            },
+          },
         },
       });
     } catch (e) {
@@ -43,6 +51,13 @@ export async function GET(req: Request, { params }: any) {
           images: { select: { id: true, key: true } },
           category: { select: { id: true, name: true, slug: true } },
           productTags: { select: { tagId: true } },
+          variants: {
+            where: { active: true },
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              id: true, label: true, price: true, priceOriginal: true, sku: true, stock: true, sortOrder: true, active: true,
+            },
+          },
         },
       });
 
@@ -97,8 +112,35 @@ export async function GET(req: Request, { params }: any) {
     const priced = await computePricesBatch(bare).catch(() => new Map());
     const pr = priced.get(p.id);
 
-    const priceOriginal = pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
-    const priceFinal = pr?.priceFinal ?? priceOriginal;
+    let priceOriginal = pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
+    let priceFinal = pr?.priceFinal ?? priceOriginal;
+    const ratio =
+      priceOriginal && priceFinal && priceOriginal > 0 ? priceFinal / priceOriginal : null;
+
+    // 🆕 calcular precios efectivos de variantes replicando factor
+    const variants = (Array.isArray(p.variants) ? p.variants : []).map((v: any, i: number) => {
+      const vOrig = (v.priceOriginal ?? v.price) ?? null;
+      const vFinal = vOrig != null ? (ratio != null ? vOrig * ratio : vOrig) : null;
+      return {
+        id: v.id,
+        label: v.label,
+        price: v.price ?? null,
+        priceOriginal: vOrig,
+        priceFinal: vFinal,
+        sku: v.sku ?? null,
+        stock: v.stock ?? null,
+        sortOrder: typeof v.sortOrder === 'number' ? v.sortOrder : i,
+        active: v.active !== false,
+      };
+    });
+
+    if (variants.length) {
+      const finals = variants.map((v: any) => v.priceFinal).filter((x: any): x is number => typeof x === 'number');
+      const origs = variants.map((v: any) => v.priceOriginal).filter((x: any): x is number => typeof x === 'number');
+      if (finals.length) priceFinal = Math.min(...finals);
+      if (origs.length) priceOriginal = Math.min(...origs);
+    }
+
     const hasDiscount = priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
 
     const item = {
@@ -122,6 +164,10 @@ export async function GET(req: Request, { params }: any) {
         hasDiscount && priceOriginal && priceFinal
           ? Math.round((1 - priceFinal / priceOriginal) * 100)
           : 0,
+
+      // 🆕 variantes
+      hasVariants: variants.length > 0,
+      variants,
     };
 
     return NextResponse.json({ ok: true, item, ...(debug && r2Debug ? { debug: r2Debug } : {}) });

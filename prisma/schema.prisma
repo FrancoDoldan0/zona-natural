@@ -68,6 +68,10 @@ model Product {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
+  // 🆕 Variantes de peso
+  hasVariants  Boolean         @default(false)
+  variants     ProductVariant[]
+
   @@index([status])
 }
 
@@ -206,4 +210,24 @@ enum BannerPlacement {
   PRODUCTS
   CATEGORY
   CHECKOUT
+}
+
+//
+// 🆕 Variantes de producto (hasta 3 por producto)
+//
+model ProductVariant {
+  id             Int      @id @default(autoincrement())
+  productId      Int
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  label          String            // “1 Kg”, “500 gr”, etc.
+  price          Float?            // mismo tipo que Product.price
+  priceOriginal  Float?
+  sku            String?
+  stock          Int?
+  sortOrder      Int      @default(0)
+  active         Boolean  @default(true)
+
+  @@index([productId])
+  @@index([productId, sortOrder])
 }

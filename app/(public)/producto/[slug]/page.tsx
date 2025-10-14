@@ -18,7 +18,7 @@ import Link from "next/link";
 import { fmtPrice } from "@/lib/price";
 import { normalizeProduct, toR2Url } from "@/lib/product";
 import ProductCard from "@/components/ui/ProductCard";
-import AddToCart from "@/components/cart/AddToCart"; // ← NUEVO
+import AddToCart from "@/components/cart/AddToCart"; // ← existe en tu repo
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -91,7 +91,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 /* ───────── utilidades ───────── */
-function getSku(raw: RawItem): string | null {
+function getSku(raw: RawItem, selVariant?: any): string | null {
+  if (selVariant?.sku) return String(selVariant.sku);
   const v = raw.sku ?? raw.SKU ?? raw.codigo ?? raw.code ?? raw.productCode ?? null;
   return v ? String(v) : null;
 }
@@ -165,17 +166,50 @@ async function fetchRelated(raw: RawItem, excludeSlug: string): Promise<RawItem[
 }
 
 /* ───────── Página ───────── */
-export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function ProductPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  // en este proyecto `searchParams` también es Promise
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { slug } = await params;
+  const sp = (await searchParams) ?? {};
   const raw = await fetchOneBySlug(slug);
   if (!raw) return notFound();
 
+  // normalizado para campos comunes (títulos, imagen, etc.)
   const p = normalizeProduct(raw);
   const img = toR2Url(p.image);
   const productUrl = await abs(`/producto/${p.slug}`);
 
-  const hasOffer = p.price != null && p.originalPrice != null && Number(p.price) < Number(p.originalPrice);
-  const sku = getSku(raw);
+  // variantes (ya vienen de la API pública)
+  const variants: Array<{
+    id: number;
+    label: string;
+    priceOriginal: number | null;
+    priceFinal: number | null;
+    sku?: string | null;
+  }> = Array.isArray(raw.variants) ? raw.variants.map((v: any) => ({
+    id: v.id,
+    label: v.label,
+    priceOriginal: v.priceOriginal ?? null,
+    priceFinal: v.priceFinal ?? (v.priceOriginal ?? v.price ?? null),
+    sku: v.sku ?? null,
+  })) : [];
+
+  const selIndex = Math.max(0, Math.min(variants.length - 1, parseInt(
+    (typeof sp.v === "string" ? sp.v : Array.isArray(sp.v) ? sp.v[0] : "0") || "0",
+    10
+  ) || 0));
+  const selVar = variants.length ? variants[selIndex] : null;
+
+  const effectivePrice = selVar?.priceFinal ?? p.price ?? p.originalPrice ?? null;
+  const effectiveOriginal = selVar?.priceOriginal ?? p.originalPrice ?? null;
+  const hasOffer = effectivePrice != null && effectiveOriginal != null && effectivePrice < effectiveOriginal;
+
+  const sku = getSku(raw, selVar);
   const cats = getCategories(raw);
   const desc = getDescription(raw);
 
@@ -262,21 +296,44 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
             {p.subtitle ? <p className="mt-1 text-gray-600">{p.subtitle}</p> : null}
 
+            {/* 🆕 Selector de variantes (links con query ?v=i para evitar cliente) */}
+            {variants.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {variants.map((v, i) => {
+                  const u = new URLSearchParams();
+                  u.set("v", String(i));
+                  return (
+                    <Link
+                      key={v.id}
+                      href={`${productUrl}?${u.toString()}`}
+                      className={
+                        "px-3 py-1 rounded border text-sm " +
+                        (i === selIndex ? "bg-emerald-600 text-white border-emerald-600" : "bg-white")
+                      }
+                      prefetch
+                    >
+                      {v.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Precio */}
             <div className="mt-4">
               {hasOffer ? (
                 <div className="text-lg">
-                  <span className="text-emerald-700 font-semibold mr-2">{fmtPrice(p.price)}</span>
-                  <span className="line-through opacity-60">{fmtPrice(p.originalPrice)}</span>
-                  {p.originalPrice ? (
+                  <span className="text-emerald-700 font-semibold mr-2">{fmtPrice(effectivePrice!)}</span>
+                  <span className="line-through opacity-60">{fmtPrice(effectiveOriginal!)}</span>
+                  {effectiveOriginal ? (
                     <span className="ml-2 rounded-full bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5">
                       -
-                      {Math.round(((Number(p.originalPrice) - Number(p.price!)) / Number(p.originalPrice)) * 100)}%
+                      {Math.round(((Number(effectiveOriginal) - Number(effectivePrice!)) / Number(effectiveOriginal)) * 100)}%
                     </span>
                   ) : null}
                 </div>
               ) : (
-                <div className="text-lg">{fmtPrice(p.price ?? p.originalPrice ?? null)}</div>
+                <div className="text-lg">{fmtPrice(effectivePrice ?? effectiveOriginal ?? null)}</div>
               )}
 
               {!p.outOfStock ? (
@@ -291,7 +348,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <AddToCart
                 slug={p.slug}
                 title={p.title}
-                price={p.price ?? p.originalPrice ?? null}
+                price={effectivePrice ?? effectiveOriginal ?? null}
                 image={img}
                 productUrl={productUrl}
                 disabled={p.outOfStock}
@@ -308,10 +365,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               ) : null}
               <dt className="font-medium text-gray-700">Disponibilidad</dt>
               <dd className="text-gray-900">{p.outOfStock ? "Sin stock" : "En stock"}</dd>
-              {cats.length ? (
+              {getCategories(raw).length ? (
                 <>
                   <dt className="font-medium text-gray-700">Categorías</dt>
-                  <dd className="text-gray-900">{cats.join(", ")}</dd>
+                  <dd className="text-gray-900">{getCategories(raw).join(", ")}</dd>
                 </>
               ) : null}
             </dl>

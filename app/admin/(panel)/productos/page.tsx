@@ -20,6 +20,18 @@ type Product = {
   subcategory?: { id: number; name: string } | null;
 };
 
+// 🆕 Variantes (para el mini-form de creación)
+type VariantRow = {
+  id?: number; // no se usa al crear, pero lo dejamos por compat
+  label: string;
+  price: string;          // lo guardamos como string y lo parseamos al enviar
+  priceOriginal: string;  // idem
+  sku: string;
+  stock: string;          // entero (string → int)
+  sortOrder: number;
+  active: boolean;
+};
+
 const DEFAULT_LIMIT = 20;
 
 /** Fallback: primero prueba /products y si no, /productos */
@@ -60,7 +72,7 @@ async function readJsonSafe(res: Response): Promise<{ json: any | null; text: st
 function formatApiError(res: Response, json: any, text: string) {
   // sesión expirada / login requerido
   const redirectedToLogin =
-    res.redirected && /\/admin\/login/.test(res.url) ||
+    (res.redirected && /\/admin\/login/.test(res.url)) ||
     /\/admin\/login/.test(text) ||
     res.status === 401 || res.status === 403;
 
@@ -95,6 +107,20 @@ function formatApiError(res: Response, json: any, text: string) {
   return `HTTP ${res.status} ${res.statusText} — ${short}`;
 }
 
+// 🆕 helpers para parsear números
+function parseDecimalOrNull(s: string): number | null {
+  const t = s.trim();
+  if (t === '') return null;
+  const n = Number(t.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+function parseIntOrNull(s: string): number | null {
+  const t = s.trim();
+  if (t === '') return null;
+  const n = parseInt(t, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 export default function ProductosPage() {
   const [cats, setCats] = useState<Category[]>([]);
   const [subs, setSubs] = useState<Subcategory[]>([]);
@@ -126,6 +152,10 @@ export default function ProductosPage() {
   );
   const [cId, setCId] = useState<number | ''>('');
   const [sId, setSId] = useState<number | ''>('');
+
+  // 🆕 Estado de variantes para creación rápida
+  const [hasVariants, setHasVariants] = useState(false);
+  const [variants, setVariants] = useState<VariantRow[]>([]);
 
   async function loadCats() {
     const res = await fetch('/api/admin/categories?take=999', { cache: 'no-store' });
@@ -188,14 +218,61 @@ export default function ProductosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [limit, offset]);
 
+  // 🆕 Variants editor helpers
+  const canAddVariant = variants.length < 3;
+  function addVariant() {
+    if (!canAddVariant) return;
+    setVariants((prev) => [
+      ...prev,
+      {
+        label: '',
+        price: '',
+        priceOriginal: '',
+        sku: '',
+        stock: '',
+        sortOrder: prev.length,
+        active: true,
+      },
+    ]);
+  }
+  function updateVariant(i: number, patch: Partial<VariantRow>) {
+    setVariants((prev) => {
+      const arr = [...prev];
+      arr[i] = { ...arr[i], ...patch };
+      return arr;
+    });
+  }
+  function removeVariant(i: number) {
+    setVariants((prev) => {
+      const arr = prev.filter((_, idx) => idx !== i).map((v, idx) => ({ ...v, sortOrder: idx }));
+      return arr;
+    });
+  }
+  function moveVariant(i: number, dir: -1 | 1) {
+    setVariants((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const arr = [...prev];
+      const tmp = arr[i].sortOrder;
+      arr[i].sortOrder = arr[j].sortOrder;
+      arr[j].sortOrder = tmp;
+      // reordenar físicamente para que el render siga el sortOrder
+      const sorted = [...arr].sort((a, b) => a.sortOrder - b.sortOrder);
+      return sorted;
+    });
+  }
+
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
     try {
       setErr(null);
       const body: any = { name: name.trim(), status };
+
+      // descripción
       if (description.trim() !== '') body.description = description.trim();
 
-      if (price.trim() !== '') {
+      // precio (deshabilitado si hay variantes, pero si el user lo dejó escrito no lo mandamos)
+      if (!hasVariants && price.trim() !== '') {
         // Permite "234,50"
         const n = Number(price.replace(',', '.'));
         if (!Number.isFinite(n)) throw new Error('Precio inválido. Usá números (ej: 199.90).');
@@ -205,6 +282,34 @@ export default function ProductosPage() {
       if (sku.trim() !== '') body.sku = sku.trim();
       if (cId !== '') body.categoryId = Number(cId);
       if (sId !== '') body.subcategoryId = Number(sId);
+
+      // 🆕 variantes
+      if (hasVariants) {
+        if (!variants.length) {
+          throw new Error('Agregá al menos una variante o desactiva “Usar variantes de peso”.');
+        }
+        const normalized = variants
+          .slice(0, 3)
+          .map((v, idx) => ({
+            label: v.label.trim(),
+            price: parseDecimalOrNull(v.price),
+            priceOriginal: parseDecimalOrNull(v.priceOriginal),
+            sku: v.sku.trim() || null,
+            stock: parseIntOrNull(v.stock),
+            sortOrder: Number.isFinite(v.sortOrder) ? v.sortOrder : idx,
+            active: !!v.active,
+          }))
+          .filter((v) => v.label !== ''); // label obligatorio
+
+        if (!normalized.length) {
+          throw new Error('Cada variante debe tener etiqueta (ej: “500 gr”).');
+        }
+
+        body.hasVariants = true;
+        body.variants = normalized;
+      } else {
+        body.hasVariants = false;
+      }
 
       const res = await callApi('/api/admin/products', '/api/admin/productos', {
         method: 'POST',
@@ -228,6 +333,10 @@ export default function ProductosPage() {
       setCId('');
       setSId('');
       setStatus('ACTIVE');
+
+      // 🆕 limpiar variantes
+      setHasVariants(false);
+      setVariants([]);
 
       // recargar
       setOffset(0);
@@ -279,6 +388,8 @@ export default function ProductosPage() {
             inputMode="decimal"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
+            disabled={hasVariants} // 🆕 deshabilitar si hay variantes
+            title={hasVariants ? 'Deshabilitado: usando variantes' : 'Precio del producto'}
           />
           <input
             className="border rounded p-2"
@@ -334,6 +445,119 @@ export default function ProductosPage() {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
+
+        {/* 🆕 Toggle variantes */}
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={hasVariants}
+            onChange={(e) => {
+              setHasVariants(e.target.checked);
+              if (!e.target.checked) {
+                // al apagar, mantenemos lo ingresado por si lo vuelven a activar
+                // no limpiamos automáticamente variants
+              }
+            }}
+          />
+          <span>Usar variantes de peso (hasta 3)</span>
+        </label>
+
+        {/* 🆕 Mini-form variantes */}
+        {hasVariants && (
+          <div className="mt-2 space-y-3">
+            {variants.map((v, idx) => (
+              <div key={idx} className="grid gap-2 rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <strong>Variante #{idx + 1}</strong>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => moveVariant(idx, -1)}
+                      disabled={idx === 0}
+                      className="px-2 py-1 border rounded"
+                      title="Subir"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveVariant(idx, 1)}
+                      disabled={idx === variants.length - 1}
+                      className="px-2 py-1 border rounded"
+                      title="Bajar"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeVariant(idx)}
+                      className="px-2 py-1 border rounded text-red-600"
+                      title="Eliminar variante"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                  <input
+                    className="border rounded p-2 md:col-span-2"
+                    placeholder='Label (ej. "500 gr")'
+                    value={v.label}
+                    onChange={(e) => updateVariant(idx, { label: e.target.value })}
+                    required
+                  />
+                  <input
+                    className="border rounded p-2"
+                    placeholder="Precio (ej. 199.90)"
+                    inputMode="decimal"
+                    value={v.price}
+                    onChange={(e) => updateVariant(idx, { price: e.target.value })}
+                  />
+                  <input
+                    className="border rounded p-2"
+                    placeholder="Precio original (opcional)"
+                    inputMode="decimal"
+                    value={v.priceOriginal}
+                    onChange={(e) => updateVariant(idx, { priceOriginal: e.target.value })}
+                  />
+                  <input
+                    className="border rounded p-2"
+                    placeholder="SKU (opcional)"
+                    value={v.sku}
+                    onChange={(e) => updateVariant(idx, { sku: e.target.value })}
+                  />
+                  <input
+                    className="border rounded p-2"
+                    placeholder="Stock (opcional)"
+                    inputMode="numeric"
+                    value={v.stock}
+                    onChange={(e) => updateVariant(idx, { stock: e.target.value })}
+                  />
+                </div>
+
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={v.active}
+                    onChange={(e) => updateVariant(idx, { active: e.target.checked })}
+                  />
+                  <span>Activo</span>
+                </label>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={addVariant}
+              disabled={!canAddVariant}
+              className="px-3 py-2 border rounded disabled:opacity-50"
+              title={canAddVariant ? 'Agregar variante' : 'Máximo 3 variantes'}
+            >
+              Añadir variante ({variants.length}/3)
+            </button>
+          </div>
+        )}
 
         <button className="border rounded px-4" type="submit">
           Crear
