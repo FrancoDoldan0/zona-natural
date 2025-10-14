@@ -2,13 +2,13 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { CartItem, readCart, writeCart, countItems, subTotal } from "@/lib/cart";
+import { CartItem, readCart, writeCart, countItems, subTotal, buildItemKey } from "@/lib/cart";
 
 type CartCtx = {
   items: CartItem[];
-  add: (item: Omit<CartItem, "qty"> & { qty?: number }) => void;
-  setQty: (slug: string, qty: number) => void;
-  remove: (slug: string) => void;
+  add: (item: Omit<CartItem, "qty" | "itemKey"> & { qty?: number }) => void;
+  setQty: (keyOrSlug: string, qty: number) => void;
+  remove: (keyOrSlug: string) => void;
   clear: () => void;
   count: number;
   total: number;
@@ -44,24 +44,63 @@ export default function CartProvider({ children }: { children: React.ReactNode }
       items,
       add: (it) => {
         const qty = Math.max(1, Math.floor(it.qty ?? 1));
-        const idx = items.findIndex((x) => x.slug === it.slug);
+
+        // 🆕 clave incluye variante
+        const itemKey = (it as any).itemKey ?? buildItemKey(it.slug, it.variantId ?? null);
+
+        const idx = items.findIndex((x) => x.itemKey === itemKey);
         if (idx >= 0) {
           const next = [...items];
-          next[idx] = { ...next[idx], qty: next[idx].qty + qty, price: it.price ?? next[idx].price, image: it.image ?? next[idx].image, productUrl: it.productUrl ?? next[idx].productUrl };
+          next[idx] = {
+            ...next[idx],
+            qty: next[idx].qty + qty,
+            price: it.price ?? next[idx].price,
+            image: it.image ?? next[idx].image,
+            productUrl: it.productUrl ?? next[idx].productUrl,
+            // mantener datos de variante si llegan
+            variantId: it.variantId ?? next[idx].variantId,
+            variantLabel: it.variantLabel ?? next[idx].variantLabel,
+            variantSku: it.variantSku ?? next[idx].variantSku,
+          };
           persist(next);
         } else {
-          persist([...items, { slug: it.slug, title: it.title, price: it.price ?? null, image: it.image, productUrl: it.productUrl, qty }]);
+          const item: CartItem = {
+            itemKey,
+            slug: it.slug,
+            title: it.title,
+            price: it.price ?? null,
+            image: it.image,
+            productUrl: it.productUrl,
+            qty,
+            variantId: it.variantId ?? null,
+            variantLabel: it.variantLabel ?? null,
+            variantSku: it.variantSku ?? null,
+          };
+          persist([...items, item]);
         }
       },
-      setQty: (slug, qtyRaw) => {
+
+      // 🆕 acepta itemKey o slug (fallback legacy)
+      setQty: (keyOrSlug, qtyRaw) => {
         const qty = Math.max(0, Math.floor(qtyRaw));
+        const isKey = keyOrSlug.includes(":");
         const next = items
-          .map((x) => (x.slug === slug ? { ...x, qty } : x))
+          .map((x) =>
+            (x.itemKey === keyOrSlug || (!isKey && x.slug === keyOrSlug))
+              ? { ...x, qty }
+              : x
+          )
           .filter((x) => x.qty > 0);
         persist(next);
       },
-      remove: (slug) => persist(items.filter((x) => x.slug !== slug)),
+
+      remove: (keyOrSlug) => {
+        const isKey = keyOrSlug.includes(":");
+        persist(items.filter((x) => !(x.itemKey === keyOrSlug || (!isKey && x.slug === keyOrSlug))));
+      },
+
       clear: () => persist([]),
+
       count: countItems(items),
       total: subTotal(items),
     };
