@@ -72,10 +72,13 @@ const BRANCHES: Branch[] = [
 
 export default function MapHoursTabs({ branches = BRANCHES }: { branches?: Branch[] }) {
   const [active, setActive] = useState(0);
-  const b = useMemo(() => branches[Math.max(0, Math.min(active, branches.length - 1))], [branches, active]);
+  const b = useMemo(
+    () => branches[Math.max(0, Math.min(active, branches.length - 1))],
+    [branches, active]
+  );
 
   return (
-    <div className="rounded-2xl border border-emerald-100 bg-white p-4">
+    <div className="rounded-2xl bg-white p-4">
       <h2 className="text-2xl md:text-3xl font-semibold mb-3">¿Dónde estamos?</h2>
 
       {/* Tabs */}
@@ -96,8 +99,8 @@ export default function MapHoursTabs({ branches = BRANCHES }: { branches?: Branc
         ))}
       </div>
 
-      {/* Address + hours */}
-      <div className="mt-3 grid gap-4 md:grid-cols-[1fr_520px]">
+      {/* Address + hours + map */}
+      <div className="mt-3 grid gap-6 md:grid-cols-[1fr_560px]">
         <div className="min-w-0">
           <p className="text-gray-700">{b.address}</p>
           <p className="mt-1">
@@ -143,13 +146,14 @@ export default function MapHoursTabs({ branches = BRANCHES }: { branches?: Branc
           </p>
         </div>
 
-        {/* Mapa */}
-        <div className="w-full aspect-[4/3] rounded-xl overflow-hidden ring-1 ring-emerald-200 bg-emerald-50">
+        {/* Mapa: borde sutil y sin “ring” extra */}
+        <div className="w-full aspect-[4/3] rounded-xl overflow-hidden border border-emerald-100 shadow-sm bg-white">
           <iframe
             title={`Mapa ${b.name}`}
             src={b.embedUrl}
             className="w-full h-full"
             loading="lazy"
+            style={{ border: 0 }}
             referrerPolicy="no-referrer-when-downgrade"
           />
         </div>
