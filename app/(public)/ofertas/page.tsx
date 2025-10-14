@@ -10,8 +10,8 @@ import BestSellersSidebar from "@/components/landing/BestSellersSidebar";
 import { normalizeProduct } from "@/lib/product";
 import Link from "next/link";
 import { headers } from "next/headers";
-import MapHours from "@/components/landing/MapHours";
 import RecipesPopular from "@/components/landing/RecipesPopular";
+import MapHoursTabs from "@/components/landing/MapHoursTabs"; // ← usa el bloque con 4 sucursales
 
 /* ───────── helpers URL/JSON ───────── */
 async function abs(path: string) {
@@ -66,7 +66,9 @@ function OpinionsStrip() {
           {items.map((it, i) => (
             <figure key={i} className="rounded-xl ring-1 ring-emerald-100 bg-emerald-50/40 p-3">
               <blockquote className="text-sm text-gray-800">“{it.q}”</blockquote>
-              <figcaption className="mt-2 text-xs text-gray-600">— {it.a} <span className="ml-2 text-emerald-600">★★★★★</span></figcaption>
+              <figcaption className="mt-2 text-xs text-gray-600">
+                — {it.a} <span className="ml-2 text-emerald-600">★★★★★</span>
+              </figcaption>
             </figure>
           ))}
         </div>
@@ -112,7 +114,9 @@ export default async function OffersPage() {
       <main className="mx-auto max-w-7xl px-4 py-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl md:text-3xl font-semibold">Ofertas</h1>
-          <Link href="/catalogo" className="text-emerald-700 hover:underline">Volver al catálogo</Link>
+          <Link href="/catalogo" className="text-emerald-700 hover:underline">
+            Volver al catálogo
+          </Link>
         </div>
 
         {/* Layout con sidebar de “Más vendidos” */}
@@ -145,9 +149,9 @@ export default async function OffersPage() {
         {/* Opiniones */}
         <OpinionsStrip />
 
-        {/* Ubicaciones (usa datos internos del componente) */}
+        {/* Ubicaciones (versión con 4 sucursales, igual a la landing) */}
         <section className="mt-10">
-          <MapHours />
+          <MapHoursTabs />
         </section>
 
         {/* Recetas populares */}
