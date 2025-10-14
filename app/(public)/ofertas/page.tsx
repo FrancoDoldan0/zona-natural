@@ -10,7 +10,7 @@ import BestSellersSidebar from "@/components/landing/BestSellersSidebar";
 import { normalizeProduct } from "@/lib/product";
 import Link from "next/link";
 import { headers } from "next/headers";
-import MapHours, { type Branch } from "@/components/landing/MapHours";
+import MapHours from "@/components/landing/MapHours";
 import RecipesPopular from "@/components/landing/RecipesPopular";
 
 /* ───────── helpers URL/JSON ───────── */
@@ -103,44 +103,6 @@ export default async function OffersPage() {
     return db - da;
   });
 
-  // Datos de sucursales (mismos que usamos en otras páginas)
-  const hours: [string, string][] = [
-    ["Lun–Vie", "09:00–19:00"],
-    ["Sábado", "09:00–13:00"],
-    ["Domingo", "Cerrado"],
-  ];
-  const enc = (s: string) => encodeURIComponent(s);
-  const branches: Branch[] = [
-    {
-      name: "Las Piedras",
-      address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
-      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + enc("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
-      embedUrl: "https://www.google.com/maps?q=" + enc("Av. José Gervasio Artigas 600, Las Piedras, Canelones") + "&output=embed",
-      hours,
-    },
-    {
-      name: "Maroñas",
-      address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
-      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + enc("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
-      embedUrl: "https://www.google.com/maps?q=" + enc("Calle Dr. Capdehourat 2608, 11400 Montevideo") + "&output=embed",
-      hours,
-    },
-    {
-      name: "La Paz",
-      address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
-      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + enc("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
-      embedUrl: "https://www.google.com/maps?q=" + enc("César Mayo Gutiérrez, 15900 La Paz, Canelones") + "&output=embed",
-      hours,
-    },
-    {
-      name: "Progreso",
-      address: "Av. José Artigas, 15900 Progreso, Canelones",
-      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + enc("Av. José Artigas, 15900 Progreso, Canelones"),
-      embedUrl: "https://www.google.com/maps?q=" + enc("Av. José Artigas, 15900 Progreso, Canelones") + "&output=embed",
-      hours,
-    },
-  ];
-
   return (
     <>
       <InfoBar />
@@ -183,9 +145,9 @@ export default async function OffersPage() {
         {/* Opiniones */}
         <OpinionsStrip />
 
-        {/* Ubicaciones */}
+        {/* Ubicaciones (usa datos internos del componente) */}
         <section className="mt-10">
-          <MapHours branches={branches} />
+          <MapHours />
         </section>
 
         {/* Recetas populares */}
