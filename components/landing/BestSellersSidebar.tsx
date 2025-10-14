@@ -15,23 +15,26 @@ export default function BestSellersSidebar() {
     let alive = true;
     (async () => {
       try {
-        // Traemos “los más vendidos”
         const res = await fetch("/api/public/catalogo?perPage=12&status=all&sort=-sold", {
           cache: "no-store",
           headers: { Accept: "application/json" },
         });
-        const json = res.ok ? await res.json().catch(() => ({})) : {};
+
+        // 👇 casteo a any para evitar el error "Property 'items' does not exist on type '{}'"
+        const json = (res.ok ? await res.json().catch(() => null) : null) as any;
+
         const list: Raw[] =
           (json?.items as Raw[]) ??
           (json?.data as Raw[]) ??
           (Array.isArray(json) ? (json as Raw[]) : []) ??
           [];
+
         if (!alive) return;
 
         const norm = list.map(normalizeProduct);
         setItems(norm.slice(0, 8));
       } catch {
-        setItems([]);
+        if (alive) setItems([]);
       } finally {
         if (alive) setLoading(false);
       }
@@ -45,9 +48,7 @@ export default function BestSellersSidebar() {
     <aside aria-label="Más vendidos" className="rounded-2xl border border-emerald-100 bg-white p-3">
       <h2 className="text-base font-semibold mb-2">Más vendidos</h2>
 
-      {loading && (
-        <div className="text-sm text-gray-500">Cargando…</div>
-      )}
+      {loading && <div className="text-sm text-gray-500">Cargando…</div>}
 
       {!loading && items.length === 0 && (
         <div className="text-sm text-gray-500">Sin datos por ahora.</div>
