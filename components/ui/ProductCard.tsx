@@ -83,6 +83,15 @@ export default function ProductCard({
               Agotado
             </span>
           )}
+          {/* % de descuento en variantes row/compact */}
+          {hasOffer && pct != null && (
+            <span
+              className="absolute right-1 top-1 text-[10px] rounded-full bg-emerald-700 text-white px-1.5 py-0.5"
+              aria-label={`-${pct}%`}
+            >
+              -{pct}%
+            </span>
+          )}
         </div>
         <div className="min-w-0">
           {brand && <div className="text-[11px] uppercase tracking-wide text-gray-500">{brand}</div>}
