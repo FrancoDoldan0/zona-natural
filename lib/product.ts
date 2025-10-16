@@ -22,6 +22,19 @@ const toNum = (v: any): number | null =>
     ? null
     : Number(v);
 
+/* ───────── tipos ───────── */
+export type NormalizedVariant = {
+  id: number | string;
+  label: string;
+  /** precio con oferta (verde) */
+  price?: number | null;
+  /** precio original (tachado) */
+  originalPrice?: number | null;
+  sku?: string | null;
+  stock?: number | null;
+  sortOrder?: number | null;
+};
+
 export type NormalizedProduct = {
   id: number | string;
   slug: string;
@@ -33,6 +46,8 @@ export type NormalizedProduct = {
   brand?: string | null;
   subtitle?: string | null;
   description?: string | null; // <- agregado
+  /** variantes normalizadas (opcional) */
+  variants?: NormalizedVariant[];
 };
 
 /** Normaliza cualquier shape del API al usado por las cards/detalle */
@@ -58,9 +73,10 @@ export function normalizeProduct(raw: any): NormalizedProduct {
     raw.image ??
     (Array.isArray(raw.images) ? raw.images[0] : null);
 
-  const priceFinal = toNum(raw.priceFinal);
-  const price = priceFinal ?? toNum(raw.price);
-  const originalPrice = toNum(raw.priceOriginal);
+  // Precios a nivel producto (compatibilidad)
+  const productPriceFinal = toNum(raw.priceFinal);
+  const productPrice = productPriceFinal ?? toNum(raw.price);
+  const productOriginal = toNum(raw.priceOriginal);
 
   const status = String(raw.status ?? "").toUpperCase();
   const outOfStock =
@@ -86,16 +102,56 @@ export function normalizeProduct(raw: any): NormalizedProduct {
       raw.detalle ??
       null) as string | null;
 
+  /* ───────── variantes (precio = oferta; originalPrice = tachado) ───────── */
+  const variants: NormalizedVariant[] = Array.isArray(raw.variants)
+    ? (raw.variants as any[]).map((v, i) => ({
+        id: v.id ?? i,
+        label: String(v.label ?? "").trim() || `Var ${i + 1}`,
+        // Si guardás "Precio" como el precio de oferta, priorizamos v.price.
+        price: toNum(v.price ?? v.priceFinal),
+        // "Precio original (opcional)" queda como tachado
+        originalPrice: toNum(v.priceOriginal ?? v.originalPrice ?? v.priceOld),
+        sku: v.sku ?? null,
+        stock: v.stock ?? null,
+        sortOrder: typeof v.sortOrder === "number" ? v.sortOrder : i,
+      }))
+    : [];
+
+  // Elegimos la variante representativa para la card:
+  // 1) la de menor "price" (oferta). 2) si ninguna tiene price, la primera que tenga originalPrice.
+  let reprPrice: number | null | undefined = productPrice;
+  let reprOriginal: number | null | undefined = productOriginal;
+
+  if (variants.length) {
+    let bestIdx = -1;
+    variants.forEach((v, i) => {
+      if (typeof v.price === "number") {
+        if (bestIdx === -1 || (variants[bestIdx].price as number) > v.price!) {
+          bestIdx = i;
+        }
+      }
+    });
+    if (bestIdx === -1) {
+      bestIdx = variants.findIndex((v) => v.originalPrice != null);
+    }
+    if (bestIdx !== -1) {
+      const best = variants[bestIdx];
+      reprPrice = best.price ?? reprPrice ?? null;
+      reprOriginal = best.originalPrice ?? reprOriginal ?? null;
+    }
+  }
+
   return {
     id,
     slug,
     title,
     image: toR2Url(imgCandidate),
-    price,
-    originalPrice,
+    price: reprPrice ?? undefined,
+    originalPrice: reprOriginal ?? undefined,
     outOfStock,
     brand,
     subtitle,
     description, // <- expuesto para la PDP
+    variants,
   };
 }
