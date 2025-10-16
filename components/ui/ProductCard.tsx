@@ -1,8 +1,15 @@
+// components/ui/ProductCard.tsx
 import Image from "next/image";
 import Link from "next/link";
 import TrackLink from "@/components/ui/TrackLink";
 import { toR2Url } from "@/lib/img";
 import { fmtPriceUYU, discountPercent } from "@/lib/price";
+
+type VariantChip = {
+  label: string;
+  price?: number | null;
+  originalPrice?: number | null;
+};
 
 type Props = {
   slug?: string;           // "tomate" o "/producto/tomate" o URL completa
@@ -14,6 +21,8 @@ type Props = {
   brand?: string | null;
   subtitle?: string | null;
   variant?: "grid" | "row" | "compact";
+  /** 🆕 variantes para mostrar chips (máx 3) */
+  variants?: VariantChip[];
 };
 
 function resolveHref(slug?: string) {
@@ -32,6 +41,7 @@ export default function ProductCard({
   brand,
   subtitle,
   variant = "grid",
+  variants,
 }: Props) {
   const href = resolveHref(slug);
   const src = toR2Url(image);
@@ -40,6 +50,20 @@ export default function ProductCard({
     typeof originalPrice === "number" &&
     price < originalPrice;
   const pct = discountPercent(originalPrice ?? undefined, price ?? undefined);
+
+  const Chips =
+    Array.isArray(variants) && variants.length > 0 ? (
+      <div className="mt-1 flex flex-wrap gap-1">
+        {variants.slice(0, 3).map((v, i) => (
+          <span
+            key={`${v.label}-${i}`}
+            className="rounded-full border border-emerald-200 bg-emerald-50/40 px-2 py-0.5 text-[11px] text-emerald-800"
+          >
+            {v.label}
+          </span>
+        ))}
+      </div>
+    ) : null;
 
   const Price = (
     <>
@@ -96,6 +120,7 @@ export default function ProductCard({
         <div className="min-w-0">
           {brand && <div className="text-[11px] uppercase tracking-wide text-gray-500">{brand}</div>}
           <h3 className="text-sm line-clamp-2">{title}</h3>
+          {Chips ? <div className="text-[11px]">{Chips}</div> : null}
           <div className="mt-0.5 text-xs">{Price}</div>
         </div>
       </TrackLink>
@@ -139,6 +164,7 @@ export default function ProductCard({
         {brand && <div className="text-[11px] uppercase tracking-wide text-gray-500">{brand}</div>}
         <h3 className="line-clamp-2 text-sm font-medium min-h-[2.5rem]">{title}</h3>
         {subtitle && <p className="text-[12px] text-gray-600 line-clamp-1">{subtitle}</p>}
+        {Chips}
         {Price}
       </div>
     </TrackLink>
