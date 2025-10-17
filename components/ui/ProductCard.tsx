@@ -1,3 +1,6 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import TrackLink from "@/components/ui/TrackLink";
 import { toR2Url } from "@/lib/img";
@@ -29,13 +32,13 @@ function resolveHref(slug?: string) {
   return `/producto/${slug}`;
 }
 
-// índice de la variante más barata (para resaltarla)
-function findCheapestIndex(variants: VariantLite[] | undefined) {
-  if (!variants?.length) return -1;
+// índice de la variante más barata (de las primeras 3)
+function findCheapestIndex(vs?: VariantLite[]) {
+  if (!vs?.length) return 0;
   let idx = 0;
   let best = Number.POSITIVE_INFINITY;
-  variants.slice(0, 3).forEach((v, i) => {
-    const val = v.price ?? v.originalPrice ?? null;
+  vs.slice(0, 3).forEach((v, i) => {
+    const val = v.price ?? v.originalPrice;
     const n = typeof val === "number" ? val : Number.POSITIVE_INFINITY;
     if (n < best) {
       best = n;
@@ -59,44 +62,78 @@ export default function ProductCard({
 }: Props) {
   const href = resolveHref(slug);
   const src = toR2Url(image);
+
+  // --- Selección de variante ---
+  const [selIdx, setSelIdx] = useState(() => findCheapestIndex(variants));
+  const selVar = useMemo(() => {
+    if (!variants?.length) return undefined;
+    const i = Math.min(Math.max(selIdx, 0), variants.length - 1);
+    return variants[i];
+  }, [variants, selIdx]);
+
+  // Precios a mostrar: priorizamos la variante seleccionada
+  const displayPrice =
+    (typeof selVar?.price === "number" ? selVar?.price : null) ??
+    (typeof price === "number" ? price : null);
+  const displayOriginal =
+    (typeof selVar?.originalPrice === "number" ? selVar?.originalPrice : null) ??
+    (typeof originalPrice === "number" ? originalPrice : null);
+
   const hasOffer =
-    typeof price === "number" &&
-    typeof originalPrice === "number" &&
-    price < originalPrice;
+    typeof displayPrice === "number" &&
+    typeof displayOriginal === "number" &&
+    displayPrice < displayOriginal;
 
   const Price = (
     <>
       {hasOffer ? (
         <div className="flex items-baseline gap-2">
-          <span className="text-emerald-700 font-semibold">{fmtPriceUYU(price!)}</span>
+          <span className="text-emerald-700 font-semibold">
+            {fmtPriceUYU(displayPrice!)}
+          </span>
           <span className="text-xs text-gray-500 line-through">
-            {fmtPriceUYU(originalPrice!)}
+            {fmtPriceUYU(displayOriginal!)}
           </span>
         </div>
       ) : (
         <div className="text-emerald-700 font-semibold">
-          {fmtPriceUYU(price ?? originalPrice ?? null)}
+          {fmtPriceUYU(displayPrice ?? displayOriginal ?? null)}
         </div>
       )}
     </>
   );
 
-  // Chips de variantes (máx 3) — solo label; la más barata resaltada
-  const cheapestIdx = findCheapestIndex(variants);
+  // Chips variantes (máx 3): solo label; cambian el precio mostrado
   const VariantChips =
     (variants?.length ?? 0) > 0 ? (
       <div className="mt-2 flex flex-wrap gap-1.5">
         {variants!.slice(0, 3).map((v, i) => {
-          const isBest = i === cheapestIdx;
+          const active = selVar && i === Math.min(selIdx, variants!.length - 1);
           return (
             <span
-              key={i}
-              className={
-                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] " +
-                (isBest
-                  ? "bg-black text-white"
-                  : "bg-white text-gray-900 border border-gray-200")
-              }
+              key={`${v.label}-${i}`}
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation(); // evita navegar al tocar dentro del link
+                setSelIdx(i);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSelIdx(i);
+                }
+              }}
+              className={[
+                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] border transition",
+                active
+                  ? "bg-black text-white border-black"
+                  : "bg-white text-gray-900 border-gray-200 hover:bg-gray-50",
+              ].join(" ")}
+              aria-pressed={active}
+              aria-label={v.label}
               title={v.label}
             >
               {v.label}
@@ -109,7 +146,6 @@ export default function ProductCard({
   const trackSlug = slug?.startsWith("/") ? slug.split("/").pop() || slug : slug;
 
   if (variant === "row" || variant === "compact") {
-    // estilo “row” modernizado para parecerse a la primera captura
     return (
       <TrackLink
         href={href}
@@ -138,7 +174,7 @@ export default function ProductCard({
 
         <div className="min-w-0">
           {brand && (
-            <div className="text-[10px] uppercase tracking-wide text-gray-500">
+            <div className="text-[11px] uppercase tracking-wide text-gray-500">
               {brand}
             </div>
           )}
@@ -150,7 +186,7 @@ export default function ProductCard({
     );
   }
 
-  // estilo “grid” como la primera captura
+  // estilo “grid” (como tu primera captura)
   return (
     <TrackLink
       href={href}
