@@ -204,9 +204,11 @@ export default function MainNav() {
         <Link href="/catalogo" className="hover:underline">
           Tienda
         </Link>
-        <a href="#" className="hover:underline">
+
+        {/* ✅ Corregido: ahora usa Link a /recetas */}
+        <Link href="/recetas" className="hover:underline">
           Recetas
-        </a>
+        </Link>
 
         {/* Carrito al extremo derecho */}
         <div className="ml-auto">
