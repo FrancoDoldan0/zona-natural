@@ -24,8 +24,10 @@ const toNum = (v: any): number | null =>
 
 export type NormalizedVariant = {
   label: string;
-  price?: number | null;          // precio vigente (puede ser un “precio de oferta”)
-  originalPrice?: number | null;  // tachado si aplica
+  /** precio vigente (puede ser oferta) */
+  price?: number | null;
+  /** precio original (tachado si corresponde) */
+  originalPrice?: number | null;
 };
 
 export type NormalizedProduct = {
@@ -33,13 +35,15 @@ export type NormalizedProduct = {
   slug: string;
   title: string;
   image?: string | null;
-  price?: number | null;          // precio vigente a nivel producto (mínimo entre variantes si existen)
-  originalPrice?: number | null;  // precio original a nivel producto (mínimo entre variantes si existen)
+  /** precio vigente a nivel producto (de la variante más barata si existen) */
+  price?: number | null;
+  /** precio original correspondiente a esa variante (para tachado) */
+  originalPrice?: number | null;
   outOfStock?: boolean;
   brand?: string | null;
   subtitle?: string | null;
   description?: string | null;
-  /** 🆕 variantes normalizadas (máx. 3 las usa la Card) */
+  /** variantes normalizadas (máx. 3 las usa la Card) */
   variants?: NormalizedVariant[];
 };
 
@@ -67,8 +71,7 @@ export function normalizeProduct(raw: any): NormalizedProduct {
     (Array.isArray(raw.images) ? raw.images[0] : null);
 
   // precios a nivel producto (fallback)
-  const priceFinal = toNum(raw.priceFinal);
-  let price = priceFinal ?? toNum(raw.price);
+  let price = toNum(raw.priceFinal) ?? toNum(raw.price);
   let originalPrice = toNum(raw.priceOriginal);
 
   const status = String(raw.status ?? "").toUpperCase();
@@ -95,34 +98,42 @@ export function normalizeProduct(raw: any): NormalizedProduct {
       raw.detalle ??
       null) as string | null;
 
-  // 🆕 variantes
+  // Variantes: en admin el campo “Precio” es el vigente (puede ser oferta)
+  // y “Precio original” es el tachado.
   const variants: NormalizedVariant[] = Array.isArray(raw.variants)
     ? (raw.variants as any[]).map((v, i) => ({
         label: String(v.label ?? "").trim() || `Var ${i + 1}`,
-        // En el admin, el campo “Precio” es el vigente (puede ser oferta) y “Precio original” es el tachado.
-        price: toNum(v.price),
+        price: toNum(v.price ?? v.priceFinal),          // por compatibilidad si aún existe priceFinal
         originalPrice: toNum(v.priceOriginal),
       }))
     : [];
 
-  // Si hay variantes, promocionamos mínimo vigente y mínimo original a nivel producto
+  // Si hay variantes, elegimos la “más barata” por precio vigente y usamos
+  // su original para el tachado (consistencia).
   if (variants.length) {
-    const vPrices = variants.map(v => v.price).filter((n): n is number => typeof n === "number");
-    const vOriginals = variants.map(v => v.originalPrice).filter((n): n is number => typeof n === "number");
+    const withCurrent = variants.filter((v) => typeof v.price === "number");
+    let chosen: NormalizedVariant | null = null;
 
-    const minCurrent = vPrices.length ? Math.min(...vPrices) : null;
-    const minOriginal = vOriginals.length ? Math.min(...vOriginals) : null;
-
-    // si el producto no tiene precio o el mínimo de variantes es menor, usamos el de variantes
-    if (minCurrent != null && (price == null || minCurrent < price)) price = minCurrent;
-
-    // si hay original a nivel variantes, úsalo para el tachado principal
-    if (minOriginal != null) {
-      originalPrice = minOriginal;
+    if (withCurrent.length) {
+      chosen = withCurrent.reduce((min, v) =>
+        (min?.price ?? Infinity) > (v.price as number) ? v : min
+      , withCurrent[0]);
+    } else {
+      // si no hay precios vigentes, elegimos por original más bajo
+      const withOriginal = variants.filter((v) => typeof v.originalPrice === "number");
+      if (withOriginal.length) {
+        chosen = withOriginal.reduce((min, v) =>
+          (min?.originalPrice ?? Infinity) > (v.originalPrice as number) ? v : min
+        , withOriginal[0]);
+      }
     }
 
-    // edge case: si solo tenemos original y no current, mantenemos igual;
-    // si tenemos ambos y current >= original, limpiamos original para no mostrar tachado inválido
+    if (chosen) {
+      price = chosen.price ?? price;
+      if (chosen.originalPrice != null) originalPrice = chosen.originalPrice;
+    }
+
+    // Si la comparación no da oferta, no mostramos tachado.
     if (price != null && originalPrice != null && price >= originalPrice) {
       originalPrice = null;
     }

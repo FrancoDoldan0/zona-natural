@@ -19,8 +19,8 @@ type Props = {
   brand?: string | null;
   subtitle?: string | null;
   variant?: "grid" | "row" | "compact";
-  /** 🆕 variantes (hasta 3 se muestran como chips con su precio) */
-  variants?: VariantLite[]; 
+  /** variantes (hasta 3 se muestran como chips con su precio) */
+  variants?: VariantLite[];
 };
 
 function resolveHref(slug?: string) {
@@ -43,13 +43,10 @@ export default function ProductCard({
 }: Props) {
   const href = resolveHref(slug);
   const src = toR2Url(image);
-
-  // Oferta a nivel producto (para el badge y el bloque de precio principal)
   const hasOffer =
     typeof price === "number" &&
     typeof originalPrice === "number" &&
     price < originalPrice;
-
   const pct = discountPercent(originalPrice ?? undefined, price ?? undefined);
 
   const Price = (
@@ -67,11 +64,12 @@ export default function ProductCard({
     </>
   );
 
-  // Chips de variantes (hasta 3). Muestran el label + precio y, si aplica, tachado.
+  // Chips variantes (máx 3): label + precio vigente + (tachado si corresponde)
   const VariantChips = (variants?.length ?? 0) > 0 ? (
     <div className="mt-1 flex flex-wrap gap-1.5">
       {variants!.slice(0, 3).map((v, i) => {
-        const showOffer = v.price != null && v.originalPrice != null && v.price < v.originalPrice;
+        const showOffer =
+          v.price != null && v.originalPrice != null && v.price < v.originalPrice;
         return (
           <span
             key={i}
@@ -120,7 +118,6 @@ export default function ProductCard({
               Agotado
             </span>
           )}
-          {/* % de descuento (row/compact) */}
           {hasOffer && pct != null && (
             <span
               className="absolute right-1 top-1 text-[10px] rounded-full bg-emerald-700 text-white px-1.5 py-0.5"
@@ -134,7 +131,6 @@ export default function ProductCard({
           {brand && <div className="text-[11px] uppercase tracking-wide text-gray-500">{brand}</div>}
           <h3 className="text-sm line-clamp-2">{title}</h3>
           <div className="mt-0.5 text-xs">{Price}</div>
-          {/* 🆕 chips variantes */}
           {VariantChips}
         </div>
       </TrackLink>
@@ -167,7 +163,6 @@ export default function ProductCard({
             Agotado
           </span>
         )}
-        {/* Badge de % descuento (grid) */}
         {hasOffer && pct != null && (
           <span className="absolute right-2 top-2 text-[11px] rounded-full bg-emerald-700 text-white px-2 py-0.5">
             -{pct}%
@@ -180,7 +175,6 @@ export default function ProductCard({
         <h3 className="line-clamp-2 text-sm font-medium min-h-[2.5rem]">{title}</h3>
         {subtitle && <p className="text-[12px] text-gray-600 line-clamp-1">{subtitle}</p>}
         {Price}
-        {/* 🆕 chips variantes */}
         {VariantChips}
       </div>
     </TrackLink>

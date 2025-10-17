@@ -441,6 +441,7 @@ export default async function Page({
                       brand={p.brand ?? undefined}
                       subtitle={p.subtitle ?? undefined}
                       variant="row"
+                      variants={p.variants}
                     />
                   </li>
                 );
@@ -466,6 +467,7 @@ export default async function Page({
                     outOfStock={p.outOfStock}
                     brand={p.brand ?? undefined}
                     subtitle={p.subtitle ?? undefined}
+                    variants={p.variants}
                   />
                 );
               })}

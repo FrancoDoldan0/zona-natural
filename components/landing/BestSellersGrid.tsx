@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import ProductCard from "@/components/ui/ProductCard";
 import { getClicksMap } from "@/lib/metrics";
+import { normalizeProduct } from "@/lib/product";  // 🆕
 
 type Product = {
   id: number;
@@ -17,23 +18,6 @@ type Product = {
   image?: string | null;
   status?: string;
 };
-
-function chooseImage(p: Product): any {
-  return (
-    (p.images?.[0]?.url ? { url: p.images![0].url } : null) ??
-    p.cover ??
-    p.coverUrl ??
-    p.image ??
-    null
-  );
-}
-
-function displayPrice(p: Product): number | undefined {
-  if (typeof p.price === "number") return p.price;
-  if (typeof p.priceFinal === "number") return p.priceFinal;
-  if (typeof p.priceOriginal === "number") return p.priceOriginal;
-  return undefined;
-}
 
 export default function BestSellersGrid({ items }: { items: Product[] }) {
   const ref = useRef<HTMLElement>(null);
@@ -85,19 +69,21 @@ export default function BestSellersGrid({ items }: { items: Product[] }) {
         </div>
 
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {picked.map((p, i) => (
-            <div key={p.id} data-reveal style={{ "--i": i } as React.CSSProperties} className="reveal">
-              <ProductCard
-                slug={`/producto/${p.slug}`}
-                title={p.name}
-                price={displayPrice(p)}
-                originalPrice={
-                  typeof p.priceOriginal === "number" ? p.priceOriginal : undefined
-                }
-                image={chooseImage(p)}
-              />
-            </div>
-          ))}
+          {picked.map((raw, i) => {
+            const p = normalizeProduct(raw as any);
+            return (
+              <div key={p.id} data-reveal style={{ "--i": i } as React.CSSProperties} className="reveal">
+                <ProductCard
+                  slug={`/producto/${p.slug}`}
+                  title={p.title}
+                  price={typeof p.price === "number" ? p.price : undefined}
+                  originalPrice={typeof p.originalPrice === "number" ? p.originalPrice : undefined}
+                  image={p.image}
+                  variants={p.variants}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

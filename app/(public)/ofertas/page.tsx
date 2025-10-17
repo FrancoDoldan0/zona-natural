@@ -137,6 +137,7 @@ export default async function OffersPage() {
                     outOfStock={p.outOfStock}
                     brand={p.brand ?? undefined}
                     subtitle={p.subtitle ?? undefined}
+                    variants={p.variants} // 🆕
                   />
                 ))}
               </div>

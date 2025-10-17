@@ -191,18 +191,24 @@ export default async function ProductPage({
     priceOriginal: number | null;
     priceFinal: number | null;
     sku?: string | null;
-  }> = Array.isArray(raw.variants) ? raw.variants.map((v: any) => ({
-    id: v.id,
-    label: v.label,
-    priceOriginal: v.priceOriginal ?? null,
-    priceFinal: v.priceFinal ?? (v.priceOriginal ?? v.price ?? null),
-    sku: v.sku ?? null,
-  })) : [];
+  }> = Array.isArray(raw.variants)
+    ? raw.variants.map((v: any) => ({
+        id: v.id,
+        label: v.label,
+        // en admin: price = vigente (oferta), priceOriginal = tachado
+        priceOriginal: v.priceOriginal ?? null,
+        priceFinal: (v.price ?? v.priceFinal ?? v.priceOriginal ?? v.price ?? null) ?? null,
+        sku: v.sku ?? null,
+      }))
+    : [];
 
-  const selIndex = Math.max(0, Math.min(variants.length - 1, parseInt(
-    (typeof sp.v === "string" ? sp.v : Array.isArray(sp.v) ? sp.v[0] : "0") || "0",
-    10
-  ) || 0));
+  const selIndex = Math.max(
+    0,
+    Math.min(
+      variants.length - 1,
+      parseInt((typeof sp.v === "string" ? sp.v : Array.isArray(sp.v) ? sp.v[0] : "0") || "0", 10) || 0
+    )
+  );
   const selVar = variants.length ? variants[selIndex] : null;
 
   const effectivePrice = selVar?.priceFinal ?? p.price ?? p.originalPrice ?? null;
@@ -226,29 +232,49 @@ export default async function ProductPage({
     {
       name: "Las Piedras",
       address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
-      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
-      embedUrl: "https://www.google.com/maps?q=" + encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") + "&output=embed",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
+        "&output=embed",
       hours,
     },
     {
       name: "Maroñas",
       address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
-      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
-      embedUrl: "https://www.google.com/maps?q=" + encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") + "&output=embed",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
+        "&output=embed",
       hours,
     },
     {
       name: "La Paz",
       address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
-      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
-      embedUrl: "https://www.google.com/maps?q=" + encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") + "&output=embed",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
+        "&output=embed",
       hours,
     },
     {
       name: "Progreso",
       address: "Av. José Artigas, 15900 Progreso, Canelones",
-      mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encode("Av. José Artigas, 15900 Progreso, Canelones"),
-      embedUrl: "https://www.google.com/maps?q=" + encode("Av. José Artigas, 15900 Progreso, Canelones") + "&output=embed",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Av. José Artigas, 15900 Progreso, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Av. José Artigas, 15900 Progreso, Canelones") +
+        "&output=embed",
       hours,
     },
   ];
@@ -327,7 +353,10 @@ export default async function ProductPage({
                   {effectiveOriginal ? (
                     <span className="ml-2 rounded-full bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5">
                       -
-                      {Math.round(((Number(effectiveOriginal) - Number(effectivePrice!)) / Number(effectiveOriginal)) * 100)}%
+                      {Math.round(
+                        ((Number(effectiveOriginal) - Number(effectivePrice!)) / Number(effectiveOriginal)) * 100
+                      )}
+                      %
                     </span>
                   ) : null}
                 </div>
@@ -377,7 +406,7 @@ export default async function ProductPage({
             </dl>
 
             {/* Descripción del admin */}
-            {(desc.html || desc.text) ? (
+            {desc.html || desc.text ? (
               <div className="mt-8 pt-6 border-t">
                 <h2 className="text-lg font-semibold">Descripción</h2>
                 {desc.html ? (
@@ -407,7 +436,9 @@ export default async function ProductPage({
                 subtitle={r.subtitle ?? undefined}
               />
             ))}
-            {!related.length && <p className="col-span-full text-sm text-gray-500">No encontramos productos similares por ahora.</p>}
+            {!related.length && (
+              <p className="col-span-full text-sm text-gray-500">No encontramos productos similares por ahora.</p>
+            )}
           </div>
         </section>
 

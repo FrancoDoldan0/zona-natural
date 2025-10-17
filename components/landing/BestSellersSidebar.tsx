@@ -66,6 +66,7 @@ export default function BestSellersSidebar() {
             originalPrice={typeof p.originalPrice === "number" ? p.originalPrice : undefined}
             outOfStock={p.outOfStock}
             brand={p.brand ?? undefined}
+            variants={p.variants}
           />
         ))}
       </div>

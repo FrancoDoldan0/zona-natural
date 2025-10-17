@@ -1,3 +1,4 @@
+// components/landing/OffersCarousel.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -119,7 +120,12 @@ export default function OffersCarousel({
 
         <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
           {current.map((p, i) => (
-            <div key={`${p.id}-${(start + i) % all.length}`} data-reveal style={{ "--i": i } as React.CSSProperties} className="reveal">
+            <div
+              key={`${p.id}-${(start + i) % all.length}`}
+              data-reveal
+              style={{ "--i": i } as React.CSSProperties}
+              className="reveal"
+            >
               <ProductCard
                 slug={p.slug}
                 title={p.title}
@@ -129,6 +135,7 @@ export default function OffersCarousel({
                 outOfStock={p.outOfStock}
                 brand={p.brand ?? undefined}
                 subtitle={p.subtitle ?? undefined}
+                variants={p.variants}  // 🆕
               />
             </div>
           ))}
