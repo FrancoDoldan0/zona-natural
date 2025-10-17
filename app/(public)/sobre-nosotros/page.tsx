@@ -1,5 +1,4 @@
 // app/(public)/sobre-nosotros/page.tsx
-export const runtime = "edge";
 export const revalidate = 60; // igual que la landing principal
 
 import type { Metadata } from "next";
@@ -13,7 +12,7 @@ import BestSellersGrid from "@/components/landing/BestSellersGrid";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 
-/* ───────── helpers comunes (copiados de la landing) ───────── */
+/* ───────── helpers (copiados de la landing) ───────── */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
 
@@ -25,9 +24,7 @@ async function abs(path: string) {
     const proto = h.get("x-forwarded-proto") ?? "https";
     const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
     if (host) return `${proto}://${host}${path}`;
-  } catch {
-    // sin headers(): devolvemos ruta relativa
-  }
+  } catch {}
   return path;
 }
 
@@ -41,7 +38,7 @@ async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   }
 }
 
-/* ───────── tipos mínimos para los data fetchers ───────── */
+/* ───────── tipos mínimos ───────── */
 type Prod = {
   id: number;
   name: string;
@@ -103,7 +100,7 @@ export const metadata: Metadata = {
     "Conocé la historia de Zona Natural: productos naturales, saludables y ricos para tu día a día.",
 };
 
-/* ───────── texto + reseñas (igual que tu versión anterior) ───────── */
+/* ───────── texto + reseñas ───────── */
 const PHONE_E164 = "59897531583";
 const REVIEWS = [
   { name: "Natalia", time: "hace 2 semanas", text: "Me asesoraron súper bien y encontré todo para mis recetas. ¡Llegó rapidísimo!", stars: 5 },
@@ -135,7 +132,7 @@ const hours: [string, string][] = [
   ["Sábado", "09:00–13:00"],
   ["Domingo", "Cerrado"],
 ];
-const encode = (s: string) => encodeURIComponent(s);
+const enc = (s: string) => encodeURIComponent(s);
 
 const branches: Branch[] = [
   {
@@ -143,10 +140,10 @@ const branches: Branch[] = [
     address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
     mapsUrl:
       "https://www.google.com/maps/search/?api=1&query=" +
-      encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
+      enc("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
     embedUrl:
       "https://www.google.com/maps?q=" +
-      encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
+      enc("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
       "&output=embed",
     hours,
   },
@@ -155,10 +152,10 @@ const branches: Branch[] = [
     address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
     mapsUrl:
       "https://www.google.com/maps/search/?api=1&query=" +
-      encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
+      enc("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
     embedUrl:
       "https://www.google.com/maps?q=" +
-      encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
+      enc("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
       "&output=embed",
     hours,
   },
@@ -167,10 +164,10 @@ const branches: Branch[] = [
     address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
     mapsUrl:
       "https://www.google.com/maps/search/?api=1&query=" +
-      encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
+      enc("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
     embedUrl:
       "https://www.google.com/maps?q=" +
-      encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
+      enc("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
       "&output=embed",
     hours,
   },
@@ -179,10 +176,10 @@ const branches: Branch[] = [
     address: "Av. José Artigas, 15900 Progreso, Canelones",
     mapsUrl:
       "https://www.google.com/maps/search/?api=1&query=" +
-      encode("Av. José Artigas, 15900 Progreso, Canelones"),
+      enc("Av. José Artigas, 15900 Progreso, Canelones"),
     embedUrl:
       "https://www.google.com/maps?q=" +
-      encode("Av. José Artigas, 15900 Progreso, Canelones") +
+      enc("Av. José Artigas, 15900 Progreso, Canelones") +
       "&output=embed",
     hours,
   },
@@ -190,17 +187,19 @@ const branches: Branch[] = [
 
 /* ───────── página ───────── */
 export default async function SobreNosotrosPage() {
-  // Traemos los mismos datasets que usa la landing
-  const [offersAll, catalog] = await Promise.all([
+  // Traemos los mismos datasets que usa la landing, pero tolerantes a fallas
+  const [offersAllRes, catalogRes] = await Promise.allSettled([
     getOffersRaw(),
     getCatalog(48),
   ]);
+  const offersAll = offersAllRes.status === "fulfilled" ? offersAllRes.value : [];
+  const catalog   = catalogRes.status === "fulfilled" ? catalogRes.value : [];
 
-  // Semilla diaria para que ofrezca variedad como la home
+  // Semilla diaria para variedad como la home
   const seed = new Date().toISOString().slice(0, 10);
-  const shuffleSeed = <T,>(arr: T[], seedStr: string) => {
+  const shuffleSeed = <T,>(arr: T[], s: string) => {
     let h = 0;
-    for (let i = 0; i < seedStr.length; i++) h = (h * 31 + seedStr.charCodeAt(i)) | 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
     h = Math.abs(h) || 1;
     const rand = () => (h = (h * 1664525 + 1013904223) % 4294967296) / 4294967296;
     const a = [...arr];
@@ -216,7 +215,7 @@ export default async function SobreNosotrosPage() {
 
   return (
     <>
-      {/* Header con buscador (idéntico a otras landings) */}
+      {/* Header con buscador */}
       <InfoBar />
       <Header />
       <MainNav />
@@ -246,17 +245,17 @@ export default async function SobreNosotrosPage() {
           </ul>
         </section>
 
-        {/* Ofertas (misma lógica de la home) */}
+        {/* Ofertas */}
         <div className="mt-8">
           <OffersCarousel items={offersDaily} />
         </div>
 
-        {/* Más vendidos (misma heurística de la home) */}
+        {/* Más vendidos */}
         <div className="mt-8">
           <BestSellersGrid items={catalog} />
         </div>
 
-        {/* Mapa + horarios con múltiples sucursales (igual que la home) */}
+        {/* Mapa + horarios (4 sucursales) */}
         <div className="mt-10">
           <MapHours locations={branches} />
         </div>
