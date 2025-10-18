@@ -421,37 +421,8 @@ export default async function Page({
 
         {/* Layout con sidebar (más vendidos) + grid principal */}
         <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr]">
-          {/* Sidebar: Más vendidos */}
-          <aside className="lg:sticky lg:top-4 self-start">
-            <h3 className="mb-3 font-semibold">Más vendidos</h3>
-
-            {/* ✅ unificado con ProductCard (variant="row") */}
-            <ul className="space-y-3">
-              {bestSellers.map((raw) => {
-                const p = normalizeProduct(raw);
-                return (
-                  <li key={p.id}>
-                    <ProductCard
-                      slug={p.slug}
-                      title={p.title}
-                      image={p.image}
-                      price={p.price ?? undefined}
-                      originalPrice={p.originalPrice ?? undefined}
-                      outOfStock={p.outOfStock}
-                      brand={p.brand ?? undefined}
-                      subtitle={p.subtitle ?? undefined}
-                      variant="row"
-                      variants={p.variants}
-                    />
-                  </li>
-                );
-              })}
-              {!bestSellers.length && <li className="text-sm text-gray-500">Sin datos por ahora.</li>}
-            </ul>
-          </aside>
-
-          {/* Grid de resultados */}
-          <section>
+          {/* Grid de resultados — primero en móvil, segundo en desktop */}
+          <section className="order-1 lg:order-2 min-w-0">
             {/* ✅ unificado con ProductCard */}
             <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {items.map((raw) => {
@@ -490,6 +461,37 @@ export default async function Page({
               </nav>
             )}
           </section>
+
+          {/* Sidebar: “Más vendidos” — segundo en móvil, primero en desktop.
+              Si querés que SIEMPRE se vea (aun con búsqueda), quitá el condicional !term */}
+          {!term && (
+            <aside className="order-2 lg:order-1 lg:sticky lg:top-4 self-start">
+              <h3 className="mb-3 font-semibold">Más vendidos</h3>
+
+              <ul className="space-y-3">
+                {bestSellers.map((raw) => {
+                  const p = normalizeProduct(raw);
+                  return (
+                    <li key={p.id}>
+                      <ProductCard
+                        slug={p.slug}
+                        title={p.title}
+                        image={p.image}
+                        price={p.price ?? undefined}
+                        originalPrice={p.originalPrice ?? undefined}
+                        outOfStock={p.outOfStock}
+                        brand={p.brand ?? undefined}
+                        subtitle={p.subtitle ?? undefined}
+                        variant="row"
+                        variants={p.variants}
+                      />
+                    </li>
+                  );
+                })}
+                {!bestSellers.length && <li className="text-sm text-gray-500">Sin datos por ahora.</li>}
+              </ul>
+            </aside>
+          )}
         </div>
 
         {/* Opiniones */}
