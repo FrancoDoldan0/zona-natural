@@ -170,7 +170,9 @@ export default async function LandingPage() {
 
   // Rotación diaria
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
-  const OFFERS_COUNT = 3;
+
+  // ⬇️ Aumentamos el pool de ofertas para que el carrusel rote
+  const OFFERS_COUNT = 24; // antes 3
   const offersDaily = shuffleSeed(offersAll, `${seed}:offers`).slice(
     0,
     OFFERS_COUNT
@@ -250,7 +252,8 @@ export default async function LandingPage() {
       <CategoriesRow cats={catsDaily} />
 
       {/* Ofertas (rotación diaria) */}
-      <OffersCarousel items={offersDaily} />
+      {/* ⬇️ Mostrar 3 a la vez y rotar sobre OFFERS_COUNT */}
+      <OffersCarousel items={offersDaily} visible={3} rotationMs={6000} />
 
       {/* Más vendidos (simulado por clics + heurística) */}
       <BestSellersGrid items={catalog} />
