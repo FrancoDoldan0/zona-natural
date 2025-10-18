@@ -318,7 +318,11 @@ export default async function Page({
         </h1>
 
         {/* Barra de búsqueda + orden + filtro por precio */}
-        <form action="/catalogo" method="get" className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto_auto] items-center">
+        <form
+          action="/catalogo"
+          method="get"
+          className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto_auto] items-center"
+        >
           {/* Buscador */}
           <div className="flex items-center gap-2">
             <input
@@ -338,7 +342,12 @@ export default async function Page({
             <label htmlFor="sort" className="text-sm text-gray-600">
               Ordenar por:
             </label>
-            <select id="sort" name="sort" defaultValue={sort || "-id"} className="rounded-full border px-3 py-2 text-sm">
+            <select
+              id="sort"
+              name="sort"
+              defaultValue={sort || "-id"}
+              className="rounded-full border px-3 py-2 text-sm"
+            >
               <option value="-sold">Más vendidos</option>
               <option value="-id">Novedades</option>
               <option value="price">Precio: menor a mayor</option>
@@ -369,13 +378,18 @@ export default async function Page({
           </div>
 
           <div className="justify-self-start md:justify-self-end">
-            <button className="rounded-full bg-emerald-700 text-white px-4 py-2 text-sm">Aplicar</button>
+            <button className="rounded-full bg-emerald-700 text-white px-4 py-2 text-sm">
+              Aplicar
+            </button>
           </div>
         </form>
 
         {/* Chips de categorías y subcategorías */}
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href={term ? `/catalogo?query=${encodeURIComponent(term)}` : "/catalogo"} className="px-3 py-1 rounded-full border">
+          <Link
+            href={term ? `/catalogo?query=${encodeURIComponent(term)}` : "/catalogo"}
+            className="px-3 py-1 rounded-full border"
+          >
             Todos
           </Link>
           {cats.map((c) => {
@@ -419,11 +433,10 @@ export default async function Page({
           ) : null}
         </div>
 
-        {/* Layout con sidebar (más vendidos) + grid principal */}
-        <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr]">
-          {/* Grid de resultados — primero en móvil, segundo en desktop */}
-          <section className="order-1 lg:order-2 min-w-0">
-            {/* ✅ unificado con ProductCard */}
+        {/* Resultados + Más vendidos (debajo en desktop y móvil) */}
+        <div className="mt-6 space-y-8">
+          {/* Resultados */}
+          <section className="min-w-0">
             <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {items.map((raw) => {
                 const p = normalizeProduct(raw);
@@ -442,7 +455,9 @@ export default async function Page({
                   />
                 );
               })}
-              {!items.length && <p className="opacity-70 col-span-full">No hay resultados.</p>}
+              {!items.length && (
+                <p className="opacity-70 col-span-full">No hay resultados.</p>
+              )}
             </div>
 
             {/* Paginación (si no hay query y no filtramos en front, usamos la del backend) */}
@@ -453,7 +468,11 @@ export default async function Page({
                   const url = new URLSearchParams(qs);
                   url.set("page", String(n));
                   return (
-                    <Link key={n} href={`/catalogo?${url.toString()}`} className={"border rounded px-3 py-1 " + (n === page ? "bg-gray-200" : "")}>
+                    <Link
+                      key={n}
+                      href={`/catalogo?${url.toString()}`}
+                      className={"border rounded px-3 py-1 " + (n === page ? "bg-gray-200" : "")}
+                    >
                       {n}
                     </Link>
                   );
@@ -462,36 +481,36 @@ export default async function Page({
             )}
           </section>
 
-          {/* Sidebar: “Más vendidos” — segundo en móvil, primero en desktop.
-              Si querés que SIEMPRE se vea (aun con búsqueda), quitá el condicional !term */}
-          {!term && (
-            <aside className="order-2 lg:order-1 lg:sticky lg:top-4 self-start">
-              <h3 className="mb-3 font-semibold">Más vendidos</h3>
-
-              <ul className="space-y-3">
-                {bestSellers.map((raw) => {
-                  const p = normalizeProduct(raw);
-                  return (
-                    <li key={p.id}>
-                      <ProductCard
-                        slug={p.slug}
-                        title={p.title}
-                        image={p.image}
-                        price={p.price ?? undefined}
-                        originalPrice={p.originalPrice ?? undefined}
-                        outOfStock={p.outOfStock}
-                        brand={p.brand ?? undefined}
-                        subtitle={p.subtitle ?? undefined}
-                        variant="row"
-                        variants={p.variants}
-                      />
-                    </li>
-                  );
-                })}
-                {!bestSellers.length && <li className="text-sm text-gray-500">Sin datos por ahora.</li>}
-              </ul>
-            </aside>
-          )}
+          {/* Más vendidos (debajo) */}
+          <section aria-labelledby="best-sellers">
+            <h2 id="best-sellers" className="mb-3 font-semibold">
+              Más vendidos
+            </h2>
+            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {bestSellers.map((raw) => {
+                const p = normalizeProduct(raw);
+                return (
+                  <li key={p.id}>
+                    <ProductCard
+                      slug={p.slug}
+                      title={p.title}
+                      image={p.image}
+                      price={p.price ?? undefined}
+                      originalPrice={p.originalPrice ?? undefined}
+                      outOfStock={p.outOfStock}
+                      brand={p.brand ?? undefined}
+                      subtitle={p.subtitle ?? undefined}
+                      variant="row"
+                      variants={p.variants}
+                    />
+                  </li>
+                );
+              })}
+              {!bestSellers.length && (
+                <li className="text-sm text-gray-500">Sin datos por ahora.</li>
+              )}
+            </ul>
+          </section>
         </div>
 
         {/* Opiniones */}
