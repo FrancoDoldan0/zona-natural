@@ -1,4 +1,5 @@
 // app/(public)/sobre-nosotros/page.tsx
+export const runtime = "edge";
 export const revalidate = 60; // igual que la landing principal
 
 import type { Metadata } from "next";
@@ -15,10 +16,8 @@ import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 /* ───────── helpers (copiados de la landing) ───────── */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
-
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   if (base) return `${base}${path}`;
-
   try {
     const h = await nextHeaders();
     const proto = h.get("x-forwarded-proto") ?? "https";
@@ -187,7 +186,7 @@ const branches: Branch[] = [
 
 /* ───────── página ───────── */
 export default async function SobreNosotrosPage() {
-  // Traemos los mismos datasets que usa la landing, pero tolerantes a fallas
+  // Traemos datasets como en la landing, tolerantes a fallas
   const [offersAllRes, catalogRes] = await Promise.allSettled([
     getOffersRaw(),
     getCatalog(48),
@@ -195,7 +194,7 @@ export default async function SobreNosotrosPage() {
   const offersAll = offersAllRes.status === "fulfilled" ? offersAllRes.value : [];
   const catalog   = catalogRes.status === "fulfilled" ? catalogRes.value : [];
 
-  // Semilla diaria para variedad como la home
+  // Semilla diaria para variedad
   const seed = new Date().toISOString().slice(0, 10);
   const shuffleSeed = <T,>(arr: T[], s: string) => {
     let h = 0;
@@ -230,6 +229,7 @@ export default async function SobreNosotrosPage() {
             productos naturales, saludables y ricos.
           </p>
 
+        {/* Historia + valores */}
           <h2>Nuestra historia</h2>
           <p>
             Nacimos con la idea de facilitar el acceso a alimentos reales y opciones más
