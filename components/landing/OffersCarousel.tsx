@@ -30,7 +30,7 @@ export default function OffersCarousel({
 }) {
   const ref = useRef<HTMLElement>(null);
 
-  // Reveal
+  // Reveal inicial (observa lo que está montado al principio)
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
@@ -54,8 +54,10 @@ export default function OffersCarousel({
   const all = useMemo(() => {
     const list = Array.isArray(items) ? items.map(normalizeProduct) : [];
     return list.sort((a, b) => {
-      const da = (a.originalPrice ?? 0) && (a.price ?? 0) ? 1 - a.price! / a.originalPrice! : 0;
-      const db = (b.originalPrice ?? 0) && (b.price ?? 0) ? 1 - b.price! / b.originalPrice! : 0;
+      const da =
+        (a.originalPrice ?? 0) && (a.price ?? 0) ? 1 - a.price! / a.originalPrice! : 0;
+      const db =
+        (b.originalPrice ?? 0) && (b.price ?? 0) ? 1 - b.price! / b.originalPrice! : 0;
       return db - da;
     });
   }, [items]);
@@ -63,8 +65,7 @@ export default function OffersCarousel({
   // Rotación
   const [start, setStart] = useState(0);
   const [playing, setPlaying] = useState(true);
-  // Inicialmente lo consideramos visible para que empiece a rotar,
-  // y luego el IO lo ajusta cuando sea necesario.
+  // Inicialmente visible para que empiece a rotar, luego el IO lo ajusta.
   const [visibleInView, setVisibleInView] = useState(true);
 
   // Detectar visibilidad para pausar fuera de viewport
@@ -95,6 +96,15 @@ export default function OffersCarousel({
     () => windowSlice(all, start, showCount),
     [all, start, showCount]
   );
+
+  // ✅ OPCIÓN A: cada vez que rota o cambia la ventana visible,
+  // los nuevos nodos no están observados; los marcamos como visibles.
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const fresh = root.querySelectorAll<HTMLElement>("[data-reveal]:not(.in)");
+    fresh.forEach((el) => el.classList.add("in"));
+  }, [start, showCount, all.length]);
 
   if (!all.length) return null;
 
@@ -135,7 +145,7 @@ export default function OffersCarousel({
                 outOfStock={p.outOfStock}
                 brand={p.brand ?? undefined}
                 subtitle={p.subtitle ?? undefined}
-                variants={p.variants}  // 🆕
+                variants={p.variants}
               />
             </div>
           ))}
