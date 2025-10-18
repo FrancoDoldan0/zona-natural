@@ -88,8 +88,15 @@ export default function SobreNosotrosPage() {
 
           {/* Contenido central */}
           <section className="order-1 lg:order-2">
-            <article className="prose prose-emerald">
-              <h1>Sobre nosotros</h1>
+            <article
+              className="
+                prose prose-emerald
+                prose-headings:font-semibold
+                prose-h1:font-extrabold prose-h1:uppercase
+                prose-h2:uppercase
+              "
+            >
+              <h1>Sobre nosotros:</h1>
               <p>
                 En <strong>Zona Natural</strong> creemos que lo simple es lo que
                 mejor hace bien. Trabajamos con marcas y productores que
@@ -97,7 +104,7 @@ export default function SobreNosotrosPage() {
                 saludables y ricos.
               </p>
 
-              <h2>Nuestra historia</h2>
+              <h2>Nuestra historia:</h2>
               <p>
                 Nacimos con la idea de facilitar el acceso a alimentos reales y
                 opciones más conscientes para todos los días. Empezamos con un
@@ -105,7 +112,7 @@ export default function SobreNosotrosPage() {
                 manteniendo el foco en la calidad y la atención.
               </p>
 
-              <h2>Qué nos mueve</h2>
+              <h2>Qué nos mueve:</h2>
               <ul>
                 <li>Selección cuidada de productos y precios justos.</li>
                 <li>Servicio cercano y envíos ágiles en Montevideo.</li>
@@ -120,7 +127,7 @@ export default function SobreNosotrosPage() {
 
             {/* Opiniones simples */}
             <div className="mt-8">
-              <h2 className="text-2xl font-semibold">Opiniones de clientes</h2>
+              <h2 className="text-2xl font-semibold uppercase">Opiniones de clientes</h2>
               <p className="mt-1 text-sm text-gray-600">
                 Gracias por la confianza de cada día 💚
               </p>
