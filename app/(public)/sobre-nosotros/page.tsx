@@ -1,6 +1,6 @@
 // app/(public)/sobre-nosotros/page.tsx
-export const runtime = "edge";
-export const revalidate = 120; // ISR: 2 minutos
+// ⚠️ Quitamos runtime="edge" para permitir SSG/ISR
+export const revalidate = 300; // 5 min
 
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
@@ -9,41 +9,29 @@ import MapHours, { type Branch } from "@/components/landing/MapHours";
 import ProductCard from "@/components/ui/ProductCard";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 
-/* ───────── helpers compartidos (idénticos a landing) ───────── */
-async function abs(path: string) {
+/* ───────── helpers compartidos ───────── */
+// Evitamos headers(); resolvemos absoluto solo si hay BASE_URL.
+function abs(path: string) {
   if (path.startsWith("http")) return path;
-
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
-  if (base) return `${base}${path}`;
-
-  try {
-    // headers() puede lanzar en algunos entornos; por eso el try/catch
-    const { headers } = await import("next/headers");
-    const h = await headers();
-    const proto = h.get("x-forwarded-proto") ?? "https";
-    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
-    if (host) return `${proto}://${host}${path}`;
-  } catch {
-    // devolvemos la ruta relativa; Next la resuelve en runtime
-  }
-  return path;
+  return base ? `${base}${path}` : path; // de lo contrario, usamos ruta relativa
 }
 
 async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      // Usamos ISR (revalidate) en lugar de no-store para no estresar el worker
-      next: { revalidate: 60 },
+      cache: "force-cache",
+      next: { revalidate: 300 }, // cachea en ISR
       ...init,
     });
-    if (!res.ok) return null;
+    if (!res.ok) return null as any;
     return (await res.json()) as T;
   } catch {
-    return null;
+    return null as any;
   }
 }
 
-/* Shuffle con seed diaria (como la landing) */
+/* Shuffle con seed diaria */
 function hash(s: string) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); }
 function seededRand(seed: string) { let x = hash(seed) || 1; return () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296; }
 function shuffleSeed<T>(arr: T[], seed: string) {
@@ -72,33 +60,38 @@ type Prod = {
   offer?: any | null;
 };
 
-/* ───────── data fetchers (suaves para Edge) ───────── */
+/* ───────── data fetchers más livianos ───────── */
 async function getOffersLight(limit = 8): Promise<Prod[]> {
-  const data = await safeJson<any>(await abs("/api/public/catalogo?perPage=32&sort=-id"));
-  const items: Prod[] = ((data as any)?.items ?? []) as Prod[];
-  const offers = items.filter((p) => {
-    const priced =
-      p.priceFinal != null &&
-      p.priceOriginal != null &&
-      Number(p.priceFinal) < Number(p.priceOriginal);
-    const flagged = !!(p.appliedOffer || p.offer);
-    return priced || flagged;
-  });
-  return offers.slice(0, limit);
+  // Primero, endpoint de ofertas si existe
+  let data = await safeJson<any>(abs("/api/public/offers?perPage=40"));
+  let items: Prod[] =
+    (Array.isArray((data as any)?.items) ? (data as any).items :
+     Array.isArray(data) ? (data as any) : []) as Prod[];
+
+  // Fallback suave: último catálogo y filtramos
+  if (!items.length) {
+    data = await safeJson<any>(abs("/api/public/catalogo?perPage=48&status=raw&sort=-id"));
+    const list: Prod[] =
+      (Array.isArray((data as any)?.items) ? (data as any).items :
+       Array.isArray(data) ? (data as any) : []) as Prod[];
+    items = list.filter((p) => {
+      const priced =
+        p.priceFinal != null &&
+        p.priceOriginal != null &&
+        Number(p.priceFinal) < Number(p.priceOriginal);
+      const flagged = !!(p.appliedOffer || p.offer);
+      return priced || flagged;
+    });
+  }
+  return items.slice(0, limit);
 }
 
 async function getCatalogLight(limit = 12): Promise<Prod[]> {
-  // probamos varias “fuentes”; devolvemos la primera no vacía
-  const candidates = [
-    await safeJson<any>(await abs("/api/public/catalogo?status=raw&perPage=48&sort=-id")),
-    await safeJson<any>(await abs("/api/public/catalogo?status=all&perPage=48&sort=-id")),
-  ];
-  for (const data of candidates) {
-    const items: any[] =
-      (data as any)?.items ?? (data as any)?.data ?? (data as any)?.products ?? [];
-    if (Array.isArray(items) && items.length) return (items as Prod[]).slice(0, limit);
-  }
-  return [];
+  // Una sola llamada, ordenada por vendidos si tu backend lo soporta
+  const data = await safeJson<any>(abs("/api/public/catalogo?status=raw&perPage=48&sort=-sold"));
+  const items: any[] =
+    (data as any)?.items ?? (data as any)?.data ?? (data as any)?.products ?? [];
+  return (Array.isArray(items) ? (items as Prod[]) : []).slice(0, limit);
 }
 
 /* ───────── UI auxiliares ───────── */
@@ -121,7 +114,7 @@ function SidebarBlock({
 
 const PHONE_E164 = "59897531583";
 
-/* ───────── sucursales (mismo set que landing) ───────── */
+/* ───────── sucursales ───────── */
 function branchesData(): Branch[] {
   const hours: [string, string][] = [
     ["Lun–Vie", "09:00–19:00"],
@@ -182,7 +175,7 @@ function Stars({ n }: { n: number }) {
 
 /* ───────── Página ───────── */
 export default async function SobreNosotrosPage() {
-  // Fectheamos liviano y con tolerancia
+  // Menos sub-requests y todo cacheado con ISR
   const [offers, catalog] = await Promise.all([getOffersLight(6), getCatalogLight(18)]);
   const seed = new Date().toISOString().slice(0, 10);
   const offersDaily = shuffleSeed(offers, `${seed}:offers`);
@@ -202,15 +195,12 @@ export default async function SobreNosotrosPage() {
 
   return (
     <>
-      {/* Header con buscador (idénticos a landing) */}
       <InfoBar />
       <Header />
       <MainNav />
 
-      {/* Layout con laterales */}
       <div className="mx-auto max-w-7xl px-4 py-8">
         <div className="flex gap-6">
-          {/* Izquierda: Más vendidos */}
           <SidebarBlock title="Más vendidos">
             {bestDaily.length ? (
               <div className="space-y-2">
@@ -223,7 +213,6 @@ export default async function SobreNosotrosPage() {
             )}
           </SidebarBlock>
 
-          {/* Contenido central */}
           <main className="flex-1 min-w-0">
             <section className="prose prose-emerald">
               <h1>Sobre nosotros</h1>
@@ -246,12 +235,10 @@ export default async function SobreNosotrosPage() {
               </ul>
             </section>
 
-            {/* Mapa + horarios (mismas 4 sucursales que la landing) */}
             <div className="mt-10">
               <MapHours locations={branchesData()} />
             </div>
 
-            {/* Opiniones */}
             <section className="mt-10 not-prose">
               <h2 className="text-2xl font-semibold">Opiniones de clientes</h2>
               <p className="mt-1 text-sm text-gray-600">Gracias por la confianza de cada día 💚</p>
@@ -281,7 +268,6 @@ export default async function SobreNosotrosPage() {
             </section>
           </main>
 
-          {/* Derecha: Ofertas */}
           <SidebarBlock title="Ofertas">
             {offersDaily.length ? (
               <div className="space-y-2">
@@ -296,7 +282,6 @@ export default async function SobreNosotrosPage() {
         </div>
       </div>
 
-      {/* Botón flotante de WhatsApp (mismo de la landing) */}
       <WhatsAppFloat />
     </>
   );
