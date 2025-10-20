@@ -39,7 +39,7 @@ export default function InfoBar() {
         </a>
 
         <div className="mx-auto hidden md:block">
-          Envío gratis Montevideo SUPERANDO $2500
+          Envios a todo el país
         </div>
 
         <div className="ml-auto flex items-center gap-3">
