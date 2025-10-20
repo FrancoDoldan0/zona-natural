@@ -44,9 +44,10 @@ export default function Header() {
 
         {/* Buscador: min-w-0 evita que el contenido fuerce ancho mínimo */}
         <div className="min-w-0 flex-1">
-          <div className="w-full flex items-stretch rounded-full ring-1 ring-emerald-200 overflow-hidden">
+          {/* 🔧 overflow-visible + botón absoluto para que no se recorte en mobile */}
+          <div className="relative w-full rounded-full ring-1 ring-emerald-200 bg-white overflow-visible">
             <input
-              className="flex-1 px-4 py-2 md:py-3 outline-none text-sm"
+              className="block w-full min-w-0 h-11 md:h-12 rounded-full px-4 pr-14 outline-none text-sm"
               placeholder="Estoy buscando…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -54,8 +55,10 @@ export default function Header() {
               aria-label="Buscar productos"
             />
             <button
+              type="button"
               onClick={doSearch}
-              className="px-4 md:px-6 py-2 md:py-3 text-sm font-medium bg-emerald-700 text-white hover:bg-emerald-800 focus:bg-emerald-800"
+              className="absolute inset-y-0 right-0 m-1 px-4 md:px-5 rounded-full text-sm font-medium bg-emerald-700 text-white hover:bg-emerald-800 focus:bg-emerald-800 active:bg-emerald-900"
+              aria-label="Buscar"
             >
               Buscar
             </button>
