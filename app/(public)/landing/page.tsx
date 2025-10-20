@@ -265,7 +265,12 @@ export default async function LandingPage() {
       <TestimonialsBadges />
 
       {/* Mapa + horarios con múltiples sucursales */}
-      <MapHours locations={branches} />
+      {/* 🔧 Solo Las Piedras y La Paz */}
+      <MapHours
+        locations={branches.filter(
+          (b) => b.name === "Las Piedras" || b.name === "La Paz"
+        )}
+      />
 
       {/* Sello sustentable */}
       <Sustainability />

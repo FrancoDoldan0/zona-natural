@@ -520,7 +520,12 @@ export default async function Page({
 
         {/* Ubicaciones */}
         <div className="mt-10">
-          <MapHours locations={branches} />
+          {/* 🔧 Solo Las Piedras y La Paz */}
+          <MapHours
+            locations={branches.filter(
+              (b) => b.name === "Las Piedras" || b.name === "La Paz"
+            )}
+          />
         </div>
       </main>
     </>

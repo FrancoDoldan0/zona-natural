@@ -113,7 +113,12 @@ export default function SobreNosotrosPage() {
 
             {/* Mapa + horarios con tabs (igual a la landing) */}
             <div className="mt-8">
-              <MapHours locations={branches} />
+              {/* 🔧 Solo Las Piedras y La Paz */}
+              <MapHours
+                locations={branches.filter(
+                  (b) => b.name === "Las Piedras" || b.name === "La Paz"
+                )}
+              />
             </div>
 
             {/* Opiniones simples */}
@@ -126,16 +131,14 @@ export default function SobreNosotrosPage() {
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <blockquote className="rounded-xl ring-1 ring-emerald-100 bg-white p-4">
                   <div className="font-medium">Natalia</div>
-                  <p className="mt-2 text-sm text-gray-700">
-                    Me asesoraron súper bien y encontré todo para mis recetas.
-                    ¡Llegó rapidísimo!
+                  <p className="text-sm text-gray-600">
+                    Muy buena atención y variedad de productos.
                   </p>
                 </blockquote>
                 <blockquote className="rounded-xl ring-1 ring-emerald-100 bg-white p-4">
-                  <div className="font-medium">Andrés</div>
-                  <p className="mt-2 text-sm text-gray-700">
-                    Muy buena calidad y variedad. Pedí por la web y el envío
-                    fue puntual.
+                  <div className="font-medium">Pablo</div>
+                  <p className="text-sm text-gray-600">
+                    Entrega rapidísima y todo impecable.
                   </p>
                 </blockquote>
               </div>

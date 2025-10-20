@@ -182,7 +182,12 @@ export default async function RecipesIndex() {
       <TestimonialsBadges />
 
       {/* Mapa + horarios */}
-      <MapHours locations={branches} />
+      {/* 🔧 Solo Las Piedras y La Paz */}
+      <MapHours
+        locations={branches.filter(
+          (b) => b.name === "Las Piedras" || b.name === "La Paz"
+        )}
+      />
     </>
   );
 }
