@@ -131,9 +131,15 @@ function applyLocalSortFilter(
 async function getData(params: URLSearchParams, queryTerm?: string) {
   try {
     // categorías
-    const catsRes = await fetch(await abs("/api/public/categories"), { next: { revalidate: 60 } });
+    const catsRes = await fetch(await abs("/api/public/categories"), {
+      next: { revalidate: 60 },
+    });
     const catsJson: any = catsRes.ok ? await catsRes.json().catch(() => ({})) : {};
-    const cats: Cat[] = Array.isArray(catsJson?.items) ? catsJson.items : Array.isArray(catsJson) ? catsJson : [];
+    const cats: Cat[] = Array.isArray(catsJson?.items)
+      ? catsJson.items
+      : Array.isArray(catsJson)
+      ? catsJson
+      : [];
 
     // catálogo con estrategia de intentos
     const baseQS = new URLSearchParams(params);
@@ -141,7 +147,10 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
     baseQS.delete("perPage");
 
     const page = Number(params.get("page") || "1");
-    const perPage = Number(params.get("perPage") || "12");
+
+    // 🔴 Cambio clave: antes era "12", ahora pedimos básicamente todo en una sola página
+    const perPage = Number(params.get("perPage") || "9999");
+
     const sort = params.get("sort") || "-id";
     const minPrice = toNum(params.get("minPrice"));
     const maxPrice = toNum(params.get("maxPrice"));
@@ -186,13 +195,23 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
       }
     }
 
-    return { cats, items: [] as Item[], page, perPage, total: 0, sort, minPrice, maxPrice };
+    return {
+      cats,
+      items: [] as Item[],
+      page,
+      perPage,
+      total: 0,
+      sort,
+      minPrice,
+      maxPrice,
+    };
   } catch {
     return {
       cats: [] as Cat[],
       items: [] as Item[],
       page: 1,
-      perPage: 12,
+      // mantener mismo default grande también en el catch
+      perPage: 9999,
       total: 0,
       sort: "-id",
       minPrice: null,
@@ -223,9 +242,16 @@ export default async function Page({
   const sp = (await searchParams) ?? {};
   const qs = qp(sp);
   const term =
-    (typeof sp.query === "string" ? sp.query : Array.isArray(sp.query) ? sp.query[0] : "")?.trim() || "";
+    (typeof sp.query === "string"
+      ? sp.query
+      : Array.isArray(sp.query)
+      ? sp.query[0]
+      : "")?.trim() || "";
 
-  const { cats, items, page, perPage, total, sort, minPrice, maxPrice } = await getData(qs, term);
+  const { cats, items, page, perPage, total, sort, minPrice, maxPrice } = await getData(
+    qs,
+    term
+  );
 
   // best sellers: intento por API; si viene vacío uso heurística sobre el set actual
   let bestSellers = await getBestSellers();
@@ -237,7 +263,8 @@ export default async function Page({
   const subId = Number(qs.get("subcategoryId"));
   const cat = cats.find((c) => c.id === catId);
   const sub = cat?.subcats?.find((s) => s.id === subId);
-  const baseTitle = (sub ? `${sub.name} · ` : "") + (cat ? `${cat.name} — ` : "") + "Catálogo";
+  const baseTitle =
+    (sub ? `${sub.name} · ` : "") + (cat ? `${cat.name} — ` : "") + "Catálogo";
 
   // ───────── Sucursales (igual que en landing) ─────────
   const hours: [string, string][] = [
@@ -333,8 +360,12 @@ export default async function Page({
               aria-label="Buscar en el catálogo"
             />
             {/* preservamos filtros de categoría */}
-            {catId ? <input type="hidden" name="categoryId" value={String(catId)} /> : null}
-            {subId ? <input type="hidden" name="subcategoryId" value={String(subId)} /> : null}
+            {catId ? (
+              <input type="hidden" name="categoryId" value={String(catId)} />
+            ) : null}
+            {subId ? (
+              <input type="hidden" name="subcategoryId" value={String(subId)} />
+            ) : null}
           </div>
 
           {/* Ordenamiento */}
@@ -403,7 +434,10 @@ export default async function Page({
               <Link
                 key={c.id}
                 href={`/catalogo?${url.toString()}`}
-                className={"px-3 py-1 rounded-full border " + (c.id === catId ? "bg-gray-200" : "")}
+                className={
+                  "px-3 py-1 rounded-full border " +
+                  (c.id === catId ? "bg-gray-200" : "")
+                }
               >
                 {c.name}
               </Link>
@@ -423,7 +457,10 @@ export default async function Page({
                   <Link
                     key={s.id}
                     href={`/catalogo?${url.toString()}`}
-                    className={"px-3 py-1 rounded-full border " + (s.id === subId ? "bg-gray-200" : "")}
+                    className={
+                      "px-3 py-1 rounded-full border " +
+                      (s.id === subId ? "bg-gray-200" : "")
+                    }
                   >
                     {s.name}
                   </Link>
@@ -460,25 +497,36 @@ export default async function Page({
               )}
             </div>
 
-            {/* Paginación (si no hay query y no filtramos en front, usamos la del backend) */}
-            {!term && minPrice == null && maxPrice == null && total > perPage && (
-              <nav className="mt-6 flex gap-2 items-center">
-                {Array.from({ length: Math.ceil(total / Math.max(1, perPage)) }).map((_, i) => {
-                  const n = i + 1;
-                  const url = new URLSearchParams(qs);
-                  url.set("page", String(n));
-                  return (
-                    <Link
-                      key={n}
-                      href={`/catalogo?${url.toString()}`}
-                      className={"border rounded px-3 py-1 " + (n === page ? "bg-gray-200" : "")}
-                    >
-                      {n}
-                    </Link>
-                  );
-                })}
-              </nav>
-            )}
+            {/* Paginación:
+                - Con perPage=9999 el total casi nunca va a ser > perPage,
+                  así que esto normalmente NO se va a renderizar.
+             */}
+            {!term &&
+              minPrice == null &&
+              maxPrice == null &&
+              total > perPage && (
+                <nav className="mt-6 flex gap-2 items-center">
+                  {Array.from({
+                    length: Math.ceil(total / Math.max(1, perPage)),
+                  }).map((_, i) => {
+                    const n = i + 1;
+                    const url = new URLSearchParams(qs);
+                    url.set("page", String(n));
+                    return (
+                      <Link
+                        key={n}
+                        href={`/catalogo?${url.toString()}`}
+                        className={
+                          "border rounded px-3 py-1 " +
+                          (n === page ? "bg-gray-200" : "")
+                        }
+                      >
+                        {n}
+                      </Link>
+                    );
+                  })}
+                </nav>
+              )}
           </section>
 
           {/* Más vendidos (debajo) */}
