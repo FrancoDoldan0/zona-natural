@@ -70,7 +70,10 @@ export async function GET(req: NextRequest) {
   try {
     const q = (url.searchParams.get('q') || '').trim();
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
-    const perPage = Math.min(60, Math.max(1, parseInt(url.searchParams.get('perPage') || '12', 10)));
+    const perPage = Math.min(
+      9999,
+      Math.max(1, parseInt(url.searchParams.get('perPage') || '9999', 10)),
+    );
     const categoryId = parseInt(url.searchParams.get('categoryId') || '', 10);
     const subcategoryId = parseInt(url.searchParams.get('subcategoryId') || '', 10);
 
@@ -187,7 +190,14 @@ export async function GET(req: NextRequest) {
             where: { active: true },
             orderBy: { sortOrder: 'asc' },
             select: {
-              id: true, label: true, price: true, priceOriginal: true, sku: true, stock: true, sortOrder: true, active: true,
+              id: true,
+              label: true,
+              price: true,
+              priceOriginal: true,
+              sku: true,
+              stock: true,
+              sortOrder: true,
+              active: true,
             },
           },
         },
@@ -204,7 +214,10 @@ export async function GET(req: NextRequest) {
       tags: (p.productTags ?? []).map((t: ProductTagRow) => t.tagId),
     }));
 
-    let priced: Map<number, { priceOriginal: number | null; priceFinal: number | null; offer?: any }>;
+    let priced: Map<
+      number,
+      { priceOriginal: number | null; priceFinal: number | null; offer?: any }
+    >;
     try {
       priced = await computePricesBatch(bare);
     } catch (e) {
@@ -228,7 +241,9 @@ export async function GET(req: NextRequest) {
         const listed = await r2List(prefix, 1);
         const first =
           Array.isArray(listed) && listed[0]
-            ? (typeof listed[0] === 'string' ? listed[0] : (listed[0] as any).key)
+            ? typeof listed[0] === 'string'
+              ? listed[0]
+              : (listed[0] as any).key
             : null;
         return first || null;
       } catch {
@@ -261,8 +276,12 @@ export async function GET(req: NextRequest) {
 
         // si hay variantes, usar el mínimo para la card
         if (variants.length) {
-          const finals = variants.map((v) => v.priceFinal).filter((x): x is number => typeof x === 'number');
-          const origs = variants.map((v) => v.priceOriginal).filter((x): x is number => typeof x === 'number');
+          const finals = variants
+            .map((v) => v.priceFinal)
+            .filter((x): x is number => typeof x === 'number');
+          const origs = variants
+            .map((v) => v.priceOriginal)
+            .filter((x): x is number => typeof x === 'number');
           if (finals.length) priceFinal = Math.min(...finals);
           if (origs.length) priceOriginal = Math.min(...origs);
         }
@@ -310,8 +329,10 @@ export async function GET(req: NextRequest) {
 
     // Post-filtros por precio FINAL
     if (onSale) filtered = filtered.filter((i) => i.hasDiscount);
-    if (Number.isFinite(minFinal)) filtered = filtered.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
-    if (Number.isFinite(maxFinal)) filtered = filtered.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
+    if (Number.isFinite(minFinal))
+      filtered = filtered.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
+    if (Number.isFinite(maxFinal))
+      filtered = filtered.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
 
     // Orden adicional por precio FINAL (post query)
     if (sortParam === 'final') {
@@ -319,14 +340,16 @@ export async function GET(req: NextRequest) {
         .slice()
         .sort(
           (a, b) =>
-            (a.priceFinal ?? Number.POSITIVE_INFINITY) - (b.priceFinal ?? Number.POSITIVE_INFINITY),
+            (a.priceFinal ?? Number.POSITIVE_INFINITY) -
+            (b.priceFinal ?? Number.POSITIVE_INFINITY),
         );
     } else if (sortParam === '-final') {
       filtered = filtered
         .slice()
         .sort(
           (a, b) =>
-            (b.priceFinal ?? Number.NEGATIVE_INFINITY) - (a.priceFinal ?? Number.NEGATIVE_INFINITY),
+            (b.priceFinal ?? Number.NEGATIVE_INFINITY) -
+            (a.priceFinal ?? Number.NEGATIVE_INFINITY),
         );
     }
 
@@ -338,9 +361,9 @@ export async function GET(req: NextRequest) {
       ok: true,
       page,
       perPage,
-      total,                // total de la query base (sin estado)
+      total, // total de la query base (sin estado)
       pageCount,
-      filteredTotal,        // total luego de aplicar estado + post-filtros
+      filteredTotal, // total luego de aplicar estado + post-filtros
       filteredPageCount,
       appliedFilters: {
         q,
