@@ -79,12 +79,20 @@ export default function CategoriasPage() {
       });
       const data: any = await res.json();
       if (res.status === 409 && data?.error === 'slug_taken') {
-        throw new Error(`El slug ya existe${data?.detail?.target ? ` (${data.detail.target})` : ''}`);
+        throw new Error(
+          `El slug ya existe${data?.detail?.target ? ` (${data.detail.target})` : ''}`,
+        );
       }
       if (!data.ok) throw new Error(data.error || 'Error al crear categoría');
 
       const newCat: Category =
-        data.item ?? data.category ?? data.data ?? { id: data.id, name: body.name, slug: data.slug };
+        data.item ??
+        data.category ??
+        data.data ?? {
+          id: data.id,
+          name: body.name,
+          slug: data.slug,
+        };
       const newId = newCat?.id;
 
       // 2) Si hay archivo, subirlo a R2 y asociarlo
@@ -299,9 +307,9 @@ export default function CategoriasPage() {
               <th className="p-2 border">Imagen</th>
               <th className="p-2 border">Nombre</th>
               <th className="p-2 border">Slug</th>
-              <th className="p-2 border w-64">Imagen URL</th>
-              <th className="p-2 border w-64">Clave R2</th>
               <th className="p-2 border w-36">Acciones</th>
+              <th className="p-2 border">Imagen URL</th>
+              <th className="p-2 border">Clave R2</th>
             </tr>
           </thead>
           <tbody>
@@ -323,7 +331,11 @@ export default function CategoriasPage() {
                           />
                         </div>
                       ) : preview ? (
-                        <img src={preview} alt="" className="h-12 w-12 rounded object-cover border" />
+                        <img
+                          src={preview}
+                          alt=""
+                          className="h-12 w-12 rounded object-cover border"
+                        />
                       ) : (
                         <span className="text-xs text-gray-400">—</span>
                       )}
@@ -354,36 +366,7 @@ export default function CategoriasPage() {
                       )}
                     </td>
 
-                    <td className="p-2 border align-top">
-                      {isEditing ? (
-                        <input
-                          className="border rounded p-2 w-full"
-                          value={eImageUrl}
-                          onChange={(e) => setEImageUrl(e.target.value)}
-                          placeholder="https://… (opcional)"
-                        />
-                      ) : (
-                        <div className="max-w-[18rem] truncate text-gray-600 text-sm">
-                          {c.imageUrl ?? '—'}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="p-2 border align-top">
-                      {isEditing ? (
-                        <input
-                          className="border rounded p-2 w-full"
-                          value={eImageKey}
-                          onChange={(e) => setEImageKey(e.target.value)}
-                          placeholder="categories/yerbas.jpg (opcional)"
-                        />
-                      ) : (
-                        <div className="max-w-[18rem] truncate text-gray-600 text-sm">
-                          {c.imageKey ?? '—'}
-                        </div>
-                      )}
-                    </td>
-
+                    {/* Acciones - movido más a la izquierda */}
                     <td className="p-2 border align-top space-x-2 whitespace-nowrap">
                       {isEditing ? (
                         <>
@@ -403,6 +386,38 @@ export default function CategoriasPage() {
                             Eliminar
                           </button>
                         </>
+                      )}
+                    </td>
+
+                    {/* Imagen URL */}
+                    <td className="p-2 border align-top">
+                      {isEditing ? (
+                        <input
+                          className="border rounded p-2 w-full"
+                          value={eImageUrl}
+                          onChange={(e) => setEImageUrl(e.target.value)}
+                          placeholder="https://… (opcional)"
+                        />
+                      ) : (
+                        <div className="max-w-[10rem] truncate text-gray-600 text-sm">
+                          {c.imageUrl ?? '—'}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Clave R2 */}
+                    <td className="p-2 border align-top">
+                      {isEditing ? (
+                        <input
+                          className="border rounded p-2 w-full"
+                          value={eImageKey}
+                          onChange={(e) => setEImageKey(e.target.value)}
+                          placeholder="categories/yerbas.jpg (opcional)"
+                        />
+                      ) : (
+                        <div className="max-w-[10rem] truncate text-gray-600 text-sm">
+                          {c.imageKey ?? '—'}
+                        </div>
                       )}
                     </td>
                   </tr>
