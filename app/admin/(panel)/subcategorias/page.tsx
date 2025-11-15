@@ -1,6 +1,5 @@
-// app/admin/(panel)/subcategorias/page.tsx
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type Category = { id: number; name: string; slug: string };
 type Subcategory = { id: number; name: string; slug: string; categoryId: number };
@@ -99,32 +98,56 @@ export default function SubcategoriasPage() {
 
       const body: any = {};
       if (typeof eName === 'string') body.name = eName.trim();
-      if (typeof eSlug === 'string') body.slug = eSlug; // "" -> la API puede recalcular
+      if (typeof eSlug === 'string') body.slug = eSlug; // "" -> la API puede recalcular slug
       body.categoryId = cid;
 
-      const res = await fetch(`/api/admin/subcategories?id=${id}`, {
+      const options: RequestInit = {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
+      };
 
-      let data: any = null;
-      try {
-        data = await res.json();
-      } catch {
-        data = null;
+      const urls = [
+        `/api/admin/subcategories?id=${id}`, // estilo categorías
+        `/api/admin/subcategories/${id}`,    // estilo REST /[id]
+      ];
+
+      let lastError = '';
+
+      for (const url of urls) {
+        let res: Response;
+        let data: any = null;
+
+        try {
+          res = await fetch(url, options);
+        } catch (e: any) {
+          lastError = e?.message || `Error de red llamando a ${url}`;
+          continue;
+        }
+
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
+        }
+
+        if (res.ok && data?.ok !== false) {
+          cancelEdit();
+          await load();
+          return;
+        }
+
+        const msg =
+          data?.error ||
+          res.statusText ||
+          `Error ${res.status} al llamar a ${url.replace('/api/admin', '')}`;
+        lastError = msg;
+
+        // si es 404/405 probamos la otra URL; si es otro error, cortamos
+        if (res.status !== 404 && res.status !== 405) break;
       }
 
-      if (res.status === 409 && data?.error === 'slug_taken') {
-        throw new Error('El slug ya existe');
-      }
-
-      if (!res.ok || data?.ok === false) {
-        throw new Error(data?.error || res.statusText || 'No se pudo guardar');
-      }
-
-      cancelEdit();
-      await load();
+      throw new Error(lastError || 'No se pudo guardar');
     } catch (e: any) {
       const msg = e?.message || 'No se pudo guardar';
       setErr(msg);
