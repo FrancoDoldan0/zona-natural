@@ -13,11 +13,18 @@ export default function SubcategoriasPage() {
   const [q, setQ] = useState('');
   const [filterCat, setFilterCat] = useState<number | ''>('');
 
+  // edición inline
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [eName, setEName] = useState('');
+  const [eSlug, setESlug] = useState('');
+  const [eCategoryId, setECategoryId] = useState<number | ''>('');
+
   async function loadCats() {
     const res = await fetch('/api/admin/categories?take=999', { cache: 'no-store' });
     const data = await res.json<any>();
     if (data.ok) setCats(data.items);
   }
+
   async function load() {
     const u = new URLSearchParams();
     if (q) u.set('q', q);
@@ -26,6 +33,7 @@ export default function SubcategoriasPage() {
     const data = await res.json<any>();
     if (data.ok) setItems(data.items);
   }
+
   useEffect(() => {
     loadCats();
     load();
@@ -58,6 +66,49 @@ export default function SubcategoriasPage() {
     const data = await res.json<any>();
     if (data.ok) setItems((prev) => prev.filter((x) => x.id !== id));
     else alert(data.error || 'No se pudo borrar');
+  }
+
+  // ─── edición ────────────────────────────────────────────
+  function startEdit(s: Subcategory) {
+    setEditingId(s.id);
+    setEName(s.name);
+    setESlug(s.slug);
+    setECategoryId(s.categoryId ?? '');
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEName('');
+    setESlug('');
+    setECategoryId('');
+  }
+
+  async function saveEdit(id: number) {
+    const cid = eCategoryId === '' ? undefined : Number(eCategoryId);
+    if (!cid) {
+      alert('Elegí una categoría');
+      return;
+    }
+
+    const body: any = {
+      name: eName,
+      categoryId: cid,
+    };
+    // permitimos slug vacío para que la API pueda recalcular si querés
+    if (typeof eSlug === 'string') body.slug = eSlug;
+
+    const res = await fetch(`/api/admin/subcategories?id=${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json<any>();
+    if (data.ok) {
+      cancelEdit();
+      await load();
+    } else {
+      alert(data.error || 'No se pudo guardar');
+    }
   }
 
   return (
@@ -132,21 +183,81 @@ export default function SubcategoriasPage() {
             </tr>
           </thead>
           <tbody>
-            {items.map((s) => (
-              <tr key={s.id}>
-                <td className="p-2 border">{s.id}</td>
-                <td className="p-2 border">{s.name}</td>
-                <td className="p-2 border">{s.slug}</td>
-                <td className="p-2 border">
-                  {cats.find((c) => c.id === s.categoryId)?.name ?? '-'}
-                </td>
-                <td className="p-2 border">
-                  <button className="text-red-600" onClick={() => onDelete(s.id)}>
-                    Eliminar
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {items.map((s) => {
+              const isEditing = editingId === s.id;
+              return (
+                <tr key={s.id}>
+                  <td className="p-2 border">{s.id}</td>
+
+                  <td className="p-2 border">
+                    {isEditing ? (
+                      <input
+                        className="border rounded p-1 w-full"
+                        value={eName}
+                        onChange={(e) => setEName(e.target.value)}
+                      />
+                    ) : (
+                      s.name
+                    )}
+                  </td>
+
+                  <td className="p-2 border">
+                    {isEditing ? (
+                      <input
+                        className="border rounded p-1 w-full"
+                        value={eSlug}
+                        onChange={(e) => setESlug(e.target.value)}
+                      />
+                    ) : (
+                      s.slug
+                    )}
+                  </td>
+
+                  <td className="p-2 border">
+                    {isEditing ? (
+                      <select
+                        className="border rounded p-2 w-full"
+                        value={eCategoryId}
+                        onChange={(e) =>
+                          setECategoryId(e.target.value === '' ? '' : Number(e.target.value))
+                        }
+                      >
+                        <option value="">Categoría…</option>
+                        {cats.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      cats.find((c) => c.id === s.categoryId)?.name ?? '-'
+                    )}
+                  </td>
+
+                  <td className="p-2 border whitespace-nowrap space-x-2">
+                    {isEditing ? (
+                      <>
+                        <button className="text-blue-600" onClick={() => saveEdit(s.id)}>
+                          Guardar
+                        </button>
+                        <button className="text-gray-600" onClick={cancelEdit}>
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="text-blue-600" onClick={() => startEdit(s)}>
+                          Editar
+                        </button>
+                        <button className="text-red-600" onClick={() => onDelete(s.id)}>
+                          Eliminar
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {!items.length && (
               <tr>
                 <td className="p-3 text-sm opacity-70" colSpan={5}>
