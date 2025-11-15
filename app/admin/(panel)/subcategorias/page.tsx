@@ -1,3 +1,4 @@
+// app/admin/(panel)/subcategorias/page.tsx
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -12,6 +13,7 @@ export default function SubcategoriasPage() {
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [q, setQ] = useState('');
   const [filterCat, setFilterCat] = useState<number | ''>('');
+  const [err, setErr] = useState<string | null>(null);
 
   // edición inline
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -74,6 +76,7 @@ export default function SubcategoriasPage() {
     setEName(s.name);
     setESlug(s.slug);
     setECategoryId(s.categoryId ?? '');
+    setErr(null);
   }
 
   function cancelEdit() {
@@ -81,6 +84,7 @@ export default function SubcategoriasPage() {
     setEName('');
     setESlug('');
     setECategoryId('');
+    setErr(null);
   }
 
   async function saveEdit(id: number) {
@@ -90,24 +94,41 @@ export default function SubcategoriasPage() {
       return;
     }
 
-    const body: any = {
-      name: eName,
-      categoryId: cid,
-    };
-    // permitimos slug vacío para que la API pueda recalcular si querés
-    if (typeof eSlug === 'string') body.slug = eSlug;
+    try {
+      setErr(null);
 
-    const res = await fetch(`/api/admin/subcategories?id=${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json<any>();
-    if (data.ok) {
+      const body: any = {};
+      if (typeof eName === 'string') body.name = eName.trim();
+      if (typeof eSlug === 'string') body.slug = eSlug; // "" -> la API puede recalcular
+      body.categoryId = cid;
+
+      const res = await fetch(`/api/admin/subcategories?id=${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+
+      if (res.status === 409 && data?.error === 'slug_taken') {
+        throw new Error('El slug ya existe');
+      }
+
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || res.statusText || 'No se pudo guardar');
+      }
+
       cancelEdit();
       await load();
-    } else {
-      alert(data.error || 'No se pudo guardar');
+    } catch (e: any) {
+      const msg = e?.message || 'No se pudo guardar';
+      setErr(msg);
+      alert(msg);
     }
   }
 
@@ -268,6 +289,8 @@ export default function SubcategoriasPage() {
           </tbody>
         </table>
       </div>
+
+      {err && <p className="text-sm text-red-600">Error: {err}</p>}
     </main>
   );
 }
