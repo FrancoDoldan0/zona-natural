@@ -133,10 +133,6 @@ export default function ProductosPage() {
   const [q, setQ] = useState('');
   const [fCat, setFCat] = useState<number | ''>('');
   const [fSub, setFSub] = useState<number | ''>('');
-  const subOptions = useMemo(
-    () => subs.filter((s) => (fCat === '' ? true : s.categoryId === Number(fCat))),
-    [subs, fCat],
-  );
 
   // paginación
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
@@ -156,6 +152,22 @@ export default function ProductosPage() {
   // 🆕 Estado de variantes para creación rápida
   const [hasVariants, setHasVariants] = useState(false);
   const [variants, setVariants] = useState<VariantRow[]>([]);
+
+  // 🔹 Subcategorías para FILTROS (usa categoría filtrada fCat)
+  const filterSubOptions = useMemo(
+    () => subs.filter((s) => (fCat === '' ? true : s.categoryId === Number(fCat))),
+    [subs, fCat],
+  );
+
+  // 🔹 Subcategorías para el FORM DE CREACIÓN (usa categoría seleccionada cId)
+  //     Si no hay categoría elegida, no mostramos ninguna subcategoría.
+  const createSubOptions = useMemo(
+    () =>
+      subs.filter((s) =>
+        cId === '' ? false : s.categoryId === Number(cId),
+      ),
+    [subs, cId],
+  );
 
   async function loadCats() {
     const res = await fetch('/api/admin/categories?take=999', { cache: 'no-store' });
@@ -430,7 +442,7 @@ export default function ProductosPage() {
             onChange={(e) => setSId(e.target.value === '' ? '' : Number(e.target.value))}
           >
             <option value="">Subcategoría</option>
-            {subOptions.map((s) => (
+            {createSubOptions.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
@@ -595,7 +607,7 @@ export default function ProductosPage() {
           onChange={(e) => setFSub(e.target.value === '' ? '' : Number(e.target.value))}
         >
           <option value="">Todas las subcategorías</option>
-          {subOptions.map((s) => (
+          {filterSubOptions.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
             </option>
