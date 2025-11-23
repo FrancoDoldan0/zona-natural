@@ -148,8 +148,21 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
 
     const page = Number(params.get("page") || "1");
 
-    // 🔴 Cambio clave: antes era "12", ahora pedimos básicamente todo en una sola página
-    const perPage = Number(params.get("perPage") || "9999");
+    // perPage:
+    // - si viene en la URL, lo respetamos (limitando a 9999)
+    // - si NO viene:
+    //    · si hay término de búsqueda → 9999 (mostrar todo en una sola página)
+    //    · si NO hay búsqueda → 24 (catálogo general paginado)
+    const perPageParam = params.get("perPage");
+    let perPage =
+      perPageParam != null && perPageParam !== ""
+        ? Number(perPageParam)
+        : queryTerm
+        ? 9999
+        : 24;
+
+    if (!Number.isFinite(perPage) || perPage <= 0) perPage = queryTerm ? 9999 : 24;
+    if (perPage > 9999) perPage = 9999;
 
     const sort = params.get("sort") || "-id";
     const minPrice = toNum(params.get("minPrice"));
@@ -210,8 +223,8 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
       cats: [] as Cat[],
       items: [] as Item[],
       page: 1,
-      // mantener mismo default grande también en el catch
-      perPage: 9999,
+      // mantener defaults coherentes con la lógica principal
+      perPage: queryTerm ? 9999 : 24,
       total: 0,
       sort: "-id",
       minPrice: null,
@@ -497,8 +510,8 @@ export default async function Page({
             </div>
 
             {/* Paginación:
-                - Con perPage=9999 el total casi nunca va a ser > perPage,
-                  así que esto normalmente NO se va a renderizar.
+                - Con perPage=24 en catálogo general,
+                  se muestran links cuando hay más páginas.
              */}
             {!term &&
               minPrice == null &&
