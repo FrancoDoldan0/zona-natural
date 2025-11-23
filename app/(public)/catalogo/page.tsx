@@ -15,6 +15,7 @@ import { headers } from "next/headers";
 // 🆕 unificadas
 import ProductCard from "@/components/ui/ProductCard";
 import { normalizeProduct } from "@/lib/product";
+import CatalogInfiniteGrid from "@/components/catalog/CatalogInfiniteGrid";
 
 /* ---------- Tipos ---------- */
 type Cat = {
@@ -152,7 +153,7 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
     // - si viene en la URL, lo respetamos (limitando a 9999)
     // - si NO viene:
     //    · si hay término de búsqueda → 9999 (mostrar todo en una sola página)
-    //    · si NO hay búsqueda → 24 (catálogo general paginado)
+    //    · si NO hay búsqueda → 24 (catálogo general paginado / scroll)
     const perPageParam = params.get("perPage");
     let perPage =
       perPageParam != null && perPageParam !== ""
@@ -269,6 +270,11 @@ export default async function Page({
   const [data, bestSellersRaw] = await Promise.all([getData(qs, term), getBestSellers()]);
 
   const { cats, items, page, perPage, total, sort, minPrice, maxPrice } = data;
+
+  // baseQuery para el scroll infinito (sin "page")
+  const qsNoPage = new URLSearchParams(qs);
+  qsNoPage.delete("page");
+  const baseQuery = qsNoPage.toString();
 
   // best sellers: intento por API; si viene vacío uso heurística sobre el set actual
   let bestSellers = bestSellersRaw;
@@ -488,61 +494,15 @@ export default async function Page({
 
         {/* Resultados + Más vendidos (debajo en desktop y móvil) */}
         <div className="mt-6 space-y-8">
-          {/* Resultados */}
+          {/* Resultados con scroll infinito */}
           <section className="min-w-0">
-            <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {items.map((raw) => {
-                const p = normalizeProduct(raw);
-                return (
-                  <ProductCard
-                    key={p.id}
-                    slug={p.slug}
-                    title={p.title}
-                    image={p.image}
-                    price={p.price ?? undefined}
-                    originalPrice={p.originalPrice ?? undefined}
-                    outOfStock={p.outOfStock}
-                    brand={p.brand ?? undefined}
-                    subtitle={p.subtitle ?? undefined}
-                    variants={p.variants}
-                  />
-                );
-              })}
-              {!items.length && (
-                <p className="opacity-70 col-span-full">No hay resultados.</p>
-              )}
-            </div>
-
-            {/* Paginación:
-                - Con perPage=24 en catálogo general,
-                  se muestran links cuando hay más páginas.
-             */}
-            {!term &&
-              minPrice == null &&
-              maxPrice == null &&
-              total > perPage && (
-                <nav className="mt-6 flex gap-2 items-center">
-                  {Array.from({
-                    length: Math.ceil(total / Math.max(1, perPage)),
-                  }).map((_, i) => {
-                    const n = i + 1;
-                    const url = new URLSearchParams(qs);
-                    url.set("page", String(n));
-                    return (
-                      <Link
-                        key={n}
-                        href={`/catalogo?${url.toString()}`}
-                        className={
-                          "border rounded px-3 py-1 " +
-                          (n === page ? "bg-gray-200" : "")
-                        }
-                      >
-                        {n}
-                      </Link>
-                    );
-                  })}
-                </nav>
-              )}
+            <CatalogInfiniteGrid
+              initialItems={items}
+              initialPage={page}
+              perPage={perPage}
+              total={total}
+              baseQuery={baseQuery}
+            />
           </section>
 
           {/* Más vendidos (debajo) */}
