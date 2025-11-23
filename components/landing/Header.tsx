@@ -12,6 +12,13 @@ type Suggestion = {
   priceOriginal?: number | null;
 };
 
+// normalizar texto: minúsculas + sin acentos
+const normalize = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}+/gu, "");
+
 export default function Header() {
   const [q, setQ] = useState("");
   const [scrolled, setScrolled] = useState(false);
@@ -27,7 +34,7 @@ export default function Header() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // 🔍 Buscar sugerencias mientras se escribe
+  // 🔍 Buscar sugerencias mientras se escribe (SOLO por nombre)
   useEffect(() => {
     const term = q.trim();
 
@@ -43,10 +50,11 @@ export default function Header() {
       try {
         setLoadingSuggestions(true);
 
+        // pedimos un poco más (20) y después filtramos por nombre en el front
         const params = new URLSearchParams({
           q: term,
           status: "all",
-          perPage: "5",
+          perPage: "20",
           sort: "-sold",
         });
 
@@ -63,8 +71,16 @@ export default function Header() {
         const json: any = await res.json().catch(() => ({}));
         const items: Suggestion[] = Array.isArray(json?.items) ? json.items : [];
 
-        setSuggestions(items);
-        setSuggestionsOpen(items.length > 0);
+        const normTerm = normalize(term);
+        // 🔧 SOLO sugerencias donde el nombre contenga el término
+        const byName = items.filter(
+          (it) => it?.name && normalize(it.name).includes(normTerm)
+        );
+
+        const final = byName.slice(0, 5); // mostramos hasta 5
+
+        setSuggestions(final);
+        setSuggestionsOpen(final.length > 0);
       } catch {
         if (!controller.signal.aborted) {
           setSuggestions([]);
@@ -110,7 +126,7 @@ export default function Header() {
 
         {/* Buscador: min-w-0 evita que el contenido fuerce ancho mínimo */}
         <div className="min-w-0 flex-1">
-          {/* 🔧 Ahora es un <form> que navega igual que el buscador del catálogo */}
+          {/* 🔧 <form> que navega igual que el buscador del catálogo */}
           <form
             className="relative w-full rounded-full ring-1 ring-emerald-200 bg-white overflow-visible"
             action="/catalogo"
