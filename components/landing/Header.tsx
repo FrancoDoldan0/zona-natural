@@ -1,13 +1,26 @@
 // components/landing/Header.tsx
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+
+type Suggestion = {
+  id: number;
+  name: string;
+  slug: string;
+  cover?: string | null;
+  priceFinal?: number | null;
+  priceOriginal?: number | null;
+};
 
 export default function Header() {
   const [q, setQ] = useState("");
   const [scrolled, setScrolled] = useState(false);
   const router = useRouter();
+
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 4);
@@ -16,10 +29,72 @@ export default function Header() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const doSearch = () => {
+  const doSearch = useCallback(() => {
     const term = q.trim();
     if (!term) return;
+    setSuggestionsOpen(false);
     router.push(`/catalogo?query=${encodeURIComponent(term)}`);
+  }, [q, router]);
+
+  // 🔍 Buscar sugerencias mientras se escribe
+  useEffect(() => {
+    const term = q.trim();
+
+    if (!term) {
+      setSuggestions([]);
+      setSuggestionsOpen(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const timer = setTimeout(async () => {
+      try {
+        setLoadingSuggestions(true);
+
+        const params = new URLSearchParams({
+          q: term,
+          status: "all",
+          perPage: "5",
+          sort: "-sold",
+        });
+
+        const res = await fetch(`/api/public/catalogo?${params.toString()}`, {
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          setSuggestions([]);
+          setSuggestionsOpen(false);
+          return;
+        }
+
+        const json: any = await res.json().catch(() => ({}));
+        const items: Suggestion[] = Array.isArray(json?.items) ? json.items : [];
+
+        setSuggestions(items);
+        setSuggestionsOpen(items.length > 0);
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setSuggestions([]);
+          setSuggestionsOpen(false);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoadingSuggestions(false);
+        }
+      }
+    }, 250); // pequeño debounce
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [q]);
+
+  // Cerrar sugerencias un poco después del blur para permitir clicks
+  const closeSuggestionsSoon = () => {
+    setTimeout(() => setSuggestionsOpen(false), 120);
   };
 
   return (
@@ -52,16 +127,71 @@ export default function Header() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && doSearch()}
+              onFocus={() => suggestions.length && setSuggestionsOpen(true)}
+              onBlur={closeSuggestionsSoon}
               aria-label="Buscar productos"
             />
             <button
               type="button"
               onClick={doSearch}
+              onBlur={closeSuggestionsSoon}
               className="absolute inset-y-0 right-0 m-1 px-4 md:px-5 rounded-full text-sm font-medium bg-emerald-700 text-white hover:bg-emerald-800 focus:bg-emerald-800 active:bg-emerald-900"
               aria-label="Buscar"
             >
               Buscar
             </button>
+
+            {/* Dropdown de sugerencias */}
+            {suggestionsOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 rounded-2xl border border-emerald-100 bg-white shadow-lg max-h-80 overflow-auto z-50">
+                {loadingSuggestions && !suggestions.length && (
+                  <div className="px-4 py-3 text-xs text-gray-500">
+                    Buscando productos…
+                  </div>
+                )}
+
+                {!loadingSuggestions && !suggestions.length && (
+                  <div className="px-4 py-3 text-xs text-gray-500">
+                    No encontramos productos para “{q.trim()}”.
+                  </div>
+                )}
+
+                {suggestions.map((s) => {
+                  const price =
+                    typeof s.priceFinal === "number"
+                      ? s.priceFinal
+                      : typeof s.priceOriginal === "number"
+                      ? s.priceOriginal
+                      : null;
+
+                  return (
+                    <Link
+                      key={s.id}
+                      href={`/producto/${s.slug}`}
+                      className="flex items-center gap-3 px-3 py-2 hover:bg-emerald-50"
+                      onClick={() => setSuggestionsOpen(false)}
+                    >
+                      {s.cover && (
+                        <img
+                          src={s.cover}
+                          alt={s.name}
+                          className="h-12 w-12 rounded object-cover flex-shrink-0"
+                          loading="lazy"
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{s.name}</p>
+                        {price != null && (
+                          <p className="text-xs text-emerald-700 mt-0.5">
+                            ${price.toLocaleString("es-UY")}
+                          </p>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
