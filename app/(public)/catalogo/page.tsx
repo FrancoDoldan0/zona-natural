@@ -194,12 +194,16 @@ async function getData(params: URLSearchParams, queryTerm?: string) {
         });
 
         const total =
+          // si hay búsqueda o filtros de precio, usamos filteredTotal si existe
           queryTerm || minPrice != null || maxPrice != null
-            ? items.length
+            ? typeof json?.filteredTotal === "number"
+              ? json.filteredTotal
+              : items.length
+            : // catálogo general: usar total de la DB (antes de perPage)
+            typeof json?.total === "number"
+            ? json.total
             : typeof json?.filteredTotal === "number"
             ? json.filteredTotal
-            : typeof json?.total === "number"
-            ? json.total
             : items.length;
 
         if (items.length || status === "raw") {
