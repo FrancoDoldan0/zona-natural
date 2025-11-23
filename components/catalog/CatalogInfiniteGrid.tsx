@@ -55,22 +55,27 @@ export default function CatalogInfiniteGrid({
       const newItems: Item[] = Array.isArray(json?.items) ? json.items : [];
 
       if (!newItems.length) {
+        // no vinieron más productos, cortamos acá
         setHasMore(false);
         return;
       }
 
+      // 🔧 IMPORTANTE: usamos SIEMPRE json.total (total real de la DB),
+      // y solo caemos a filteredTotal si por algún motivo total no viene.
       const responseTotal =
-        typeof json?.filteredTotal === "number"
-          ? json.filteredTotal
-          : typeof json?.total === "number"
+        typeof json?.total === "number"
           ? json.total
+          : typeof json?.filteredTotal === "number"
+          ? json.filteredTotal
           : total;
 
       setItems((prev) => {
         const merged = [...prev, ...newItems];
+
         if (merged.length >= responseTotal) {
           setHasMore(false);
         }
+
         return merged;
       });
 
