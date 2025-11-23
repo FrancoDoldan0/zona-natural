@@ -68,7 +68,15 @@ export async function GET(req: NextRequest) {
   const debug = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
 
   try {
-    const q = (url.searchParams.get('q') || '').trim();
+    // 🔹 ACEPTAR q / query / search / term
+    const rawQ =
+      url.searchParams.get('q') ||
+      url.searchParams.get('query') ||
+      url.searchParams.get('search') ||
+      url.searchParams.get('term') ||
+      '';
+    const q = rawQ.trim();
+
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
     const perPage = Math.min(
       9999,
