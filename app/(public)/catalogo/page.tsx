@@ -248,13 +248,13 @@ export default async function Page({
       ? sp.query[0]
       : "")?.trim() || "";
 
-  const { cats, items, page, perPage, total, sort, minPrice, maxPrice } = await getData(
-    qs,
-    term
-  );
+  // 🔹 Ejecutamos catálogo y más vendidos EN PARALELO
+  const [data, bestSellersRaw] = await Promise.all([getData(qs, term), getBestSellers()]);
+
+  const { cats, items, page, perPage, total, sort, minPrice, maxPrice } = data;
 
   // best sellers: intento por API; si viene vacío uso heurística sobre el set actual
-  let bestSellers = await getBestSellers();
+  let bestSellers = bestSellersRaw;
   if (!bestSellers.length) {
     bestSellers = applyLocalSortFilter(items, { sort: "-sold" }).slice(0, 8);
   }
@@ -435,8 +435,7 @@ export default async function Page({
                 key={c.id}
                 href={`/catalogo?${url.toString()}`}
                 className={
-                  "px-3 py-1 rounded-full border " +
-                  (c.id === catId ? "bg-gray-200" : "")
+                  "px-3 py-1 rounded-full border " + (c.id === catId ? "bg-gray-200" : "")
                 }
               >
                 {c.name}
