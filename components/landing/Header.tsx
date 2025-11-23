@@ -1,7 +1,6 @@
 // components/landing/Header.tsx
 "use client";
-import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 type Suggestion = {
@@ -16,7 +15,6 @@ type Suggestion = {
 export default function Header() {
   const [q, setQ] = useState("");
   const [scrolled, setScrolled] = useState(false);
-  const router = useRouter();
 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -28,13 +26,6 @@ export default function Header() {
     onScroll();
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
-  const doSearch = useCallback(() => {
-    const term = q.trim();
-    if (!term) return;
-    setSuggestionsOpen(false);
-    router.push(`/catalogo?query=${encodeURIComponent(term)}`);
-  }, [q, router]);
 
   // 🔍 Buscar sugerencias mientras se escribe
   useEffect(() => {
@@ -74,7 +65,7 @@ export default function Header() {
 
         setSuggestions(items);
         setSuggestionsOpen(items.length > 0);
-      } catch (err) {
+      } catch {
         if (!controller.signal.aborted) {
           setSuggestions([]);
           setSuggestionsOpen(false);
@@ -119,21 +110,32 @@ export default function Header() {
 
         {/* Buscador: min-w-0 evita que el contenido fuerce ancho mínimo */}
         <div className="min-w-0 flex-1">
-          {/* 🔧 overflow-visible + botón absoluto para que no se recorte en mobile */}
-          <div className="relative w-full rounded-full ring-1 ring-emerald-200 bg-white overflow-visible">
+          {/* 🔧 Ahora es un <form> que navega igual que el buscador del catálogo */}
+          <form
+            className="relative w-full rounded-full ring-1 ring-emerald-200 bg-white overflow-visible"
+            action="/catalogo"
+            method="get"
+            onSubmit={(e) => {
+              const term = q.trim();
+              if (!term) {
+                e.preventDefault();
+                return;
+              }
+              setSuggestionsOpen(false);
+            }}
+          >
             <input
               className="block w-full min-w-0 h-11 md:h-12 rounded-full px-4 pr-14 outline-none text-sm"
               placeholder="Estoy buscando…"
+              name="query"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && doSearch()}
               onFocus={() => suggestions.length && setSuggestionsOpen(true)}
               onBlur={closeSuggestionsSoon}
               aria-label="Buscar productos"
             />
             <button
-              type="button"
-              onClick={doSearch}
+              type="submit"
               onBlur={closeSuggestionsSoon}
               className="absolute inset-y-0 right-0 m-1 px-4 md:px-5 rounded-full text-sm font-medium bg-emerald-700 text-white hover:bg-emerald-800 focus:bg-emerald-800 active:bg-emerald-900"
               aria-label="Buscar"
@@ -192,7 +194,7 @@ export default function Header() {
                 })}
               </div>
             )}
-          </div>
+          </form>
         </div>
 
         {/* Sobre nosotros: en mobile ocupa la línea completa; desde sm vuelve a auto */}
