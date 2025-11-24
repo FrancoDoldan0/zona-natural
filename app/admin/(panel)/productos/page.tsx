@@ -39,7 +39,6 @@ async function callApi(pathEn: string, pathEs: string, init?: RequestInit) {
   const baseInit: RequestInit = {
     ...init,
     cache: 'no-store',
-    // Next/fetch en el cliente ya usa credentials:"same-origin" por defecto
     headers: {
       Accept: 'application/json',
       ...(init?.headers || {}),
@@ -151,6 +150,7 @@ export default function ProductosPage() {
 
   // 🆕 Estado de variantes para creación rápida
   const [hasVariants, setHasVariants] = useState(false);
+  const [showInOffers, setShowInOffers] = useState(false);
   const [variants, setVariants] = useState<VariantRow[]>([]);
 
   // 🔹 Subcategorías para FILTROS (usa categoría filtrada fCat)
@@ -160,7 +160,6 @@ export default function ProductosPage() {
   );
 
   // 🔹 Subcategorías para el FORM DE CREACIÓN (usa categoría seleccionada cId)
-  //     Si no hay categoría elegida, no mostramos ninguna subcategoría.
   const createSubOptions = useMemo(
     () =>
       subs.filter((s) =>
@@ -268,7 +267,6 @@ export default function ProductosPage() {
       const tmp = arr[i].sortOrder;
       arr[i].sortOrder = arr[j].sortOrder;
       arr[j].sortOrder = tmp;
-      // reordenar físicamente para que el render siga el sortOrder
       const sorted = [...arr].sort((a, b) => a.sortOrder - b.sortOrder);
       return sorted;
     });
@@ -283,9 +281,8 @@ export default function ProductosPage() {
       // descripción
       if (description.trim() !== '') body.description = description.trim();
 
-      // precio (deshabilitado si hay variantes, pero si el user lo dejó escrito no lo mandamos)
+      // precio base (deshabilitado si hay variantes)
       if (!hasVariants && price.trim() !== '') {
-        // Permite "234,50"
         const n = Number(price.replace(',', '.'));
         if (!Number.isFinite(n)) throw new Error('Precio inválido. Usá números (ej: 199.90).');
         body.price = n;
@@ -311,7 +308,7 @@ export default function ProductosPage() {
             sortOrder: Number.isFinite(v.sortOrder) ? v.sortOrder : idx,
             active: !!v.active,
           }))
-          .filter((v) => v.label !== ''); // label obligatorio
+          .filter((v) => v.label !== '');
 
         if (!normalized.length) {
           throw new Error('Cada variante debe tener etiqueta (ej: “500 gr”).');
@@ -337,6 +334,25 @@ export default function ProductosPage() {
         throw new Error(formatApiError(res, json, text));
       }
 
+      const created = (json as any).item;
+
+      // Si tiene variantes y está marcado "Mostrar en ofertas",
+      // creamos/actualizamos la oferta automática para este producto.
+      if (created && hasVariants && showInOffers) {
+        try {
+          await fetch('/api/admin/product-variant-offer', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({ productId: created.id }),
+          });
+        } catch (err) {
+          console.error('No se pudo crear la oferta automática para el producto', err);
+        }
+      }
+
       // limpiar
       setName('');
       setDescription('');
@@ -346,8 +362,9 @@ export default function ProductosPage() {
       setSId('');
       setStatus('ACTIVE');
 
-      // 🆕 limpiar variantes
+      // 🆕 limpiar variantes y flag de ofertas
       setHasVariants(false);
+      setShowInOffers(false);
       setVariants([]);
 
       // recargar
@@ -400,7 +417,7 @@ export default function ProductosPage() {
             inputMode="decimal"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            disabled={hasVariants} // 🆕 deshabilitar si hay variantes
+            disabled={hasVariants}
             title={hasVariants ? 'Deshabilitado: usando variantes' : 'Precio del producto'}
           />
           <input
@@ -458,21 +475,35 @@ export default function ProductosPage() {
           onChange={(e) => setDescription(e.target.value)}
         />
 
-        {/* 🆕 Toggle variantes */}
-        <label className="inline-flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={hasVariants}
-            onChange={(e) => {
-              setHasVariants(e.target.checked);
-              if (!e.target.checked) {
-                // al apagar, mantenemos lo ingresado por si lo vuelven a activar
-                // no limpiamos automáticamente variants
-              }
-            }}
-          />
-          <span>Usar variantes de peso (hasta 3)</span>
-        </label>
+        {/* 🆕 Toggle variantes + mostrar en ofertas */}
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={hasVariants}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setHasVariants(checked);
+                if (!checked) {
+                  // al apagar variantes, también apagamos el flag de ofertas
+                  setShowInOffers(false);
+                }
+              }}
+            />
+            <span>Usar variantes de peso (hasta 3)</span>
+          </label>
+
+          {hasVariants && (
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={showInOffers}
+                onChange={(e) => setShowInOffers(e.target.checked)}
+              />
+              <span>Mostrar este producto en la sección de ofertas</span>
+            </label>
+          )}
+        </div>
 
         {/* 🆕 Mini-form variantes */}
         {hasVariants && (
