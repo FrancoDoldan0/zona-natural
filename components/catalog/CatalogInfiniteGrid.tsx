@@ -12,7 +12,7 @@ type CatalogInfiniteGridProps = {
   initialPage: number;
   perPage: number;
   total: number;
-  // query string sin el "page", por ej: "sort=-id&categoryId=3"
+  // query string sin "page" ni "perPage"
   baseQuery: string;
 };
 
@@ -29,6 +29,13 @@ export default function CatalogInfiniteGrid({
   const [hasMore, setHasMore] = useState(initialItems.length < total);
 
   const loaderRef = useRef<HTMLDivElement | null>(null);
+
+  // 🔁 IMPORTANTE: cuando cambian los filtros/búsqueda, reseteamos el grid
+  useEffect(() => {
+    setItems(initialItems);
+    setPage(initialPage);
+    setHasMore(initialItems.length < total);
+  }, [initialItems, initialPage, total, baseQuery]);
 
   const loadMore = useCallback(async () => {
     if (loading || !hasMore) return;
@@ -60,8 +67,8 @@ export default function CatalogInfiniteGrid({
         return;
       }
 
-      // 🔧 IMPORTANTE: usamos SIEMPRE json.total (total real de la DB),
-      // y solo caemos a filteredTotal si por algún motivo total no viene.
+      // usamos SIEMPRE json.total (total real de la DB),
+      // y caemos a filteredTotal solo si no viene total
       const responseTotal =
         typeof json?.total === "number"
           ? json.total
@@ -129,7 +136,7 @@ export default function CatalogInfiniteGrid({
         )}
       </div>
 
-      {/* Sentinel para el IntersectionObserver */}
+      {/* Sentinel para IntersectionObserver */}
       <div ref={loaderRef} className="mt-4 h-8 flex items-center justify-center">
         {loading && (
           <span className="text-sm text-gray-500">Cargando más productos…</span>
