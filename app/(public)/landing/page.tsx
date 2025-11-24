@@ -1,4 +1,4 @@
-// app/(public)/landing/page.tsx
+// app/(public)/landing/page.tsx 
 export const revalidate = 60; // cache incremental
 
 import InfoBar from "@/components/landing/InfoBar";
@@ -120,13 +120,28 @@ async function getCategories(): Promise<Cat[]> {
   return list as Cat[];
 }
 
+/**
+ * Ofertas para la landing:
+ *  - Detecta productos en oferta según el catálogo (precioFinal < precioOriginal o appliedOffer/offer)
+ *  - Además incluye cualquier producto que tenga una fila en /api/public/offers
+ *    (por ejemplo, productos con variantes y oferta automática).
+ */
 async function getOffersRaw(): Promise<Prod[]> {
-  const data = await safeJson<any>(
-    await abs("/api/public/catalogo?perPage=48&sort=-id"),
-    { cache: "no-store", next: { revalidate: 0 } }
-  );
-  const items: Prod[] = ((data as any)?.items ?? []) as Prod[];
-  return items.filter((p) => {
+  const [catalogData, offersData] = await Promise.all([
+    safeJson<any>(
+      await abs("/api/public/catalogo?perPage=48&sort=-id"),
+      { cache: "no-store", next: { revalidate: 0 } }
+    ),
+    safeJson<any>(
+      await abs("/api/public/offers"),
+      { cache: "no-store", next: { revalidate: 0 } }
+    ),
+  ]);
+
+  const items: Prod[] = ((catalogData as any)?.items ?? []) as Prod[];
+
+  // Lógica original: productos con diferencia de precio o con appliedOffer/offer
+  const baseFiltered = items.filter((p) => {
     const priced =
       p.priceFinal != null &&
       p.priceOriginal != null &&
@@ -134,6 +149,29 @@ async function getOffersRaw(): Promise<Prod[]> {
     const flagged = !!(p.appliedOffer || p.offer);
     return priced || flagged;
   });
+
+  // Set de IDs a mostrar
+  const ids = new Set<number>();
+  for (const p of baseFiltered) {
+    if (typeof p.id === "number") ids.add(p.id);
+  }
+
+  // Nuevas ofertas desde /api/public/offers (incluye productos con variantes)
+  const offersList: any[] = Array.isArray(offersData)
+    ? offersData
+    : Array.isArray((offersData as any)?.items)
+    ? (offersData as any).items
+    : [];
+
+  for (const o of offersList) {
+    const pid = o?.product?.id;
+    if (typeof pid === "number") {
+      ids.add(pid);
+    }
+  }
+
+  // Devolvemos solo los productos del catálogo cuyos IDs estén en el set
+  return items.filter((p) => ids.has(p.id));
 }
 
 async function getCatalog(perPage = 48): Promise<Prod[]> {
