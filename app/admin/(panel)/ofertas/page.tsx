@@ -35,7 +35,13 @@ async function fetchList<T>(urls: string[]): Promise<T[]> {
       const ct = r.headers.get('content-type') || '';
       const text = await r.text();
       const data = ct.includes('application/json')
-        ? (() => { try { return JSON.parse(text); } catch { return null; } })()
+        ? (() => {
+            try {
+              return JSON.parse(text);
+            } catch {
+              return null;
+            }
+          })()
         : null;
       if (!r.ok) {
         lastErr = new Error(`${u} → ${r.status} ${r.statusText}`);
@@ -43,7 +49,8 @@ async function fetchList<T>(urls: string[]): Promise<T[]> {
       }
       if (!data) return [];
       if (Array.isArray(data)) return data as T[];
-      if ((data as any).ok && Array.isArray((data as any).items)) return (data as any).items as T[];
+      if ((data as any).ok && Array.isArray((data as any).items))
+        return (data as any).items as T[];
       if (Array.isArray((data as any).data)) return (data as any).data as T[];
       return [];
     } catch (e) {
@@ -59,7 +66,9 @@ function toLocalInput(dt: string | null | undefined) {
   const d = new Date(dt);
   if (isNaN(+d)) return '';
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
 }
 
 // ---- page ------------------------------------------------------------------
@@ -87,8 +96,8 @@ export default function OffersPage() {
     setErr(null);
     try {
       const list = await fetchList<Offer>([
-        '/api/admin/offers?all=1',   // ruta actual
-        '/api/admin/ofertas?all=1',  // fallback por si existiese en ES
+        '/api/admin/offers?all=1', // ruta actual
+        '/api/admin/ofertas?all=1', // fallback por si existiese en ES
       ]);
       setItems(list);
     } catch (e: any) {
@@ -97,13 +106,18 @@ export default function OffersPage() {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   // búsquedas (productos)
   const [prodOpts, setProdOpts] = useState<ProductOpt[]>([]);
   useEffect(() => {
     const t = setTimeout(async () => {
-      if (!prodQ.trim()) { setProdOpts([]); return; }
+      if (!prodQ.trim()) {
+        setProdOpts([]);
+        return;
+      }
       try {
         const found = await fetchList<ProductOpt>([
           '/api/admin/search/products?q=' + encodeURIComponent(prodQ),
@@ -122,7 +136,10 @@ export default function OffersPage() {
   const [catOpts, setCatOpts] = useState<CategoryOpt[]>([]);
   useEffect(() => {
     const t = setTimeout(async () => {
-      if (!catQ.trim()) { setCatOpts([]); return; }
+      if (!catQ.trim()) {
+        setCatOpts([]);
+        return;
+      }
       try {
         const found = await fetchList<CategoryOpt>([
           '/api/admin/search/categories?q=' + encodeURIComponent(catQ),
@@ -199,27 +216,31 @@ export default function OffersPage() {
       target === 'general'
         ? 'General'
         : target === 'product'
-          ? prodSel
-            ? `Producto: ${prodSel.name}`
-            : 'Producto (sin seleccionar)'
-          : target === 'category'
-            ? catSel
-              ? `Categoría: ${catSel.name}`
-              : 'Categoría (sin seleccionar)'
-            : '';
+        ? prodSel
+          ? `Producto: ${prodSel.name}`
+          : 'Producto (sin seleccionar)'
+        : target === 'category'
+        ? catSel
+          ? `Categoría: ${catSel.name}`
+          : 'Categoría (sin seleccionar)'
+        : '';
     return `${val} · ${tgt}`;
   }, [dtype, dval, target, prodSel, catSel]);
 
   const canSubmit =
     title.trim().length > 0 &&
     Number.isFinite(Number(dval)) &&
-    (target === 'general' || (target === 'product' && !!prodSel) || (target === 'category' && !!catSel));
+    (target === 'general' ||
+      (target === 'product' && !!prodSel) ||
+      (target === 'category' && !!catSel));
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Ofertas</h1>
-        <button onClick={load} className="border rounded px-3 py-2">Refrescar</button>
+        <button onClick={load} className="border rounded px-3 py-2">
+          Refrescar
+        </button>
       </div>
 
       {err && <div className="text-sm text-red-600">{err}</div>}
@@ -231,7 +252,11 @@ export default function OffersPage() {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
-        <select className="border rounded p-2" value={dtype} onChange={(e) => setDtype(e.target.value as any)}>
+        <select
+          className="border rounded p-2"
+          value={dtype}
+          onChange={(e) => setDtype(e.target.value as any)}
+        >
           <option value="PERCENT">% Porcentaje</option>
           <option value="AMOUNT">$ Monto</option>
         </select>
@@ -275,7 +300,11 @@ export default function OffersPage() {
                 onChange={(e) => setProdQ(e.target.value)}
               />
               {prodSel && (
-                <button type="button" className="border rounded px-2" onClick={() => setProdSel(null)}>
+                <button
+                  type="button"
+                  className="border rounded px-2"
+                  onClick={() => setProdSel(null)}
+                >
                   Quitar
                 </button>
               )}
@@ -296,7 +325,11 @@ export default function OffersPage() {
                 {!prodOpts.length && <li className="opacity-60">Sin resultados</li>}
               </ul>
             )}
-            {prodSel && <div className="opacity-80">Seleccionado: <b>{prodSel.name}</b></div>}
+            {prodSel && (
+              <div className="opacity-80">
+                Seleccionado: <b>{prodSel.name}</b>
+              </div>
+            )}
           </div>
         )}
 
@@ -310,7 +343,11 @@ export default function OffersPage() {
                 onChange={(e) => setCatQ(e.target.value)}
               />
               {catSel && (
-                <button type="button" className="border rounded px-2" onClick={() => setCatSel(null)}>
+                <button
+                  type="button"
+                  className="border rounded px-2"
+                  onClick={() => setCatSel(null)}
+                >
                   Quitar
                 </button>
               )}
@@ -331,22 +368,40 @@ export default function OffersPage() {
                 {!catOpts.length && <li className="opacity-60">Sin resultados</li>}
               </ul>
             )}
-            {catSel && <div className="opacity-80">Seleccionada: <b>{catSel.name}</b></div>}
+            {catSel && (
+              <div className="opacity-80">
+                Seleccionada: <b>{catSel.name}</b>
+              </div>
+            )}
           </div>
         )}
 
         <div className="md:col-span-3">
           <label className="block text-sm opacity-80">Inicio (opcional)</label>
-          <input className="border rounded p-2 w-full" type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+          <input
+            className="border rounded p-2 w-full"
+            type="datetime-local"
+            value={startAt}
+            onChange={(e) => setStartAt(e.target.value)}
+          />
         </div>
         <div className="md:col-span-3">
           <label className="block text-sm opacity-80">Fin (opcional)</label>
-          <input className="border rounded p-2 w-full" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+          <input
+            className="border rounded p-2 w-full"
+            type="datetime-local"
+            value={endAt}
+            onChange={(e) => setEndAt(e.target.value)}
+          />
         </div>
 
         <div className="md:col-span-6 text-sm opacity-80">Vista previa: {preview}</div>
 
-        <button className="border rounded px-4 py-2 md:col-span-6 w-fit disabled:opacity-50" type="submit" disabled={!canSubmit}>
+        <button
+          className="border rounded px-4 py-2 md:col-span-6 w-fit disabled:opacity-50"
+          type="submit"
+          disabled={!canSubmit}
+        >
           Crear
         </button>
       </form>
@@ -361,19 +416,23 @@ export default function OffersPage() {
               <th className="p-2 border">Valor</th>
               <th className="p-2 border">Destino</th>
               <th className="p-2 border">Periodo</th>
-              <th className="p-2 border w-28">Acciones</th>
+              <th className="p-2 border w-36">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {items.map((o) => {
               const val =
-                o.discountType === 'PERCENT' ? `${o.discountVal}%` : `$ ${o.discountVal.toFixed(2)}`;
+                o.discountType === 'PERCENT'
+                  ? `${o.discountVal}%`
+                  : `$ ${o.discountVal.toFixed(2)}`;
               const tgt = o.product
                 ? `Producto: ${o.product.name}`
                 : o.category
-                  ? `Categoría: ${o.category.name}`
-                  : 'General';
-              const per = [toLocalInput(o.startAt) || '—', toLocalInput(o.endAt) || '—'].join(' → ');
+                ? `Categoría: ${o.category.name}`
+                : 'General';
+              const per = [toLocalInput(o.startAt) || '—', toLocalInput(o.endAt) || '—'].join(
+                ' → ',
+              );
               return (
                 <tr key={o.id}>
                   <td className="p-2 border">{o.id}</td>
@@ -382,7 +441,13 @@ export default function OffersPage() {
                   <td className="p-2 border">{val}</td>
                   <td className="p-2 border">{tgt}</td>
                   <td className="p-2 border">{per}</td>
-                  <td className="p-2 border">
+                  <td className="p-2 border space-x-2">
+                    <Link
+                      href={`/admin/ofertas/${o.id}`}
+                      className="text-blue-600 underline"
+                    >
+                      Editar
+                    </Link>
                     <button className="text-red-600" onClick={() => onDelete(o.id)}>
                       Eliminar
                     </button>
