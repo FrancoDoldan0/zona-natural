@@ -14,6 +14,7 @@ import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
+import { normalizeProduct } from "@/lib/product";
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -27,7 +28,8 @@ async function abs(path: string) {
   try {
     const h = await headers();
     const proto = h.get("x-forwarded-proto") ?? "https";
-    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
+    const host =
+      h.get("x-forwarded-host") ?? h.get("host") ?? "";
     if (host) return `${proto}://${host}${path}`;
   } catch {
     // sin headers(): devolvemos ruta relativa (Next la resuelve en runtime)
@@ -36,9 +38,15 @@ async function abs(path: string) {
   return path;
 }
 
-async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
+async function safeJson<T>(
+  url: string,
+  init?: RequestInit
+): Promise<T | null> {
   try {
-    const res = await fetch(url, { next: { revalidate: 60 }, ...init });
+    const res = await fetch(url, {
+      next: { revalidate: 60 },
+      ...init,
+    });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
@@ -119,7 +127,9 @@ async function getBanners(): Promise<BannerItem[]> {
 }
 
 async function getCategories(): Promise<Cat[]> {
-  const data = await safeJson<any>(await abs("/api/public/categories"));
+  const data = await safeJson<any>(
+    await abs("/api/public/categories")
+  );
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return list as Cat[];
 }
@@ -146,106 +156,84 @@ async function getCatalog(perPage = 48): Promise<Prod[]> {
 
 /**
  * Ofertas para la landing:
- *  - Siempre incluye productos vinculados a filas en /api/public/offers
- *    (usando datos completos del catálogo).
- *  - Además agrega productos donde (priceFinal ?? price) < priceOriginal
- *    o appliedOffer/offer, sin duplicar IDs.
+ *  - Usa la MISMA lógica que la página /ofertas:
+ *    primero consulta /api/public/catalogo?offers=1 / hasDiscount / onSale,
+ *    luego normaliza y se queda solo con los productos donde
+ *    price < originalPrice.
+ *  - Devuelve los ítems en el formato "raw" del catálogo,
+ *    que es lo que espera OffersCarousel.
  */
 async function getOffersRaw(): Promise<Prod[]> {
-  const [offersData, catalog] = await Promise.all([
-    safeJson<any>(await abs("/api/public/offers"), {
-      cache: "no-store",
-      next: { revalidate: 0 },
-    }),
-    getCatalog(120),
-  ]);
+  type Raw = Record<string, any>;
+  let raw: Raw[] = [];
 
-  const offersList: any[] = Array.isArray(offersData)
-    ? offersData
-    : Array.isArray((offersData as any)?.items)
-    ? (offersData as any).items
-    : [];
-
-  const catalogById = new Map<number, Prod>();
-  for (const p of catalog) {
-    if (typeof p.id === "number") {
-      catalogById.set(p.id, p);
+  // 1) Mismo fetch que en /ofertas
+  const guesses = ["offers=1", "hasDiscount=1", "onSale=1"];
+  for (const qp of guesses) {
+    const data = await safeJson<any>(
+      await abs(
+        `/api/public/catalogo?perPage=200&status=all&${qp}`
+      ),
+      { cache: "no-store", next: { revalidate: 0 } }
+    );
+    const items: Raw[] =
+      (data?.items as Raw[]) ??
+      (data?.data as Raw[]) ??
+      (Array.isArray(data) ? (data as Raw[]) : []);
+    if (Array.isArray(items) && items.length) {
+      raw = items;
+      break;
     }
   }
 
-  const result: Prod[] = [];
-  const ids = new Set<number>();
-
-  // 1) Productos que vienen desde la tabla Offer
-  for (const o of offersList) {
-    const pidRaw =
-      o?.productId ??
-      o?.product_id ??
-      o?.product?.id ??
-      o?.productoId ??
-      o?.producto_id;
-
-    const pid = typeof pidRaw === "number" ? pidRaw : Number(pidRaw);
-    if (!Number.isFinite(pid)) continue;
-
-    const fromCatalog = catalogById.get(pid);
-    if (!fromCatalog) continue; // sin producto en catálogo no mostramos
-
-    const fromOfferProduct = (o.product || o.producto || {}) as
-      | Partial<Prod>
-      | undefined;
-
-    const merged: Prod = {
-      ...fromCatalog,
-      ...(fromOfferProduct ?? {}),
-      id: fromCatalog.id ?? pid,
-      appliedOffer:
-        fromCatalog.appliedOffer ??
-        (fromCatalog as any).offer ??
-        o,
-      offer: (fromCatalog as any).offer ?? o,
-    };
-
-    if (!merged.name) {
-      merged.name = String(
-        (fromOfferProduct as any)?.name ?? o.title ?? ""
-      );
-    }
-
-    if (!ids.has(pid)) {
-      ids.add(pid);
-      result.push(merged);
-    }
+  // Fallback: por si el backend no soporta esos flags
+  if (!raw.length) {
+    const data = await safeJson<any>(
+      await abs(
+        `/api/public/catalogo?perPage=200&status=all&sort=-id`
+      ),
+      { cache: "no-store", next: { revalidate: 0 } }
+    );
+    raw =
+      (data?.items as Raw[]) ??
+      (data?.data as Raw[]) ??
+      (Array.isArray(data) ? (data as Raw[]) : []);
   }
 
-  // 2) Productos con precio en oferta detectados por catálogo
-  for (const p of catalog) {
-    const id = typeof p.id === "number" ? p.id : Number(p.id);
-    if (!Number.isFinite(id)) continue;
-    if (ids.has(id)) continue; // ya vino por tabla Offer
+  if (!raw.length) return [];
 
-    const finalPrice =
-      p.priceFinal != null
-        ? Number(p.priceFinal)
-        : p.price != null
-        ? Number(p.price)
+  // 2) Igual que /ofertas: normalizamos y filtramos por descuento real
+  const normalized = raw.map((p) => normalizeProduct(p));
+  const keepIds = new Set<number>();
+
+  for (const p of normalized) {
+    const final =
+      typeof p.price === "number" ? p.price : null;
+    const orig =
+      typeof p.originalPrice === "number"
+        ? p.originalPrice
         : null;
-    const origPrice =
-      p.priceOriginal != null ? Number(p.priceOriginal) : null;
-
-    const priced =
-      finalPrice != null &&
-      origPrice != null &&
-      finalPrice < origPrice;
-    const flagged = !!(p.appliedOffer || p.offer);
-
-    if (priced || flagged) {
-      ids.add(id);
-      result.push(p);
+    if (final != null && orig != null && final < orig) {
+      const id =
+        typeof p.id === "number" ? p.id : Number(p.id);
+      if (Number.isFinite(id)) keepIds.add(id);
     }
   }
 
-  return result;
+  if (!keepIds.size) {
+    // Si por alguna razón no detectamos descuentos,
+    // preferimos no mostrar nada antes que mostrar cosas sin oferta.
+    return [];
+  }
+
+  // 3) Devolvemos SOLO los raw cuyo id coincide con los filtrados
+  const filteredRaw = raw.filter((p) => {
+    const id =
+      typeof p.id === "number" ? p.id : Number(p.id);
+    return keepIds.has(id);
+  });
+
+  return filteredRaw as Prod[];
 }
 
 /* ───────── página ───────── */
@@ -281,7 +269,8 @@ export default async function LandingPage() {
   const branches: Branch[] = [
     {
       name: "Las Piedras",
-      address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
+      address:
+        "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
       mapsUrl:
         "https://www.google.com/maps/search/?api=1&query=" +
         encode(
@@ -309,7 +298,8 @@ export default async function LandingPage() {
     },
     {
       name: "La Paz",
-      address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
+      address:
+        "César Mayo Gutiérrez, 15900 La Paz, Canelones",
       mapsUrl:
         "https://www.google.com/maps/search/?api=1&query=" +
         encode(
