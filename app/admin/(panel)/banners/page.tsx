@@ -2,6 +2,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type React from 'react';
+import Link from 'next/link';
 
 type BannerStatus = 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED';
 
@@ -227,7 +228,12 @@ export default function BannersPage() {
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Banners</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Banners</h1>
+        <Link href="/admin" className="border rounded px-3 py-2 hover:bg-gray-50">
+          ← Volver al panel
+        </Link>
+      </div>
 
       {/* Form estilo productos: dropzone + campos */}
       <form onSubmit={onCreate} className="border rounded p-4 grid gap-3 md:grid-cols-12">
@@ -348,7 +354,9 @@ export default function BannersPage() {
                 <td className="p-2 border">{b.sortOrder}</td>
                 <td className="p-2 border break-all">{b.link || '-'}</td>
                 <td className="p-2 border">
-                  <span className={'px-2 py-1 rounded text-xs ' + statusToBadge(b.status)}>{b.status}</span>
+                  <span className={'px-2 py-1 rounded text-xs ' + statusToBadge(b.status)}>
+                    {b.status}
+                  </span>
                 </td>
                 <td className="p-2 border">
                   <div className="flex gap-2">
