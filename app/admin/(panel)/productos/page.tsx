@@ -399,7 +399,16 @@ export default function ProductosPage() {
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Productos</h1>
+      {/* 🆕 Título + volver al panel */}
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Productos</h1>
+        <Link
+          href="/admin"
+          className="inline-flex items-center gap-2 rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          ← Volver al panel
+        </Link>
+      </div>
 
       {/* Crear */}
       <form onSubmit={onCreate} className="border rounded p-4 space-y-3">
