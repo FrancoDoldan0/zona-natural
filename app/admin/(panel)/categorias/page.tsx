@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import Link from 'next/link';
 
 type Category = {
   id: number;
@@ -210,7 +211,12 @@ export default function CategoriasPage() {
 
   return (
     <main className="max-w-5xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Categorías</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Categorías</h1>
+        <Link href="/admin" className="border rounded px-3 py-2 hover:bg-gray-50">
+          ← Volver al panel
+        </Link>
+      </div>
 
       {/* Crear con drag&drop de imagen (como banners/productos) */}
       <form onSubmit={onCreate} className="border rounded p-4 space-y-4">
