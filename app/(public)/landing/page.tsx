@@ -122,58 +122,87 @@ async function getCategories(): Promise<Cat[]> {
 
 /**
  * Ofertas para la landing:
- *  - Si hay filas en /api/public/offers, usamos SOLO esos productos (igual que /ofertas).
- *  - Si NO hay ninguna oferta en la tabla, caemos al modo "precioFinal < precioOriginal"
- *    o appliedOffer/offer sobre el catálogo.
+ *  1) Intentamos usar /api/public/offers (igual que la página /ofertas).
+ *     De ahí tomamos el producto asociado a cada oferta.
+ *  2) Si no hay ningún producto con oferta, caemos al modo "viejo":
+ *     productos del catálogo con priceFinal < priceOriginal o appliedOffer/offer.
  */
 async function getOffersRaw(): Promise<Prod[]> {
-  const [catalogData, offersData] = await Promise.all([
-    safeJson<any>(
-      await abs("/api/public/catalogo?perPage=48&sort=-id"),
-      { cache: "no-store", next: { revalidate: 0 } }
-    ),
-    safeJson<any>(
-      await abs("/api/public/offers"),
-      { cache: "no-store", next: { revalidate: 0 } }
-    ),
-  ]);
+  // 1) Ofertas públicas
+  const offersData = await safeJson<any>(await abs("/api/public/offers"), {
+    cache: "no-store",
+    next: { revalidate: 0 },
+  });
 
-  const items: Prod[] = ((catalogData as any)?.items ?? []) as Prod[];
-
-  // Lista de ofertas públicas (tabla Offer)
   const offersList: any[] = Array.isArray(offersData)
     ? offersData
     : Array.isArray((offersData as any)?.items)
     ? (offersData as any).items
     : [];
 
-  const ids = new Set<number>();
+  const byId = new Map<number, Prod>();
 
-  // 1) IDs de productos que tienen una fila en Offer
   for (const o of offersList) {
-    const pid = o?.product?.id;
-    if (typeof pid === "number") {
-      ids.add(pid);
-    }
+    const p = o?.product;
+    if (!p || typeof p.id !== "number") continue;
+
+    const id = Number(p.id);
+
+    // Evitamos duplicados por producto (nos quedamos con la primera oferta)
+    if (byId.has(id)) continue;
+
+    const price = p.priceFinal ?? p.price ?? null;
+    const priceOriginal =
+      p.priceOriginal ?? (p.priceFinal != null ? p.priceFinal : p.price) ?? null;
+    const priceFinal = p.priceFinal ?? p.price ?? null;
+
+    const prod: Prod = {
+      id,
+      name: String(p.name ?? ""),
+      slug: String(p.slug ?? ""),
+      price,
+      priceOriginal,
+      priceFinal,
+      images: Array.isArray(p.images) ? p.images : [],
+      imageUrl:
+        p.imageUrl ??
+        p.coverUrl ??
+        (p.cover && typeof p.cover.url === "string" ? p.cover.url : null),
+      cover: p.cover ?? null,
+      coverUrl: p.coverUrl ?? null,
+      image: p.image ?? null,
+      status: p.status,
+      appliedOffer: p.appliedOffer ?? o,
+      offer: o,
+    };
+
+    byId.set(id, prod);
   }
 
-  // 2) Si NO hay ninguna oferta en la tabla, usamos el modo viejo:
-  //    detectar productos en oferta por diferencia de precios o appliedOffer/offer.
-  if (!ids.size) {
-    for (const p of items) {
-      const priced =
-        p.priceFinal != null &&
-        p.priceOriginal != null &&
-        Number(p.priceFinal) < Number(p.priceOriginal);
-      const flagged = !!(p.appliedOffer || p.offer);
-      if (priced || flagged) {
-        ids.add(p.id);
-      }
-    }
+  const fromOffers = Array.from(byId.values());
+
+  if (fromOffers.length > 0) {
+    return fromOffers;
   }
 
-  // Devolvemos solo los productos del catálogo cuyos IDs estén en el set
-  return items.filter((p) => ids.has(p.id));
+  // 2) Fallback: detectar ofertas desde el catálogo (modo viejo)
+  const catalogData = await safeJson<any>(
+    await abs(
+      "/api/public/catalogo?status=all&perPage=120&sort=-id&_ts=" + Date.now()
+    ),
+    { cache: "no-store", next: { revalidate: 0 } }
+  );
+
+  const items: Prod[] = ((catalogData as any)?.items ?? []) as Prod[];
+
+  return items.filter((p) => {
+    const priced =
+      p.priceFinal != null &&
+      p.priceOriginal != null &&
+      Number(p.priceFinal) < Number(p.priceOriginal);
+    const flagged = !!(p.appliedOffer || p.offer);
+    return priced || flagged;
+  });
 }
 
 async function getCatalog(perPage = 48): Promise<Prod[]> {
