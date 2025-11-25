@@ -237,7 +237,16 @@ export default function OffersPage() {
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Ofertas</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold">Ofertas</h1>
+          {/* 🆕 Volver al panel principal */}
+          <Link
+            href="/admin"
+            className="inline-flex items-center gap-1 rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            ← Volver al panel
+          </Link>
+        </div>
         <button onClick={load} className="border rounded px-3 py-2">
           Refrescar
         </button>
