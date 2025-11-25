@@ -54,7 +54,8 @@ function hash(s: string) {
 }
 function seededRand(seed: string) {
   let x = hash(seed) || 1;
-  return () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  return () =>
+    (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
 }
 function shuffleSeed<T>(arr: T[], seed: string) {
   const rand = seededRand(seed);
@@ -112,7 +113,8 @@ async function getBanners(): Promise<BannerItem[]> {
       linkUrl: b.linkUrl ?? b.href ?? null,
     }))
     .filter(
-      (x) => !!(typeof x.image === "string" || (x.image as any)?.url),
+      (x) =>
+        !!(typeof x.image === "string" || (x.image as any)?.url)
     );
 }
 
@@ -127,9 +129,9 @@ async function getCatalog(perPage = 48): Promise<Prod[]> {
   for (const status of statuses) {
     const data = await safeJson<any>(
       await abs(
-        `/api/public/catalogo?status=${status}&perPage=${perPage}&sort=-id&_ts=${Date.now()}`,
+        `/api/public/catalogo?status=${status}&perPage=${perPage}&sort=-id&_ts=${Date.now()}`
       ),
-      { cache: "no-store", next: { revalidate: 0 } },
+      { cache: "no-store", next: { revalidate: 0 } }
     );
     const items: any[] =
       (data as any)?.items ??
@@ -144,10 +146,10 @@ async function getCatalog(perPage = 48): Promise<Prod[]> {
 
 /**
  * Ofertas para la landing:
- *  - Siempre incluye productos que tengan fila en /api/public/offers
- *    (con datos completos desde el catálogo).
- *  - Además agrega productos del catálogo con priceFinal < priceOriginal
- *    o appliedOffer/offer, sin duplicar.
+ *  - Siempre incluye productos vinculados a filas en /api/public/offers
+ *    (usando datos completos del catálogo).
+ *  - Además agrega productos donde priceFinal < priceOriginal
+ *    o appliedOffer/offer, sin duplicar IDs.
  */
 async function getOffersRaw(): Promise<Prod[]> {
   const [offersData, catalog] = await Promise.all([
@@ -182,11 +184,12 @@ async function getOffersRaw(): Promise<Prod[]> {
       o?.product?.id ??
       o?.productoId ??
       o?.producto_id;
+
     const pid = typeof pidRaw === "number" ? pidRaw : Number(pidRaw);
     if (!Number.isFinite(pid)) continue;
 
     const fromCatalog = catalogById.get(pid);
-    if (!fromCatalog) continue;
+    if (!fromCatalog) continue; // sin producto en catálogo no mostramos
 
     const fromOfferProduct = (o.product || o.producto || {}) as
       | Partial<Prod>
@@ -197,13 +200,15 @@ async function getOffersRaw(): Promise<Prod[]> {
       ...(fromOfferProduct ?? {}),
       id: fromCatalog.id ?? pid,
       appliedOffer:
-        fromCatalog.appliedOffer ?? (fromCatalog as any).offer ?? o,
+        fromCatalog.appliedOffer ??
+        (fromCatalog as any).offer ??
+        o,
       offer: (fromCatalog as any).offer ?? o,
     };
 
     if (!merged.name) {
       merged.name = String(
-        (fromOfferProduct as any)?.name ?? o.title ?? "",
+        (fromOfferProduct as any)?.name ?? o.title ?? ""
       );
     }
 
@@ -213,11 +218,11 @@ async function getOffersRaw(): Promise<Prod[]> {
     }
   }
 
-  // 2) Productos con precioFinal < precioOriginal o appliedOffer/offer
+  // 2) Productos con precio en oferta detectados por catálogo
   for (const p of catalog) {
     const id = typeof p.id === "number" ? p.id : Number(p.id);
     if (!Number.isFinite(id)) continue;
-    if (ids.has(id)) continue;
+    if (ids.has(id)) continue; // ya vino por tabla Offer
 
     const priced =
       p.priceFinal != null &&
@@ -251,10 +256,10 @@ export default async function LandingPage() {
 
   // ⬇️ Aumentamos el pool de ofertas para que el carrusel rote
   const OFFERS_COUNT = 24; // antes 3
-  const offersDaily = shuffleSeed(offersAll, `${seed}:offers`).slice(
-    0,
-    OFFERS_COUNT,
-  );
+  const offersDaily = shuffleSeed(
+    offersAll,
+    `${seed}:offers`
+  ).slice(0, OFFERS_COUNT);
 
   // ───────── Sucursales (tabs) ─────────
   const hours: [string, string][] = [
@@ -270,10 +275,14 @@ export default async function LandingPage() {
       address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
       mapsUrl:
         "https://www.google.com/maps/search/?api=1&query=" +
-        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
+        encode(
+          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
+        ),
       embedUrl:
         "https://www.google.com/maps?q=" +
-        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
+        encode(
+          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
+        ) +
         "&output=embed",
       hours,
     },
@@ -292,12 +301,16 @@ export default async function LandingPage() {
     {
       name: "La Paz",
       address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
-      mapsUrl =
+      mapsUrl:
         "https://www.google.com/maps/search/?api=1&query=" +
-        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
+        encode(
+          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
+        ),
       embedUrl:
         "https://www.google.com/maps?q=" +
-        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
+        encode(
+          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
+        ) +
         "&output=embed",
       hours,
     },
@@ -331,7 +344,11 @@ export default async function LandingPage() {
 
       {/* Ofertas (rotación diaria) */}
       {/* ⬇️ Mostrar 3 a la vez y rotar sobre OFFERS_COUNT */}
-      <OffersCarousel items={offersDaily} visible={3} rotationMs={6000} />
+      <OffersCarousel
+        items={offersDaily}
+        visible={3}
+        rotationMs={6000}
+      />
 
       {/* Más vendidos (simulado por clics + heurística) */}
       <BestSellersGrid items={catalog} />
@@ -346,7 +363,7 @@ export default async function LandingPage() {
       {/* 🔧 Solo Las Piedras y La Paz */}
       <MapHours
         locations={branches.filter(
-          (b) => b.name === "Las Piedras" || b.name === "La Paz",
+          (b) => b.name === "Las Piedras" || b.name === "La Paz"
         )}
       />
 
