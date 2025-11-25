@@ -122,9 +122,9 @@ async function getCategories(): Promise<Cat[]> {
 
 /**
  * Ofertas para la landing:
- *  - Detecta productos en oferta según el catálogo (precioFinal < precioOriginal o appliedOffer/offer)
- *  - Además incluye cualquier producto que tenga una fila en /api/public/offers
- *    (por ejemplo, productos con variantes y oferta automática).
+ *  - Si hay filas en /api/public/offers, usamos SOLO esos productos (igual que /ofertas).
+ *  - Si NO hay ninguna oferta en la tabla, caemos al modo "precioFinal < precioOriginal"
+ *    o appliedOffer/offer sobre el catálogo.
  */
 async function getOffersRaw(): Promise<Prod[]> {
   const [catalogData, offersData] = await Promise.all([
@@ -140,33 +140,35 @@ async function getOffersRaw(): Promise<Prod[]> {
 
   const items: Prod[] = ((catalogData as any)?.items ?? []) as Prod[];
 
-  // Lógica original: productos con diferencia de precio o con appliedOffer/offer
-  const baseFiltered = items.filter((p) => {
-    const priced =
-      p.priceFinal != null &&
-      p.priceOriginal != null &&
-      Number(p.priceFinal) < Number(p.priceOriginal);
-    const flagged = !!(p.appliedOffer || p.offer);
-    return priced || flagged;
-  });
-
-  // Set de IDs a mostrar
-  const ids = new Set<number>();
-  for (const p of baseFiltered) {
-    if (typeof p.id === "number") ids.add(p.id);
-  }
-
-  // Nuevas ofertas desde /api/public/offers (incluye productos con variantes)
+  // Lista de ofertas públicas (tabla Offer)
   const offersList: any[] = Array.isArray(offersData)
     ? offersData
     : Array.isArray((offersData as any)?.items)
     ? (offersData as any).items
     : [];
 
+  const ids = new Set<number>();
+
+  // 1) IDs de productos que tienen una fila en Offer
   for (const o of offersList) {
     const pid = o?.product?.id;
     if (typeof pid === "number") {
       ids.add(pid);
+    }
+  }
+
+  // 2) Si NO hay ninguna oferta en la tabla, usamos el modo viejo:
+  //    detectar productos en oferta por diferencia de precios o appliedOffer/offer.
+  if (!ids.size) {
+    for (const p of items) {
+      const priced =
+        p.priceFinal != null &&
+        p.priceOriginal != null &&
+        Number(p.priceFinal) < Number(p.priceOriginal);
+      const flagged = !!(p.appliedOffer || p.offer);
+      if (priced || flagged) {
+        ids.add(p.id);
+      }
     }
   }
 
