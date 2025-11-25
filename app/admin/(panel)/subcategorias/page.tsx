@@ -1,5 +1,7 @@
+// app/admin/(panel)/subcategorias/page.tsx
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 type Category = { id: number; name: string; slug: string };
 type Subcategory = { id: number; name: string; slug: string; categoryId: number };
@@ -157,7 +159,12 @@ export default function SubcategoriasPage() {
 
   return (
     <main className="max-w-5xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Subcategorías</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-semibold">Subcategorías</h1>
+        <Link href="/admin" className="border rounded px-3 py-2 hover:bg-gray-50">
+          ← Volver al panel
+        </Link>
+      </div>
 
       <form onSubmit={onCreate} className="border rounded p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
