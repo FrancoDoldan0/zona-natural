@@ -148,7 +148,7 @@ async function getCatalog(perPage = 48): Promise<Prod[]> {
  * Ofertas para la landing:
  *  - Siempre incluye productos vinculados a filas en /api/public/offers
  *    (usando datos completos del catálogo).
- *  - Además agrega productos donde priceFinal < priceOriginal
+ *  - Además agrega productos donde (priceFinal ?? price) < priceOriginal
  *    o appliedOffer/offer, sin duplicar IDs.
  */
 async function getOffersRaw(): Promise<Prod[]> {
@@ -224,10 +224,19 @@ async function getOffersRaw(): Promise<Prod[]> {
     if (!Number.isFinite(id)) continue;
     if (ids.has(id)) continue; // ya vino por tabla Offer
 
+    const finalPrice =
+      p.priceFinal != null
+        ? Number(p.priceFinal)
+        : p.price != null
+        ? Number(p.price)
+        : null;
+    const origPrice =
+      p.priceOriginal != null ? Number(p.priceOriginal) : null;
+
     const priced =
-      p.priceFinal != null &&
-      p.priceOriginal != null &&
-      Number(p.priceFinal) < Number(p.priceOriginal);
+      finalPrice != null &&
+      origPrice != null &&
+      finalPrice < origPrice;
     const flagged = !!(p.appliedOffer || p.offer);
 
     if (priced || flagged) {
