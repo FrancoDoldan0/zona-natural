@@ -7,11 +7,9 @@ import { audit } from '@/lib/audit';
 
 const prisma = createPrisma();
 
-type RouteContext = { params: { id: string } };
+// ───────────────── helpers ─────────────────
 
-// --- helpers ---------------------------------------------------------------
-
-async function readId(ctx: RouteContext): Promise<number | null> {
+async function readId(ctx: any): Promise<number | null> {
   const raw = ctx?.params?.id;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -23,7 +21,7 @@ function strOrNull(v: unknown) {
   return t === '' ? null : t;
 }
 
-// ⚠️ IMPORTANTE: no transformar null / '' en 0
+// ⚠️ No convertir null / '' en 0
 function numOrNull(v: unknown) {
   if (v === null || v === undefined) return null;
   if (typeof v === 'string' && v.trim() === '') return null;
@@ -44,9 +42,9 @@ function parseDiscountType(v: unknown): DiscountType | null {
   return s === 'PERCENT' || s === 'AMOUNT' ? (s as DiscountType) : null;
 }
 
-// --- GET -------------------------------------------------------------------
+// ───────────────── GET ─────────────────
 
-export async function GET(_req: Request, ctx: RouteContext) {
+export async function GET(_req: Request, ctx: any) {
   const id = await readId(ctx);
   if (id == null) {
     return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
@@ -66,9 +64,9 @@ export async function GET(_req: Request, ctx: RouteContext) {
   }
 }
 
-// --- PUT (update) ----------------------------------------------------------
+// ───────────────── PUT (update) ─────────────────
 
-export async function PUT(req: Request, ctx: RouteContext) {
+export async function PUT(req: Request, ctx: any) {
   const id = await readId(ctx);
   if (id == null) {
     return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
@@ -76,7 +74,6 @@ export async function PUT(req: Request, ctx: RouteContext) {
 
   try {
     const body = (await req.json().catch(() => ({}))) as any;
-
     const data: any = {};
 
     const title = strOrNull(body.title);
@@ -102,7 +99,7 @@ export async function PUT(req: Request, ctx: RouteContext) {
       data.endAt = dateOrNull(body.endAt);
     }
 
-    // Destino (producto, categoría o tag). Permitimos limpiar a null.
+    // Destino (producto / categoría / tag). Permitimos limpiar a null.
     if ('productId' in body || 'categoryId' in body || 'tagId' in body) {
       const productId = numOrNull(body.productId);
       const categoryId = numOrNull(body.categoryId);
@@ -123,11 +120,10 @@ export async function PUT(req: Request, ctx: RouteContext) {
 
     const item = await prisma.offer.update({ where: { id }, data });
 
-    // No dejamos que un error de audit rompa el update
     try {
       await audit(req, 'UPDATE', 'Offer', String(id), { data });
     } catch {
-      // ignore
+      // no rompemos por error de audit
     }
 
     return NextResponse.json({ ok: true, item });
@@ -139,9 +135,9 @@ export async function PUT(req: Request, ctx: RouteContext) {
   }
 }
 
-// --- DELETE ----------------------------------------------------------------
+// ───────────────── DELETE ─────────────────
 
-export async function DELETE(req: Request, ctx: RouteContext) {
+export async function DELETE(req: Request, ctx: any) {
   const id = await readId(ctx);
   if (id == null) {
     return NextResponse.json({ ok: false, error: 'invalid_id' }, { status: 400 });
@@ -153,7 +149,7 @@ export async function DELETE(req: Request, ctx: RouteContext) {
     try {
       await audit(req, 'DELETE', 'Offer', String(id));
     } catch {
-      // ignore
+      // ignoramos error de audit
     }
 
     return NextResponse.json({ ok: true });
