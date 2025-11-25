@@ -1,4 +1,4 @@
-// app/(public)/landing/page.tsx 
+// app/(public)/landing/page.tsx
 export const revalidate = 60; // cache incremental
 
 import InfoBar from "@/components/landing/InfoBar";
@@ -54,7 +54,8 @@ function hash(s: string) {
 }
 function seededRand(seed: string) {
   let x = hash(seed) || 1;
-  return () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  return () =>
+    (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
 }
 function shuffleSeed<T>(arr: T[], seed: string) {
   const rand = seededRand(seed);
@@ -111,98 +112,16 @@ async function getBanners(): Promise<BannerItem[]> {
           : ({ url: b.url ?? "" } as any),
       linkUrl: b.linkUrl ?? b.href ?? null,
     }))
-    .filter((x) => !!(typeof x.image === "string" || (x.image as any)?.url));
+    .filter(
+      (x) =>
+        !!(typeof x.image === "string" || (x.image as any)?.url)
+    );
 }
 
 async function getCategories(): Promise<Cat[]> {
   const data = await safeJson<any>(await abs("/api/public/categories"));
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return list as Cat[];
-}
-
-/**
- * Ofertas para la landing:
- *  1) Intentamos usar /api/public/offers (igual que la página /ofertas).
- *     De ahí tomamos el producto asociado a cada oferta.
- *  2) Si no hay ningún producto con oferta, caemos al modo "viejo":
- *     productos del catálogo con priceFinal < priceOriginal o appliedOffer/offer.
- */
-async function getOffersRaw(): Promise<Prod[]> {
-  // 1) Ofertas públicas
-  const offersData = await safeJson<any>(await abs("/api/public/offers"), {
-    cache: "no-store",
-    next: { revalidate: 0 },
-  });
-
-  const offersList: any[] = Array.isArray(offersData)
-    ? offersData
-    : Array.isArray((offersData as any)?.items)
-    ? (offersData as any).items
-    : [];
-
-  const byId = new Map<number, Prod>();
-
-  for (const o of offersList) {
-    const p = o?.product;
-    if (!p || typeof p.id !== "number") continue;
-
-    const id = Number(p.id);
-
-    // Evitamos duplicados por producto (nos quedamos con la primera oferta)
-    if (byId.has(id)) continue;
-
-    const price = p.priceFinal ?? p.price ?? null;
-    const priceOriginal =
-      p.priceOriginal ?? (p.priceFinal != null ? p.priceFinal : p.price) ?? null;
-    const priceFinal = p.priceFinal ?? p.price ?? null;
-
-    const prod: Prod = {
-      id,
-      name: String(p.name ?? ""),
-      slug: String(p.slug ?? ""),
-      price,
-      priceOriginal,
-      priceFinal,
-      images: Array.isArray(p.images) ? p.images : [],
-      imageUrl:
-        p.imageUrl ??
-        p.coverUrl ??
-        (p.cover && typeof p.cover.url === "string" ? p.cover.url : null),
-      cover: p.cover ?? null,
-      coverUrl: p.coverUrl ?? null,
-      image: p.image ?? null,
-      status: p.status,
-      appliedOffer: p.appliedOffer ?? o,
-      offer: o,
-    };
-
-    byId.set(id, prod);
-  }
-
-  const fromOffers = Array.from(byId.values());
-
-  if (fromOffers.length > 0) {
-    return fromOffers;
-  }
-
-  // 2) Fallback: detectar ofertas desde el catálogo (modo viejo)
-  const catalogData = await safeJson<any>(
-    await abs(
-      "/api/public/catalogo?status=all&perPage=120&sort=-id&_ts=" + Date.now()
-    ),
-    { cache: "no-store", next: { revalidate: 0 } }
-  );
-
-  const items: Prod[] = ((catalogData as any)?.items ?? []) as Prod[];
-
-  return items.filter((p) => {
-    const priced =
-      p.priceFinal != null &&
-      p.priceOriginal != null &&
-      Number(p.priceFinal) < Number(p.priceOriginal);
-    const flagged = !!(p.appliedOffer || p.offer);
-    return priced || flagged;
-  });
 }
 
 async function getCatalog(perPage = 48): Promise<Prod[]> {
@@ -225,6 +144,102 @@ async function getCatalog(perPage = 48): Promise<Prod[]> {
   return [];
 }
 
+/**
+ * Ofertas para la landing:
+ *  - Si hay filas en /api/public/offers, usamos SOLO esos productos
+ *    (con los datos completos del catálogo).
+ *  - Si NO hay ninguna oferta en la tabla, caemos al modo "precioFinal < precioOriginal"
+ *    o appliedOffer/offer sobre el catálogo.
+ */
+async function getOffersRaw(): Promise<Prod[]> {
+  const [offersData, catalog] = await Promise.all([
+    safeJson<any>(await abs("/api/public/offers"), {
+      cache: "no-store",
+      next: { revalidate: 0 },
+    }),
+    getCatalog(120),
+  ]);
+
+  const offersList: any[] = Array.isArray(offersData)
+    ? offersData
+    : Array.isArray((offersData as any)?.items)
+    ? (offersData as any).items
+    : [];
+
+  const catalogById = new Map<number, Prod>();
+  for (const p of catalog) {
+    if (typeof p.id === "number") {
+      catalogById.set(p.id, p);
+    }
+  }
+
+  // 1) Si hay ofertas en la tabla Offer, usamos solo esas.
+  if (offersList.length) {
+    const result: Prod[] = [];
+
+    for (const o of offersList) {
+      const pidRaw =
+        o?.productId ??
+        o?.product_id ??
+        o?.product?.id ??
+        o?.productoId ??
+        o?.producto_id;
+      const pid =
+        typeof pidRaw === "number" ? pidRaw : Number(pidRaw);
+      if (!Number.isFinite(pid)) continue;
+
+      const fromCatalog = catalogById.get(pid) ?? ({} as Prod);
+      const fromOfferProduct = (o.product || o.producto || {}) as
+        | Partial<Prod>
+        | undefined;
+
+      const merged: Prod = {
+        ...fromCatalog,
+        ...(fromOfferProduct ?? {}),
+        id: fromCatalog.id ?? pid,
+        appliedOffer:
+          fromCatalog.appliedOffer ??
+          (fromCatalog as any).offer ??
+          o,
+        offer: (fromCatalog as any).offer ?? o,
+      };
+
+      if (!merged.name) {
+        merged.name = String(
+          (fromOfferProduct as any)?.name ??
+            o.title ??
+            ""
+        );
+      }
+
+      result.push(merged);
+    }
+
+    // deduplicar por id
+    const seen = new Set<number>();
+    return result.filter((p) => {
+      const id =
+        typeof p.id === "number" ? p.id : Number.NaN;
+      if (!Number.isFinite(id)) return true;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }
+
+  // 2) Fallback viejo: productos con precio en oferta detectados por catálogo
+  const fallback: Prod[] = [];
+  for (const p of catalog) {
+    const priced =
+      p.priceFinal != null &&
+      p.priceOriginal != null &&
+      Number(p.priceFinal) < Number(p.priceOriginal);
+    const flagged = !!(p.appliedOffer || p.offer);
+    if (priced || flagged) fallback.push(p);
+  }
+  return fallback;
+}
+
 /* ───────── página ───────── */
 export default async function LandingPage() {
   const [banners, cats, offersAll, catalog] = await Promise.all([
@@ -242,10 +257,10 @@ export default async function LandingPage() {
 
   // ⬇️ Aumentamos el pool de ofertas para que el carrusel rote
   const OFFERS_COUNT = 24; // antes 3
-  const offersDaily = shuffleSeed(offersAll, `${seed}:offers`).slice(
-    0,
-    OFFERS_COUNT
-  );
+  const offersDaily = shuffleSeed(
+    offersAll,
+    `${seed}:offers`
+  ).slice(0, OFFERS_COUNT);
 
   // ───────── Sucursales (tabs) ─────────
   const hours: [string, string][] = [
@@ -261,10 +276,14 @@ export default async function LandingPage() {
       address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
       mapsUrl:
         "https://www.google.com/maps/search/?api=1&query=" +
-        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
+        encode(
+          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
+        ),
       embedUrl:
         "https://www.google.com/maps?q=" +
-        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
+        encode(
+          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
+        ) +
         "&output=embed",
       hours,
     },
@@ -285,10 +304,14 @@ export default async function LandingPage() {
       address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
       mapsUrl:
         "https://www.google.com/maps/search/?api=1&query=" +
-        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
+        encode(
+          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
+        ),
       embedUrl:
         "https://www.google.com/maps?q=" +
-        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
+        encode(
+          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
+        ) +
         "&output=embed",
       hours,
     },
@@ -322,7 +345,11 @@ export default async function LandingPage() {
 
       {/* Ofertas (rotación diaria) */}
       {/* ⬇️ Mostrar 3 a la vez y rotar sobre OFFERS_COUNT */}
-      <OffersCarousel items={offersDaily} visible={3} rotationMs={6000} />
+      <OffersCarousel
+        items={offersDaily}
+        visible={3}
+        rotationMs={6000}
+      />
 
       {/* Más vendidos (simulado por clics + heurística) */}
       <BestSellersGrid items={catalog} />
