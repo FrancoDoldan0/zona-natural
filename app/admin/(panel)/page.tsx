@@ -2,8 +2,29 @@
 export const runtime = 'edge';
 
 import Link from 'next/link';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+
+/* ───────── helpers URL absolutas (como en landing/ofertas) ───────── */
+
+async function abs(path: string) {
+  if (path.startsWith('http')) return path;
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+  if (base) return `${base}${path}`;
+  try {
+    const h = await headers();
+    const proto = h.get('x-forwarded-proto') ?? 'https';
+    const host =
+      h.get('x-forwarded-host') ??
+      h.get('host') ??
+      h.get('X-Host') ??
+      '';
+    if (host) return `${proto}://${host}${path}`;
+  } catch {
+    // fallback
+  }
+  return path;
+}
 
 /* ───────── Tipos mínimos para stats ───────── */
 type PublicProduct = {
@@ -35,8 +56,9 @@ type PublicBanner = {
 
 /* ───────── helpers de fetch a APIs públicas ───────── */
 
-async function safeJson<T = any>(url: string): Promise<T | null> {
+async function safeJson<T = any>(path: string): Promise<T | null> {
   try {
+    const url = await abs(path);
     const res = await fetch(url, {
       cache: 'no-store',
       next: { revalidate: 0 },
@@ -49,7 +71,9 @@ async function safeJson<T = any>(url: string): Promise<T | null> {
   }
 }
 
-function normalizeBannerStatus(b: PublicBanner): 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' {
+function normalizeBannerStatus(
+  b: PublicBanner,
+): 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' {
   if (b.status) return b.status;
   const act =
     typeof b.isActive === 'boolean'
@@ -60,8 +84,10 @@ function normalizeBannerStatus(b: PublicBanner): 'ACTIVE' | 'INACTIVE' | 'DRAFT'
   return act ? 'ACTIVE' : 'INACTIVE';
 }
 
-async function getCatalogSummary(): Promise<{ total: number; items: PublicProduct[] }> {
-  // Probamos con "raw", luego "all" y finalmente sin status
+async function getCatalogSummary(): Promise<{
+  total: number;
+  items: PublicProduct[];
+}> {
   const statuses = ['raw', 'all', ''];
   for (const st of statuses) {
     const qp = new URLSearchParams();
@@ -69,7 +95,9 @@ async function getCatalogSummary(): Promise<{ total: number; items: PublicProduc
     qp.set('sort', '-id');
     if (st) qp.set('status', st);
 
-    const data: any = await safeJson(`/api/public/catalogo?${qp.toString()}`);
+    const data: any = await safeJson(
+      `/api/public/catalogo?${qp.toString()}`,
+    );
     if (!data) continue;
 
     const items: any[] =
@@ -119,13 +147,14 @@ async function getPublicBanners(): Promise<PublicBanner[]> {
 }
 
 async function checkPublicCatalogOk(): Promise<boolean> {
-  // usamos el mismo truco de status=raw/all para no marcar error falso
   const statuses = ['raw', 'all', ''];
   for (const st of statuses) {
     const qp = new URLSearchParams();
     qp.set('perPage', '1');
     if (st) qp.set('status', st);
-    const data = await safeJson(`/api/public/catalogo?${qp.toString()}`);
+    const data = await safeJson(
+      `/api/public/catalogo?${qp.toString()}`,
+    );
     if (data) return true;
   }
   return false;
@@ -134,7 +163,7 @@ async function checkPublicCatalogOk(): Promise<boolean> {
 /* ───────── Página ───────── */
 
 export default async function AdminHome() {
-  // Guardía de login (middleware + layout también protegen)
+  // Guardia de login
   const store = await cookies();
   const token =
     store.get('admin_token')?.value ??
@@ -176,8 +205,9 @@ export default async function AdminHome() {
     ...b,
     status: normalizeBannerStatus(b),
   }));
-  // Si la API pública ya filtra activos, esto será parecido a banners.length
-  const activeBanners = normBanners.filter((b) => b.status === 'ACTIVE').length || banners.length;
+  const activeBanners =
+    normBanners.filter((b) => b.status === 'ACTIVE').length ||
+    banners.length;
 
   const items = [
     { href: '/admin/productos', title: 'Productos', desc: 'Crear, editar, filtrar' },
@@ -211,24 +241,24 @@ export default async function AdminHome() {
       {/* KPIs */}
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Productos</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">PRODUCTOS</p>
           <p className="mt-1 text-2xl font-semibold">{totalProducts}</p>
           <p className="mt-1 text-[11px] text-gray-500">en base de datos</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Ofertas</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">OFERTAS</p>
           <p className="mt-1 text-2xl font-semibold">{totalOffers}</p>
           <p className="mt-1 text-[11px] text-gray-500">
             {activeOffers} actualmente activas
           </p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Categorías</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">CATEGORÍAS</p>
           <p className="mt-1 text-2xl font-semibold">{totalCategories}</p>
           <p className="mt-1 text-[11px] text-gray-500">para organizar el catálogo</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Banners activos</p>
+          <p className="text-xs uppercase tracking-wide text-gray-500">BANNERS ACTIVOS</p>
           <p className="mt-1 text-2xl font-semibold">{activeBanners}</p>
           <p className="mt-1 text-[11px] text-gray-500">mostrados en la landing</p>
         </div>
@@ -267,9 +297,9 @@ export default async function AdminHome() {
         </div>
       </section>
 
-      {/* Secciones + actividad reciente / estado */}
+      {/* Secciones + actividad / estado */}
       <section className="grid gap-6 lg:grid-cols-[2fr_1.4fr]">
-        {/* Secciones del panel */}
+        {/* Secciones */}
         <div>
           <h2 className="mb-2 text-sm font-semibold text-gray-700">
             Secciones del panel
@@ -288,7 +318,7 @@ export default async function AdminHome() {
           </div>
         </div>
 
-        {/* Columna derecha: actividad + estado */}
+        {/* Columna derecha */}
         <div className="space-y-4">
           {/* Actividad reciente */}
           <div className="rounded-xl border border-gray-200 bg-white p-4">
