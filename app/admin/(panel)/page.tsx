@@ -4,6 +4,7 @@ export const runtime = 'edge';
 import Link from 'next/link';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { normalizeProduct } from '@/lib/product';
 
 /* ───────── helpers URL absolutas (como en landing/ofertas) ───────── */
 
@@ -31,6 +32,8 @@ type PublicProduct = {
   id: number;
   name: string;
   slug: string;
+  price?: number | null;
+  originalPrice?: number | null;
 };
 
 type PublicCategory = {
@@ -53,6 +56,8 @@ type PublicBanner = {
   isActive?: boolean;
   active?: boolean;
 };
+
+type Raw = Record<string, any>;
 
 /* ───────── helpers de fetch a APIs públicas ───────── */
 
@@ -160,6 +165,50 @@ async function checkPublicCatalogOk(): Promise<boolean> {
   return false;
 }
 
+/* ───────── Ofertas de productos (misma lógica que /ofertas) ───────── */
+
+async function fetchProductOffersRaw(): Promise<Raw[]> {
+  const guesses = ['offers=1', 'hasDiscount=1', 'onSale=1'];
+  for (const qp of guesses) {
+    const data = await safeJson<any>(
+      `/api/public/catalogo?perPage=200&status=all&${qp}`,
+    );
+    const items: Raw[] =
+      (data?.items as Raw[]) ??
+      (data?.data as Raw[]) ??
+      (Array.isArray(data) ? (data as Raw[]) : []);
+    if (Array.isArray(items) && items.length) return items;
+  }
+
+  const data = await safeJson<any>(
+    `/api/public/catalogo?perPage=200&status=all&sort=-id`,
+  );
+  const all: Raw[] =
+    (data?.items as Raw[]) ??
+    (data?.data as Raw[]) ??
+    (Array.isArray(data) ? (data as Raw[]) : []);
+  return all;
+}
+
+async function getProductOffersCount(): Promise<number> {
+  try {
+    const raw = await fetchProductOffersRaw();
+    const normalized = raw.map((r) => normalizeProduct(r) as PublicProduct);
+
+    const offers = normalized.filter((p) => {
+      const final =
+        typeof p.price === 'number' ? p.price : null;
+      const orig =
+        typeof p.originalPrice === 'number' ? p.originalPrice : null;
+      return final != null && orig != null && final < orig;
+    });
+
+    return offers.length;
+  } catch {
+    return 0;
+  }
+}
+
 /* ───────── Página ───────── */
 
 export default async function AdminHome() {
@@ -178,28 +227,36 @@ export default async function AdminHome() {
   const [
     { total: totalProducts, items: recentProducts },
     categories,
-    offers,
+    manualOffers,
     banners,
     publicApiOk,
+    productOffersCount,
   ] = await Promise.all([
     getCatalogSummary(),
     getPublicCategories(),
     getPublicOffers(),
     getPublicBanners(),
     checkPublicCatalogOk(),
+    getProductOffersCount(),
   ]);
 
   const totalCategories = categories.length;
-  const totalOffers = offers.length;
 
+  // Ofertas manuales activas (por fecha)
   const now = Date.now();
-  const activeOffers = offers.filter((o) => {
+  const activeManualOffers = manualOffers.filter((o) => {
     const start = o.startAt ? Date.parse(o.startAt) : null;
     const end = o.endAt ? Date.parse(o.endAt) : null;
     if (start !== null && Number.isFinite(start) && start > now) return false;
     if (end !== null && Number.isFinite(end) && end < now) return false;
     return true;
   }).length;
+
+  // Totales para la tarjeta
+  const totalOffers =
+    manualOffers.length + productOffersCount;
+  const activeOffers =
+    activeManualOffers + productOffersCount;
 
   const normBanners = banners.map((b) => ({
     ...b,
