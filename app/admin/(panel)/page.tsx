@@ -6,39 +6,50 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
 /* ───────── Tipos mínimos para stats ───────── */
-type AdminProduct = {
+type PublicProduct = {
   id: number;
   name: string;
   slug: string;
-  status?: string;
 };
 
-type AdminOffer = {
+type PublicCategory = {
   id: number;
-  title: string;
+  name: string;
+  slug?: string;
+};
+
+type PublicOffer = {
+  id: number;
+  title?: string;
   startAt?: string | null;
   endAt?: string | null;
 };
 
-type BannerStatus = 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED';
-
-type AdminBanner = {
+type PublicBanner = {
   id: number;
-  title: string;
-  status?: BannerStatus;
+  title?: string;
+  status?: 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED';
   isActive?: boolean;
   active?: boolean;
 };
 
-type AdminCategory = {
-  id: number;
-  name: string;
-  slug: string;
-};
+/* ───────── helpers de fetch a APIs públicas ───────── */
 
-/* ───────── Helpers de fetch ───────── */
+async function safeJson<T = any>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url, {
+      cache: 'no-store',
+      next: { revalidate: 0 },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as T | null;
+    return data;
+  } catch {
+    return null;
+  }
+}
 
-function normalizeBannerStatus(b: AdminBanner): BannerStatus {
+function normalizeBannerStatus(b: PublicBanner): 'ACTIVE' | 'INACTIVE' | 'DRAFT' | 'ARCHIVED' {
   if (b.status) return b.status;
   const act =
     typeof b.isActive === 'boolean'
@@ -49,126 +60,82 @@ function normalizeBannerStatus(b: AdminBanner): BannerStatus {
   return act ? 'ACTIVE' : 'INACTIVE';
 }
 
-async function fetchAdmin(
-  path: string,
-  cookieHeader: string | null,
-  init?: RequestInit,
-) {
-  const headers: HeadersInit = {
-    ...(init?.headers || {}),
-  };
-  if (cookieHeader) {
-    // reenviamos cookies de la request actual a las APIs de admin
-    (headers as any).cookie = cookieHeader;
-  }
+async function getCatalogSummary(): Promise<{ total: number; items: PublicProduct[] }> {
+  // Probamos con "raw", luego "all" y finalmente sin status
+  const statuses = ['raw', 'all', ''];
+  for (const st of statuses) {
+    const qp = new URLSearchParams();
+    qp.set('perPage', '5');
+    qp.set('sort', '-id');
+    if (st) qp.set('status', st);
 
-  return fetch(path, {
-    cache: 'no-store',
-    next: { revalidate: 0 },
-    ...init,
-    headers,
-  });
-}
+    const data: any = await safeJson(`/api/public/catalogo?${qp.toString()}`);
+    if (!data) continue;
 
-async function getProductsSummary(cookieHeader: string | null): Promise<{
-  total: number;
-  items: AdminProduct[];
-}> {
-  try {
-    // Probamos /products y, si no existe, /productos
-    let res = await fetchAdmin('/api/admin/products?limit=5', cookieHeader);
-    if (!res.ok && res.status === 404) {
-      res = await fetchAdmin('/api/admin/productos?limit=5', cookieHeader);
+    const items: any[] =
+      data.items ??
+      data.data ??
+      data.products ??
+      data.results ??
+      (Array.isArray(data) ? data : []);
+
+    const total: number =
+      typeof data.total === 'number'
+        ? data.total
+        : typeof data.count === 'number'
+        ? data.count
+        : items.length;
+
+    if (items.length || total) {
+      return {
+        total,
+        items: items as PublicProduct[],
+      };
     }
-    if (!res.ok) return { total: 0, items: [] };
-
-    const json: any = await res.json().catch(() => null);
-    const items: AdminProduct[] =
-      (json?.items as AdminProduct[]) ??
-      (json?.data as AdminProduct[]) ??
-      (Array.isArray(json) ? (json as AdminProduct[]) : []) ??
-      [];
-
-    const total =
-      typeof json?.total === 'number' ? json.total : items.length;
-
-    return { total, items };
-  } catch {
-    return { total: 0, items: [] };
   }
+
+  return { total: 0, items: [] };
 }
 
-async function getCategories(
-  cookieHeader: string | null,
-): Promise<AdminCategory[]> {
-  try {
-    const res = await fetchAdmin(
-      '/api/admin/categories?take=999',
-      cookieHeader,
-    );
-    if (!res.ok) return [];
-    const json: any = await res.json().catch(() => null);
-    const items: AdminCategory[] =
-      (json?.items as AdminCategory[]) ??
-      (Array.isArray(json) ? (json as AdminCategory[]) : []) ??
-      [];
-    return items;
-  } catch {
-    return [];
-  }
+async function getPublicCategories(): Promise<PublicCategory[]> {
+  const data: any = await safeJson('/api/public/categories');
+  if (!data) return [];
+  const list: any[] = Array.isArray(data) ? data : data.items ?? [];
+  return list as PublicCategory[];
 }
 
-async function getOffers(cookieHeader: string | null): Promise<AdminOffer[]> {
-  try {
-    const res = await fetchAdmin('/api/admin/offers?all=1', cookieHeader);
-    if (!res.ok) return [];
-    const json: any = await res.json().catch(() => null);
-    const items: AdminOffer[] =
-      (json?.items as AdminOffer[]) ??
-      (Array.isArray(json) ? (json as AdminOffer[]) : []) ??
-      [];
-    return items;
-  } catch {
-    return [];
-  }
+async function getPublicOffers(): Promise<PublicOffer[]> {
+  const data: any = await safeJson('/api/public/offers');
+  if (!data) return [];
+  const list: any[] = Array.isArray(data) ? data : data.items ?? [];
+  return list as PublicOffer[];
 }
 
-async function getBanners(
-  cookieHeader: string | null,
-): Promise<AdminBanner[]> {
-  try {
-    const res = await fetchAdmin('/api/admin/banners?all=1', cookieHeader);
-    if (!res.ok) return [];
-    const json: any = await res.json().catch(() => null);
-    const items: AdminBanner[] =
-      (json?.items as AdminBanner[]) ??
-      (Array.isArray(json) ? (json as AdminBanner[]) : []) ??
-      [];
-    return items;
-  } catch {
-    return [];
-  }
+async function getPublicBanners(): Promise<PublicBanner[]> {
+  const data: any = await safeJson('/api/public/banners');
+  if (!data) return [];
+  const list: any[] = Array.isArray(data) ? data : data.items ?? [];
+  return list as PublicBanner[];
 }
 
 async function checkPublicCatalogOk(): Promise<boolean> {
-  try {
-    const res = await fetch('/api/public/catalogo?perPage=1&status=all', {
-      cache: 'no-store',
-      next: { revalidate: 0 },
-    });
-    return res.ok;
-  } catch {
-    return false;
+  // usamos el mismo truco de status=raw/all para no marcar error falso
+  const statuses = ['raw', 'all', ''];
+  for (const st of statuses) {
+    const qp = new URLSearchParams();
+    qp.set('perPage', '1');
+    if (st) qp.set('status', st);
+    const data = await safeJson(`/api/public/catalogo?${qp.toString()}`);
+    if (data) return true;
   }
+  return false;
 }
 
 /* ───────── Página ───────── */
 
 export default async function AdminHome() {
-  // En Edge/Next 15 cookies() es async
+  // Guardía de login (middleware + layout también protegen)
   const store = await cookies();
-
-  // Guardia defensiva (además del middleware y layout)
   const token =
     store.get('admin_token')?.value ??
     store.get('__session')?.value ??
@@ -179,13 +146,6 @@ export default async function AdminHome() {
     redirect('/admin/login?next=/admin');
   }
 
-  // Serializamos las cookies actuales a un header "cookie"
-  const cookieHeader =
-    store
-      .getAll()
-      .map((c) => `${encodeURIComponent(c.name)}=${encodeURIComponent(c.value)}`)
-      .join('; ') || null;
-
   const [
     { total: totalProducts, items: recentProducts },
     categories,
@@ -193,10 +153,10 @@ export default async function AdminHome() {
     banners,
     publicApiOk,
   ] = await Promise.all([
-    getProductsSummary(cookieHeader),
-    getCategories(cookieHeader),
-    getOffers(cookieHeader),
-    getBanners(cookieHeader),
+    getCatalogSummary(),
+    getPublicCategories(),
+    getPublicOffers(),
+    getPublicBanners(),
     checkPublicCatalogOk(),
   ]);
 
@@ -216,9 +176,8 @@ export default async function AdminHome() {
     ...b,
     status: normalizeBannerStatus(b),
   }));
-  const activeBanners = normBanners.filter(
-    (b) => b.status === 'ACTIVE',
-  ).length;
+  // Si la API pública ya filtra activos, esto será parecido a banners.length
+  const activeBanners = normBanners.filter((b) => b.status === 'ACTIVE').length || banners.length;
 
   const items = [
     { href: '/admin/productos', title: 'Productos', desc: 'Crear, editar, filtrar' },
