@@ -2,31 +2,8 @@
 export const runtime = 'edge';
 
 import Link from 'next/link';
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-
-/* ───────── helpers de URL (igual estilo que en la landing) ───────── */
-async function abs(path: string) {
-  if (path.startsWith('http')) return path;
-
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
-  if (base) return `${base}${path}`;
-
-  try {
-    const h = await headers();
-    const proto = h.get('x-forwarded-proto') ?? 'https';
-    const host =
-      h.get('x-forwarded-host') ??
-      h.get('host') ??
-      h.get('X-Host') ??
-      '';
-    if (host) return `${proto}://${host}${path}`;
-  } catch {
-    // si falla headers(), devolvemos la ruta relativa y Next la resuelve
-  }
-
-  return path;
-}
 
 /* ───────── Tipos mínimos para stats ───────── */
 type AdminProduct = {
@@ -59,7 +36,7 @@ type AdminCategory = {
   slug: string;
 };
 
-/* ───────── Helpers de fetch tolerantes ───────── */
+/* ───────── Helpers de fetch ───────── */
 
 function normalizeBannerStatus(b: AdminBanner): BannerStatus {
   if (b.status) return b.status;
@@ -72,25 +49,36 @@ function normalizeBannerStatus(b: AdminBanner): BannerStatus {
   return act ? 'ACTIVE' : 'INACTIVE';
 }
 
-// pequeño wrapper para fetch interno
-async function fetchInternal(url: string, init?: RequestInit) {
-  const full = await abs(url);
-  return fetch(full, {
+async function fetchAdmin(
+  path: string,
+  cookieHeader: string | null,
+  init?: RequestInit,
+) {
+  const headers: HeadersInit = {
+    ...(init?.headers || {}),
+  };
+  if (cookieHeader) {
+    // reenviamos cookies de la request actual a las APIs de admin
+    (headers as any).cookie = cookieHeader;
+  }
+
+  return fetch(path, {
     cache: 'no-store',
     next: { revalidate: 0 },
     ...init,
+    headers,
   });
 }
 
-async function getProductsSummary(): Promise<{
+async function getProductsSummary(cookieHeader: string | null): Promise<{
   total: number;
   items: AdminProduct[];
 }> {
   try {
-    // Probamos /products y, si da 404, /productos
-    let res = await fetchInternal('/api/admin/products?limit=5');
+    // Probamos /products y, si no existe, /productos
+    let res = await fetchAdmin('/api/admin/products?limit=5', cookieHeader);
     if (!res.ok && res.status === 404) {
-      res = await fetchInternal('/api/admin/productos?limit=5');
+      res = await fetchAdmin('/api/admin/productos?limit=5', cookieHeader);
     }
     if (!res.ok) return { total: 0, items: [] };
 
@@ -110,9 +98,14 @@ async function getProductsSummary(): Promise<{
   }
 }
 
-async function getCategories(): Promise<AdminCategory[]> {
+async function getCategories(
+  cookieHeader: string | null,
+): Promise<AdminCategory[]> {
   try {
-    const res = await fetchInternal('/api/admin/categories?take=999');
+    const res = await fetchAdmin(
+      '/api/admin/categories?take=999',
+      cookieHeader,
+    );
     if (!res.ok) return [];
     const json: any = await res.json().catch(() => null);
     const items: AdminCategory[] =
@@ -125,10 +118,9 @@ async function getCategories(): Promise<AdminCategory[]> {
   }
 }
 
-async function getOffers(): Promise<AdminOffer[]> {
+async function getOffers(cookieHeader: string | null): Promise<AdminOffer[]> {
   try {
-    // usamos /offers; si algún día existe /ofertas, se puede agregar fallback
-    const res = await fetchInternal('/api/admin/offers?all=1');
+    const res = await fetchAdmin('/api/admin/offers?all=1', cookieHeader);
     if (!res.ok) return [];
     const json: any = await res.json().catch(() => null);
     const items: AdminOffer[] =
@@ -141,9 +133,11 @@ async function getOffers(): Promise<AdminOffer[]> {
   }
 }
 
-async function getBanners(): Promise<AdminBanner[]> {
+async function getBanners(
+  cookieHeader: string | null,
+): Promise<AdminBanner[]> {
   try {
-    const res = await fetchInternal('/api/admin/banners?all=1');
+    const res = await fetchAdmin('/api/admin/banners?all=1', cookieHeader);
     if (!res.ok) return [];
     const json: any = await res.json().catch(() => null);
     const items: AdminBanner[] =
@@ -158,9 +152,10 @@ async function getBanners(): Promise<AdminBanner[]> {
 
 async function checkPublicCatalogOk(): Promise<boolean> {
   try {
-    const res = await fetchInternal(
-      '/api/public/catalogo?perPage=1&status=all',
-    );
+    const res = await fetch('/api/public/catalogo?perPage=1&status=all', {
+      cache: 'no-store',
+      next: { revalidate: 0 },
+    });
     return res.ok;
   } catch {
     return false;
@@ -184,6 +179,13 @@ export default async function AdminHome() {
     redirect('/admin/login?next=/admin');
   }
 
+  // Serializamos las cookies actuales a un header "cookie"
+  const cookieHeader =
+    store
+      .getAll()
+      .map((c) => `${encodeURIComponent(c.name)}=${encodeURIComponent(c.value)}`)
+      .join('; ') || null;
+
   const [
     { total: totalProducts, items: recentProducts },
     categories,
@@ -191,10 +193,10 @@ export default async function AdminHome() {
     banners,
     publicApiOk,
   ] = await Promise.all([
-    getProductsSummary(),
-    getCategories(),
-    getOffers(),
-    getBanners(),
+    getProductsSummary(cookieHeader),
+    getCategories(cookieHeader),
+    getOffers(cookieHeader),
+    getBanners(cookieHeader),
     checkPublicCatalogOk(),
   ]);
 
