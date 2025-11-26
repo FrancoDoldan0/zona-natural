@@ -2,8 +2,31 @@
 export const runtime = 'edge';
 
 import Link from 'next/link';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+
+/* ───────── helpers de URL (igual estilo que en la landing) ───────── */
+async function abs(path: string) {
+  if (path.startsWith('http')) return path;
+
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+  if (base) return `${base}${path}`;
+
+  try {
+    const h = await headers();
+    const proto = h.get('x-forwarded-proto') ?? 'https';
+    const host =
+      h.get('x-forwarded-host') ??
+      h.get('host') ??
+      h.get('X-Host') ??
+      '';
+    if (host) return `${proto}://${host}${path}`;
+  } catch {
+    // si falla headers(), devolvemos la ruta relativa y Next la resuelve
+  }
+
+  return path;
+}
 
 /* ───────── Tipos mínimos para stats ───────── */
 type AdminProduct = {
@@ -38,14 +61,37 @@ type AdminCategory = {
 
 /* ───────── Helpers de fetch tolerantes ───────── */
 
+function normalizeBannerStatus(b: AdminBanner): BannerStatus {
+  if (b.status) return b.status;
+  const act =
+    typeof b.isActive === 'boolean'
+      ? b.isActive
+      : typeof b.active === 'boolean'
+      ? b.active
+      : true;
+  return act ? 'ACTIVE' : 'INACTIVE';
+}
+
+// pequeño wrapper para fetch interno
+async function fetchInternal(url: string, init?: RequestInit) {
+  const full = await abs(url);
+  return fetch(full, {
+    cache: 'no-store',
+    next: { revalidate: 0 },
+    ...init,
+  });
+}
+
 async function getProductsSummary(): Promise<{
   total: number;
   items: AdminProduct[];
 }> {
   try {
-    const res = await fetch('/api/admin/products?limit=5', {
-      cache: 'no-store',
-    });
+    // Probamos /products y, si da 404, /productos
+    let res = await fetchInternal('/api/admin/products?limit=5');
+    if (!res.ok && res.status === 404) {
+      res = await fetchInternal('/api/admin/productos?limit=5');
+    }
     if (!res.ok) return { total: 0, items: [] };
 
     const json: any = await res.json().catch(() => null);
@@ -66,9 +112,7 @@ async function getProductsSummary(): Promise<{
 
 async function getCategories(): Promise<AdminCategory[]> {
   try {
-    const res = await fetch('/api/admin/categories?take=999', {
-      cache: 'no-store',
-    });
+    const res = await fetchInternal('/api/admin/categories?take=999');
     if (!res.ok) return [];
     const json: any = await res.json().catch(() => null);
     const items: AdminCategory[] =
@@ -83,9 +127,8 @@ async function getCategories(): Promise<AdminCategory[]> {
 
 async function getOffers(): Promise<AdminOffer[]> {
   try {
-    const res = await fetch('/api/admin/offers?all=1', {
-      cache: 'no-store',
-    });
+    // usamos /offers; si algún día existe /ofertas, se puede agregar fallback
+    const res = await fetchInternal('/api/admin/offers?all=1');
     if (!res.ok) return [];
     const json: any = await res.json().catch(() => null);
     const items: AdminOffer[] =
@@ -98,22 +141,9 @@ async function getOffers(): Promise<AdminOffer[]> {
   }
 }
 
-function normalizeBannerStatus(b: AdminBanner): BannerStatus {
-  if (b.status) return b.status;
-  const act =
-    typeof b.isActive === 'boolean'
-      ? b.isActive
-      : typeof b.active === 'boolean'
-      ? b.active
-      : true;
-  return act ? 'ACTIVE' : 'INACTIVE';
-}
-
 async function getBanners(): Promise<AdminBanner[]> {
   try {
-    const res = await fetch('/api/admin/banners?all=1', {
-      cache: 'no-store',
-    });
+    const res = await fetchInternal('/api/admin/banners?all=1');
     if (!res.ok) return [];
     const json: any = await res.json().catch(() => null);
     const items: AdminBanner[] =
@@ -128,10 +158,9 @@ async function getBanners(): Promise<AdminBanner[]> {
 
 async function checkPublicCatalogOk(): Promise<boolean> {
   try {
-    const res = await fetch('/api/public/catalogo?perPage=1&status=all', {
-      cache: 'no-store',
-      next: { revalidate: 0 },
-    });
+    const res = await fetchInternal(
+      '/api/public/catalogo?perPage=1&status=all',
+    );
     return res.ok;
   } catch {
     return false;
@@ -332,7 +361,7 @@ export default async function AdminHome() {
             )}
           </div>
 
-          {/* Estado rápido (sin chip de entorno) */}
+          {/* Estado rápido */}
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <h2 className="mb-2 text-sm font-semibold text-gray-700">
               Estado rápido
