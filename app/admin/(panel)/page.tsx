@@ -28,6 +28,7 @@ async function abs(path: string) {
 }
 
 /* ───────── Tipos mínimos para stats ───────── */
+
 type PublicProduct = {
   id: number;
   name: string;
@@ -58,6 +59,12 @@ type PublicBanner = {
 };
 
 type Raw = Record<string, any>;
+
+/* Solo para conteo de ofertas de productos */
+type PriceLike = {
+  price?: number | null;
+  originalPrice?: number | null;
+};
 
 /* ───────── helpers de fetch a APIs públicas ───────── */
 
@@ -193,7 +200,11 @@ async function fetchProductOffersRaw(): Promise<Raw[]> {
 async function getProductOffersCount(): Promise<number> {
   try {
     const raw = await fetchProductOffersRaw();
-    const normalized = raw.map((r) => normalizeProduct(r) as PublicProduct);
+
+    // No necesitamos nombre ni slug, solo precio y precio original
+    const normalized = raw.map(
+      (r) => normalizeProduct(r) as PriceLike,
+    );
 
     const offers = normalized.filter((p) => {
       const final =
