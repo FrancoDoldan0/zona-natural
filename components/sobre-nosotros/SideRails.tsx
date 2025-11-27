@@ -22,18 +22,11 @@ type Prod = {
 
 type SidebarOffer = {
   id: number;
-  title: string | null;
-  discountType?: string | null;
-  discountVal?: number | null;
+  productId: number | null;
   product?: {
     id: number;
     name: string;
     slug: string;
-    price?: number | null;
-    priceOriginal?: number | null;
-    priceFinal?: number | null;
-    imageUrl?: string | null;
-    coverUrl?: string | null;
   } | null;
 };
 
@@ -101,12 +94,16 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
+/**
+ * Sidebar: Más vendidos
+ * Sigue igual que antes, usando /api/public/catalogo
+ */
 export function SideBestSellers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
     (async () => {
-      // Traemos catálogo “grande” y mostramos 6
+      // Traemos catálogo “grande” y mostramos 6 primeros
       const data = await getJson<any>("/api/public/catalogo?perPage=48&sort=-id");
       const list: Prod[] =
         (data?.items as Prod[]) ??
@@ -126,43 +123,63 @@ export function SideBestSellers() {
   );
 }
 
+/**
+ * Sidebar: Ofertas
+ * - Lee el catálogo completo (para tener precios, imágenes, etc.)
+ * - Lee /api/public/sidebar-offers?take=6 para saber qué productos están en oferta
+ * - Cruza por product.id y muestra solo esos productos
+ */
 export function SideOffers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
     (async () => {
-      const data = await getJson<{ ok?: boolean; items?: SidebarOffer[] }>(
-        "/api/public/sidebar-offers?take=6"
+      // 1) Catálogo “grande” (mismos datos que usa el resto del sitio)
+      const catalogPromise = getJson<any>(
+        "/api/public/catalogo?perPage=999&sort=-id"
       );
 
-      if (!data || !Array.isArray(data.items)) {
+      // 2) Ofertas activas para el sidebar (IDs de productos en oferta)
+      const offersPromise = getJson<{ ok?: boolean; items?: SidebarOffer[] }>(
+        "/api/public/sidebar-offers?take=50"
+      );
+
+      const [catalogData, offersData] = await Promise.all([
+        catalogPromise,
+        offersPromise,
+      ]);
+
+      const catalogList: Prod[] =
+        (catalogData?.items as Prod[]) ??
+        (catalogData?.data as Prod[]) ??
+        (catalogData?.products as Prod[]) ??
+        [];
+
+      // Si por algún motivo no vino nada de la API de ofertas, mostramos vacío
+      if (!offersData || !Array.isArray(offersData.items)) {
         setItems([]);
         return;
       }
 
-      // Normalizamos la respuesta de sidebar-offers a Prod
-      const normalized: Prod[] = data.items
-        .map((o) => ({
-          id: o.product?.id ?? o.id,
-          name: o.product?.name ?? o.title ?? "Producto en oferta",
-          slug: o.product?.slug ?? "",
-          // Hoy la API de sidebar-offers no devuelve precios ni imágenes,
-          // pero dejamos los campos preparados por si en el futuro se agregan.
-          price: o.product?.price ?? o.product?.priceFinal ?? null,
-          priceFinal: o.product?.priceFinal ?? o.product?.price ?? null,
-          priceOriginal: o.product?.priceOriginal ?? null,
-          imageUrl: o.product?.coverUrl ?? o.product?.imageUrl ?? null,
-          coverUrl: o.product?.coverUrl ?? null,
-          appliedOffer: {
-            discountType: o.discountType,
-            discountVal: o.discountVal,
-            title: o.title,
-          },
-        }))
-        // Evitamos productos sin slug, porque el link no se podría armar.
-        .filter((p) => !!p.slug);
+      // Conjunto de IDs de productos que están en oferta
+      const offerIds = new Set<number>();
+      for (const o of offersData.items) {
+        const pid =
+          typeof o.productId === "number"
+            ? o.productId
+            : typeof o.product?.id === "number"
+            ? o.product.id
+            : null;
+        if (pid != null) {
+          offerIds.add(pid);
+        }
+      }
 
-      setItems(normalized);
+      // Filtramos el catálogo por esos IDs
+      const offersFromCatalog = catalogList.filter((p) => offerIds.has(p.id));
+
+      // Nos quedamos con hasta 6
+      setItems(offersFromCatalog.slice(0, 6));
     })();
   }, []);
 
