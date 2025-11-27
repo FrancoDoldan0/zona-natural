@@ -42,9 +42,7 @@ function SmallList({
   return (
     <div className="rounded-xl ring-1 ring-emerald-100 bg-white p-3">
       <div className="mb-2 font-semibold">{title}</div>
-      {!items && (
-        <div className="text-sm text-gray-500">Cargando…</div>
-      )}
+      {!items && <div className="text-sm text-gray-500">Cargando…</div>}
       {items && items.length === 0 && (
         <div className="text-sm text-emerald-700/80 bg-emerald-50/60 rounded-md px-2 py-1">
           {emptyText}
@@ -83,6 +81,7 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
+// ░░ Más vendidos: catálogo general, igual que antes ░░
 export function SideBestSellers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
@@ -108,26 +107,22 @@ export function SideBestSellers() {
   );
 }
 
+// ░░ Ofertas: reutiliza la API pública de ofertas (y nuestro proxy sidebar-offers) ░░
 export function SideOffers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
     (async () => {
-      const data = await getJson<any>("/api/public/catalogo?perPage=48&sort=-id");
+      // Ahora usamos el endpoint que ya devuelve “ofertas reales”
+      const data = await getJson<any>("/api/public/sidebar-offers?take=6");
+
       const list: Prod[] =
         (data?.items as Prod[]) ??
         (data?.data as Prod[]) ??
         (data?.products as Prod[]) ??
-        [];
-      // Filtramos ofertas vigentes
-      const offers = list.filter((p) => {
-        const fin = Number(p.priceFinal ?? p.price ?? NaN);
-        const orig = Number(p.priceOriginal ?? NaN);
-        const hasNumeric = !Number.isNaN(fin) && !Number.isNaN(orig) && fin < orig;
-        const hasFlag = !!(p.appliedOffer || p.offer);
-        return hasNumeric || hasFlag;
-      });
-      setItems(offers.slice(0, 6));
+        (Array.isArray(data) ? (data as Prod[]) : []);
+
+      setItems(list.slice(0, 6));
     })();
   }, []);
 
