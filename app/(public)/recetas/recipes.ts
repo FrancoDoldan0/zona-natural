@@ -40,7 +40,7 @@ export const recipes: Recipe[] = [
     title: "Galletitas de avena y miel",
     desc: "Crocantes por fuera, tiernas por dentro.",
     timeMin: 25,
-    img: "https://www.gourmet.cl/wp-content/uploads/2019/01/Galletas.jpg",
+    img: "https://www.recetasnestle.cl/sites/default/files/srh_recipes/e2c855cf0b83b440a0b878e8adaa3a9d.jpg",
     heroAlt: "Galletitas de avena y miel",
     ingredients: [
       "1 taza de avena",
