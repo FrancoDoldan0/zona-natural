@@ -93,22 +93,44 @@ function toNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Intenta extraer un array de la respuesta de la API sin asumir demasiado formato
+function extractListFromData(data: any): any[] {
+  if (!data) return [];
+
+  if (Array.isArray(data)) return data;
+
+  if (Array.isArray(data.items)) return data.items;
+  if (Array.isArray(data.data)) return data.data;
+  if (Array.isArray(data.results)) return data.results;
+
+  if (data.items && typeof data.items === "object") {
+    const obj = data.items;
+    if (Array.isArray(obj.items)) return obj.items;
+    if (Array.isArray(obj.products)) return obj.products;
+    if (Array.isArray(obj.rows)) return obj.rows;
+  }
+
+  if (data.data && typeof data.data === "object") {
+    const obj = data.data;
+    if (Array.isArray(obj.items)) return obj.items;
+    if (Array.isArray(obj.products)) return obj.products;
+    if (Array.isArray(obj.rows)) return obj.rows;
+  }
+
+  return [];
+}
+
 async function loadSidebarOffers(): Promise<SidebarOffer[]> {
   try {
     const res = await fetch("/api/public/offers?take=5", {
       cache: "no-store",
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      return [];
+    }
 
     const data: any = await res.json().catch(() => null);
-
-    const rawList: any[] = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.items)
-      ? data.items
-      : Array.isArray(data?.data)
-      ? data.data
-      : [];
+    const rawList: any[] = extractListFromData(data);
 
     return rawList
       .map((r: any, idx: number): SidebarOffer => {
@@ -290,7 +312,8 @@ export default async function SobreNosotrosPage() {
 
                             {typeof o.price === "number" && (
                               <div className="mt-0.5 text-xs">
-                                {hasDiscount && typeof o.priceOriginal === "number" ? (
+                                {hasDiscount &&
+                                typeof o.priceOriginal === "number" ? (
                                   <>
                                     <span className="mr-1 line-through text-gray-400">
                                       $
