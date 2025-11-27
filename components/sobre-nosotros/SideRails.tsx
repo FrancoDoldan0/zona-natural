@@ -20,6 +20,23 @@ type Prod = {
   offer?: any | null;
 };
 
+type SidebarOffer = {
+  id: number;
+  title: string | null;
+  discountType?: string | null;
+  discountVal?: number | null;
+  product?: {
+    id: number;
+    name: string;
+    slug: string;
+    price?: number | null;
+    priceOriginal?: number | null;
+    priceFinal?: number | null;
+    imageUrl?: string | null;
+    coverUrl?: string | null;
+  } | null;
+};
+
 function firstImage(p: Prod) {
   return (
     p.cover ??
@@ -42,12 +59,15 @@ function SmallList({
   return (
     <div className="rounded-xl ring-1 ring-emerald-100 bg-white p-3">
       <div className="mb-2 font-semibold">{title}</div>
+
       {!items && <div className="text-sm text-gray-500">Cargando…</div>}
+
       {items && items.length === 0 && (
         <div className="text-sm text-emerald-700/80 bg-emerald-50/60 rounded-md px-2 py-1">
           {emptyText}
         </div>
       )}
+
       {items && items.length > 0 && (
         <div className="grid gap-2">
           {items.map((p) => (
@@ -81,7 +101,6 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-// ░░ Más vendidos: catálogo general, igual que antes ░░
 export function SideBestSellers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
@@ -107,22 +126,43 @@ export function SideBestSellers() {
   );
 }
 
-// ░░ Ofertas: reutiliza la API pública de ofertas (y nuestro proxy sidebar-offers) ░░
 export function SideOffers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
     (async () => {
-      // Ahora usamos el endpoint que ya devuelve “ofertas reales”
-      const data = await getJson<any>("/api/public/sidebar-offers?take=6");
+      const data = await getJson<{ ok?: boolean; items?: SidebarOffer[] }>(
+        "/api/public/sidebar-offers?take=6"
+      );
 
-      const list: Prod[] =
-        (data?.items as Prod[]) ??
-        (data?.data as Prod[]) ??
-        (data?.products as Prod[]) ??
-        (Array.isArray(data) ? (data as Prod[]) : []);
+      if (!data || !Array.isArray(data.items)) {
+        setItems([]);
+        return;
+      }
 
-      setItems(list.slice(0, 6));
+      // Normalizamos la respuesta de sidebar-offers a Prod
+      const normalized: Prod[] = data.items
+        .map((o) => ({
+          id: o.product?.id ?? o.id,
+          name: o.product?.name ?? o.title ?? "Producto en oferta",
+          slug: o.product?.slug ?? "",
+          // Hoy la API de sidebar-offers no devuelve precios ni imágenes,
+          // pero dejamos los campos preparados por si en el futuro se agregan.
+          price: o.product?.price ?? o.product?.priceFinal ?? null,
+          priceFinal: o.product?.priceFinal ?? o.product?.price ?? null,
+          priceOriginal: o.product?.priceOriginal ?? null,
+          imageUrl: o.product?.coverUrl ?? o.product?.imageUrl ?? null,
+          coverUrl: o.product?.coverUrl ?? null,
+          appliedOffer: {
+            discountType: o.discountType,
+            discountVal: o.discountVal,
+            title: o.title,
+          },
+        }))
+        // Evitamos productos sin slug, porque el link no se podría armar.
+        .filter((p) => !!p.slug);
+
+      setItems(normalized);
     })();
   }, []);
 
