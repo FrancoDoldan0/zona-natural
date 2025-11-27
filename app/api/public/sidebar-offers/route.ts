@@ -2,51 +2,36 @@
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
-import { DB } from "@/lib/db";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const takeParam = url.searchParams.get("take");
+  const takeParam = url.searchParams.get("take") ?? "5";
 
-  let take = Number(takeParam ?? "5");
+  let take = Number(takeParam);
   if (!Number.isFinite(take) || take <= 0) take = 5;
   if (take > 20) take = 20;
 
   try {
-    const products = await DB.product.findMany({
-      where: {
-        status: "ACTIVE",
-        price: { not: null },
-        priceOriginal: { not: null },
-      },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        imageUrl: true,
-        price: true,
-        priceOriginal: true,
-      },
-      orderBy: {
-        id: "desc",
-      },
-      take,
+    // Proxy directo al endpoint de ofertas real
+    const res = await fetch(`/api/public/offers?take=${take}`, {
+      cache: "no-store",
     });
 
-    // Solo los que realmente tienen descuento
-    const items = products.filter(
-      (p) =>
-        typeof p.price === "number" &&
-        typeof p.priceOriginal === "number" &&
-        p.priceOriginal > p.price
-    );
+    if (!res.ok) {
+      return NextResponse.json(
+        { ok: false, error: "upstream_error" },
+        { status: 500 },
+      );
+    }
 
-    return NextResponse.json({ ok: true, items });
+    const data = await res.json();
+    // data ya es { ok: true, items: [...] } tal como lo usa la página de Ofertas
+    return NextResponse.json(data);
   } catch (err) {
-    console.error("sidebar offers error", err);
+    console.error("sidebar-offers proxy error", err);
     return NextResponse.json(
       { ok: false, error: "internal_error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
