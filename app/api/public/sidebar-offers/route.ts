@@ -2,7 +2,7 @@
 export const runtime = "edge";
 
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { DB } from "@/lib/db";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   if (take > 20) take = 20;
 
   try {
-    const products = await db.product.findMany({
+    const products = await DB.product.findMany({
       where: {
         status: "ACTIVE",
         price: { not: null },
@@ -33,7 +33,7 @@ export async function GET(req: Request) {
       take,
     });
 
-    // Nos quedamos solo con los que realmente tienen descuento
+    // Solo los que realmente tienen descuento
     const items = products.filter(
       (p) =>
         typeof p.price === "number" &&
