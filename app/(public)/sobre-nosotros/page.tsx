@@ -7,13 +7,21 @@ import MainNav from "@/components/landing/MainNav";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
 
-// --- Sucursales: igual que en la landing ---
+// Bloques laterales (best sellers sigue siendo cliente)
+import { SideBestSellers } from "@/components/sobre-nosotros/SideRails";
+
+/* ------------------------------------------------------------------ */
+/* Sucursales: igual que en la landing                                */
+/* ------------------------------------------------------------------ */
+
 const hours: [string, string][] = [
   ["Lun–Vie", "09:00–19:00"],
   ["Sábado", "09:00–13:00"],
   ["Domingo", "Cerrado"],
 ];
+
 const enc = (s: string) => encodeURIComponent(s);
+
 const branches: Branch[] = [
   {
     name: "Las Piedras",
@@ -65,10 +73,99 @@ const branches: Branch[] = [
   },
 ];
 
-// Bloques laterales en cliente (fetch en el navegador)
-import { SideBestSellers, SideOffers } from "@/components/sobre-nosotros/SideRails";
+/* ------------------------------------------------------------------ */
+/* Ofertas para sidebar (fetch en el servidor desde /api/public/offers) */
+/* ------------------------------------------------------------------ */
 
-export default function SobreNosotrosPage() {
+type SidebarOffer = {
+  id: string | number;
+  name: string;
+  slug: string;
+  imageUrl?: string | null;
+  price?: number | null;
+  priceOriginal?: number | null;
+};
+
+function toNum(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (v == null) return null;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+async function loadSidebarOffers(): Promise<SidebarOffer[]> {
+  try {
+    const res = await fetch("/api/public/offers?take=5", {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+
+    const data: any = await res.json().catch(() => null);
+
+    const rawList: any[] = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data?.data)
+      ? data.data
+      : [];
+
+    return rawList
+      .map((r: any, idx: number): SidebarOffer => {
+        const name =
+          r.name ??
+          r.title ??
+          r.productName ??
+          r.product?.name ??
+          `Producto ${idx + 1}`;
+
+        const slug =
+          r.slug ??
+          r.productSlug ??
+          r.product?.slug ??
+          r.slugName ??
+          "";
+
+        const imageUrl =
+          r.imageUrl ??
+          r.image ??
+          r.thumb ??
+          r.product?.imageUrl ??
+          null;
+
+        const price = toNum(
+          r.priceFinal ??
+            r.finalPrice ??
+            r.price ??
+            r.currentPrice ??
+            r.product?.price
+        );
+        const priceOriginal = toNum(
+          r.priceOriginal ?? r.originalPrice ?? r.product?.priceOriginal
+        );
+
+        return {
+          id: r.id ?? r.productId ?? slug ?? idx,
+          name,
+          slug,
+          imageUrl,
+          price,
+          priceOriginal,
+        };
+      })
+      .filter((o) => o.name && o.slug);
+  } catch {
+    return [];
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Page component                                                      */
+/* ------------------------------------------------------------------ */
+
+export default async function SobreNosotrosPage() {
+  const offers = await loadSidebarOffers();
+
   return (
     <>
       <InfoBar />
@@ -86,7 +183,9 @@ export default function SobreNosotrosPage() {
           {/* Contenido central */}
           <section className="order-1 lg:order-2">
             <article className="prose prose-emerald">
-              <h1 className="!uppercase !font-extrabold tracking-wide">Sobre nosotros:</h1>
+              <h1 className="!uppercase !font-extrabold tracking-wide">
+                Sobre nosotros:
+              </h1>
 
               <p>
                 En <strong>Zona Natural</strong> creemos que lo simple es lo que
@@ -95,7 +194,9 @@ export default function SobreNosotrosPage() {
                 saludables y ricos.
               </p>
 
-              <h2 className="!uppercase !font-bold tracking-wide">Nuestra historia:</h2>
+              <h2 className="!uppercase !font-bold tracking-wide">
+                Nuestra historia:
+              </h2>
               <p>
                 Nacimos con la idea de facilitar el acceso a alimentos reales y
                 opciones más conscientes para todos los días. Empezamos con un
@@ -103,7 +204,9 @@ export default function SobreNosotrosPage() {
                 manteniendo el foco en la calidad y la atención.
               </p>
 
-              <h2 className="!uppercase !font-bold tracking-wide">Qué nos mueve:</h2>
+              <h2 className="!uppercase !font-bold tracking-wide">
+                Qué nos mueve:
+              </h2>
               <ul>
                 <li>Selección cuidada de productos y precios justos.</li>
                 <li>Servicio cercano y envíos ágiles en Montevideo.</li>
@@ -145,9 +248,73 @@ export default function SobreNosotrosPage() {
             </div>
           </section>
 
-          {/* Columna derecha: Ofertas */}
+          {/* Columna derecha: Ofertas (desde /api/public/offers) */}
           <aside className="order-3">
-            <SideOffers />
+            <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-emerald-100 space-y-3">
+              <h2 className="text-lg font-semibold">Ofertas</h2>
+
+              {!offers.length && (
+                <p className="text-sm text-gray-500">
+                  No hay productos para mostrar.
+                </p>
+              )}
+
+              {offers.length > 0 && (
+                <ul className="space-y-3">
+                  {offers.map((o) => {
+                    const hasDiscount =
+                      typeof o.price === "number" &&
+                      typeof o.priceOriginal === "number" &&
+                      (o.priceOriginal ?? 0) > (o.price ?? 0);
+
+                    return (
+                      <li key={o.id}>
+                        <a
+                          href={`/producto/${o.slug}`}
+                          className="flex items-center gap-3 group"
+                        >
+                          {o.imageUrl && (
+                            <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded border bg-gray-50">
+                              <img
+                                src={o.imageUrl}
+                                alt={o.name}
+                                className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex-1">
+                            <div className="text-sm font-medium leading-snug group-hover:text-emerald-700">
+                              {o.name}
+                            </div>
+
+                            {typeof o.price === "number" && (
+                              <div className="mt-0.5 text-xs">
+                                {hasDiscount && typeof o.priceOriginal === "number" ? (
+                                  <>
+                                    <span className="mr-1 line-through text-gray-400">
+                                      $
+                                      {o.priceOriginal.toLocaleString("es-UY")}
+                                    </span>
+                                    <span className="font-semibold text-emerald-700">
+                                      ${o.price.toLocaleString("es-UY")}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="font-semibold text-emerald-700">
+                                    ${o.price.toLocaleString("es-UY")}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           </aside>
         </div>
       </main>
