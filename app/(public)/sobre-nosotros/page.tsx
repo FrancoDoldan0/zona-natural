@@ -6,8 +6,6 @@ import Header from "@/components/landing/Header";
 import MainNav from "@/components/landing/MainNav";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
-
-// Bloques laterales (best sellers sigue siendo cliente)
 import { SideBestSellers } from "@/components/sobre-nosotros/SideRails";
 
 /* ------------------------------------------------------------------ */
@@ -74,7 +72,7 @@ const branches: Branch[] = [
 ];
 
 /* ------------------------------------------------------------------ */
-/* Ofertas para sidebar (fetch en el servidor desde /api/public/offers) */
+/* Ofertas sidebar: se cargan en el servidor desde /api/public/sidebar-offers */
 /* ------------------------------------------------------------------ */
 
 type SidebarOffer = {
@@ -86,95 +84,35 @@ type SidebarOffer = {
   priceOriginal?: number | null;
 };
 
-function toNum(v: unknown): number | null {
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  if (v == null) return null;
-  const n = Number(String(v).replace(",", "."));
-  return Number.isFinite(n) ? n : null;
-}
-
-// Intenta extraer un array de la respuesta de la API sin asumir demasiado formato
-function extractListFromData(data: any): any[] {
-  if (!data) return [];
-
-  if (Array.isArray(data)) return data;
-
-  if (Array.isArray(data.items)) return data.items;
-  if (Array.isArray(data.data)) return data.data;
-  if (Array.isArray(data.results)) return data.results;
-
-  if (data.items && typeof data.items === "object") {
-    const obj = data.items;
-    if (Array.isArray(obj.items)) return obj.items;
-    if (Array.isArray(obj.products)) return obj.products;
-    if (Array.isArray(obj.rows)) return obj.rows;
-  }
-
-  if (data.data && typeof data.data === "object") {
-    const obj = data.data;
-    if (Array.isArray(obj.items)) return obj.items;
-    if (Array.isArray(obj.products)) return obj.products;
-    if (Array.isArray(obj.rows)) return obj.rows;
-  }
-
-  return [];
-}
-
 async function loadSidebarOffers(): Promise<SidebarOffer[]> {
   try {
-    const res = await fetch("/api/public/offers?take=5", {
+    const res = await fetch("/api/public/sidebar-offers?take=5", {
       cache: "no-store",
     });
-    if (!res.ok) {
-      return [];
-    }
+    if (!res.ok) return [];
 
     const data: any = await res.json().catch(() => null);
-    const rawList: any[] = extractListFromData(data);
+    const list: any[] = Array.isArray(data?.items) ? data.items : [];
 
-    return rawList
-      .map((r: any, idx: number): SidebarOffer => {
-        const name =
-          r.name ??
-          r.title ??
-          r.productName ??
-          r.product?.name ??
-          `Producto ${idx + 1}`;
-
-        const slug =
-          r.slug ??
-          r.productSlug ??
-          r.product?.slug ??
-          r.slugName ??
-          "";
-
-        const imageUrl =
-          r.imageUrl ??
-          r.image ??
-          r.thumb ??
-          r.product?.imageUrl ??
-          null;
-
-        const price = toNum(
-          r.priceFinal ??
-            r.finalPrice ??
-            r.price ??
-            r.currentPrice ??
-            r.product?.price
-        );
-        const priceOriginal = toNum(
-          r.priceOriginal ?? r.originalPrice ?? r.product?.priceOriginal
-        );
-
-        return {
-          id: r.id ?? r.productId ?? slug ?? idx,
-          name,
-          slug,
-          imageUrl,
-          price,
-          priceOriginal,
-        };
-      })
+    return list
+      .map((r: any, idx: number): SidebarOffer => ({
+        id: r.id ?? idx,
+        name: r.name ?? `Producto ${idx + 1}`,
+        slug: r.slug ?? "",
+        imageUrl: r.imageUrl ?? null,
+        price:
+          typeof r.price === "number"
+            ? r.price
+            : r.price != null
+            ? Number(r.price)
+            : null,
+        priceOriginal:
+          typeof r.priceOriginal === "number"
+            ? r.priceOriginal
+            : r.priceOriginal != null
+            ? Number(r.priceOriginal)
+            : null,
+      }))
       .filter((o) => o.name && o.slug);
   } catch {
     return [];
@@ -270,7 +208,7 @@ export default async function SobreNosotrosPage() {
             </div>
           </section>
 
-          {/* Columna derecha: Ofertas (desde /api/public/offers) */}
+          {/* Columna derecha: Ofertas (desde /api/public/sidebar-offers) */}
           <aside className="order-3">
             <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-emerald-100 space-y-3">
               <h2 className="text-lg font-semibold">Ofertas</h2>
