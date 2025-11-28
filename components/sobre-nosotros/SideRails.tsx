@@ -20,18 +20,6 @@ type Prod = {
   offer?: any | null;
 };
 
-type SidebarOffer = {
-  id: number;
-  title?: string | null;
-  productId?: number | null;
-  product?: { id: number; name: string; slug: string } | null;
-};
-
-type SidebarResponse = {
-  ok?: boolean;
-  items?: SidebarOffer[];
-};
-
 function firstImage(p: Prod) {
   return (
     p.cover ??
@@ -145,56 +133,19 @@ export function SideOffers() {
 
   useEffect(() => {
     (async () => {
-      const [sidebarData, catalog] = await Promise.all([
-        getJson<SidebarResponse>("/api/public/sidebar-offers?take=9"),
-        loadCatalogOnce(),
-      ]);
+      const cat = (await loadCatalogOnce()) ?? [];
 
-      const cat = catalog ?? [];
+      // Misma lógica que te funcionaba antes, pero usando el catálogo compartido
+      const offers = cat.filter((p) => {
+        const fin = Number(p.priceFinal ?? p.price ?? NaN);
+        const orig = Number(p.priceOriginal ?? NaN);
+        const hasNumeric =
+          !Number.isNaN(fin) && !Number.isNaN(orig) && fin < orig;
+        const hasFlag = !!(p.appliedOffer || p.offer);
+        return hasNumeric || hasFlag;
+      });
 
-      const bySlug = new Map<string, Prod>();
-      for (const p of cat) {
-        if (p.slug) bySlug.set(p.slug, p);
-      }
-
-      const matched: Prod[] = [];
-
-      // 1) Intentamos primero con la lista oficial de ofertas
-      if (sidebarData?.items?.length) {
-        for (const off of sidebarData.items) {
-          const slug = off.product?.slug;
-          if (!slug) continue;
-          const prod = bySlug.get(slug);
-          if (prod && !matched.some((m) => m.id === prod.id)) {
-            matched.push(prod);
-          }
-          if (matched.length >= 6) break;
-        }
-      }
-
-      // 2) Si faltan, completamos con productos del catálogo que tengan
-      //    precioFinal < precioOriginal o flag de oferta.
-      if (matched.length < 6) {
-        const extra = cat.filter((p) => {
-          const fin = Number((p as any).priceFinal ?? p.price ?? NaN);
-          const orig = Number((p as any).priceOriginal ?? NaN);
-          const hasNumeric =
-            !Number.isNaN(fin) && !Number.isNaN(orig) && fin < orig;
-          const hasFlag = !!(
-            (p as any).appliedOffer || (p as any).offer
-          );
-          return hasNumeric || hasFlag;
-        });
-
-        for (const p of extra) {
-          if (matched.length >= 6) break;
-          if (!matched.some((m) => m.id === p.id)) {
-            matched.push(p);
-          }
-        }
-      }
-
-      setItems(matched);
+      setItems(offers.slice(0, 6));
     })();
   }, []);
 
