@@ -1,13 +1,15 @@
 // app/(public)/sobre-nosotros/page.tsx
 export const runtime = "edge";
-export const dynamic = "force-dynamic";
 
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
 import MainNav from "@/components/landing/MainNav";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
-import { SideBestSellers } from "@/components/sobre-nosotros/SideRails";
+import {
+  SideBestSellers,
+  SideOffers,
+} from "@/components/sobre-nosotros/SideRails";
 
 // --- Sucursales: igual que en la landing ---
 const hours: [string, string][] = [
@@ -69,45 +71,7 @@ const branches: Branch[] = [
   },
 ];
 
-// ----- Tipos para las ofertas del sidebar -----
-
-type SidebarOffer = {
-  id: number;
-  title?: string | null;
-  product?: {
-    id: number;
-    name: string;
-    slug: string;
-  } | null;
-};
-
-// Traemos las ofertas desde el mismo endpoint que usa la landing de ofertas
-async function fetchSidebarOffers(): Promise<SidebarOffer[]> {
-  try {
-    // Usamos la URL pública de producción, que ya probaste:
-    const res = await fetch(
-      "https://zonanatural.com.uy/api/public/sidebar-offers?take=6",
-      { cache: "no-store" }
-    );
-
-    if (!res.ok) {
-      return [];
-    }
-
-    const json: any = await res.json();
-    const items: SidebarOffer[] = Array.isArray(json?.items)
-      ? (json.items as SidebarOffer[])
-      : [];
-
-    return items;
-  } catch {
-    return [];
-  }
-}
-
-export default async function SobreNosotrosPage() {
-  const offers = await fetchSidebarOffers();
-
+export default function SobreNosotrosPage() {
   return (
     <>
       <InfoBar />
@@ -158,7 +122,6 @@ export default async function SobreNosotrosPage() {
 
             {/* Mapa + horarios con tabs (igual a la landing) */}
             <div className="mt-8">
-              {/* 🔧 Solo Las Piedras y La Paz */}
               <MapHours
                 locations={branches.filter(
                   (b) => b.name === "Las Piedras" || b.name === "La Paz"
@@ -190,47 +153,9 @@ export default async function SobreNosotrosPage() {
             </div>
           </section>
 
-          {/* Columna derecha: Ofertas (server-rendered) */}
+          {/* Columna derecha: Ofertas (SIEMPRE usa SideOffers) */}
           <aside className="order-3">
-            <div className="rounded-xl ring-1 ring-emerald-100 bg-white p-3">
-              <div className="mb-2 font-semibold">Ofertas</div>
-
-              {offers.length === 0 && (
-                <div className="text-sm text-emerald-700/80 bg-emerald-50/60 rounded-md px-2 py-1">
-                  No hay productos para mostrar.
-                </div>
-              )}
-
-              {offers.length > 0 && (
-                <ul className="space-y-2">
-                  {offers.map((o) => {
-                    const name =
-                      o.product?.name ?? o.title ?? "Producto en oferta";
-                    const slug = o.product?.slug ?? "";
-                    const href = slug ? `/producto/${slug}` : undefined;
-
-                    return (
-                      <li
-                        key={o.id}
-                        className="text-sm flex items-start gap-2 border-b border-emerald-50 last:border-none pb-1"
-                      >
-                        <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        {href ? (
-                          <a
-                            href={href}
-                            className="hover:underline text-emerald-800"
-                          >
-                            {name}
-                          </a>
-                        ) : (
-                          <span className="text-emerald-800">{name}</span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
+            <SideOffers />
           </aside>
         </div>
       </main>
