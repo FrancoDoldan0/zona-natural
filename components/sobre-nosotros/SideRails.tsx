@@ -20,12 +20,6 @@ type Prod = {
   offer?: any | null;
 };
 
-type SidebarOffer = {
-  id: number;
-  productId?: number | null;
-  product?: { id: number; name: string; slug: string } | null;
-};
-
 function firstImage(p: Prod) {
   return (
     p.cover ??
@@ -82,48 +76,43 @@ function SmallList({
 
 async function getJson<T>(url: string): Promise<T | null> {
   try {
-    console.log("[SideRails] fetch", url);
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
-      console.warn("[SideRails] respuesta no OK", url, res.status);
+      console.warn("[SideRails] fetch fallo", url, res.status);
       return null;
     }
-    const json = (await res.json()) as T;
-    console.log("[SideRails] json", url, json);
-    return json;
+    return (await res.json()) as T;
   } catch (err) {
-    console.error("[SideRails] error fetcheando", url, err);
+    console.error("[SideRails] error fetch", url, err);
     return null;
   }
 }
-
-/* ------------------  MÁS VENDIDOS  ------------------ */
 
 export function SideBestSellers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
-    let alive = true;
-
     (async () => {
+      console.log(
+        "[SideRails] fetch /api/public/catalogo?perPage=48&sort=-id"
+      );
       const data = await getJson<any>(
         "/api/public/catalogo?perPage=48&sort=-id"
       );
+
       const list: Prod[] =
         (data?.items as Prod[]) ??
         (data?.data as Prod[]) ??
         (data?.products as Prod[]) ??
         [];
 
-      console.log("[SideBestSellers] productos en catálogo:", list.length);
+      console.log(
+        "[SideBestSellers] productos en catálogo:",
+        list.length ?? 0
+      );
 
-      if (!alive) return;
       setItems(list.slice(0, 6));
     })();
-
-    return () => {
-      alive = false;
-    };
   }, []);
 
   return (
@@ -135,77 +124,112 @@ export function SideBestSellers() {
   );
 }
 
-/* ------------------  OFERTAS CON FOTOS  ------------------ */
-
 export function SideOffers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
+    (async () => {
       console.log("[SideOffers] start load");
 
-      // 1) Ofertas (ids de producto)
-      const offersData = await getJson<{ ok: boolean; items: SidebarOffer[] }>(
-        "/api/public/sidebar-offers?take=6"
-      );
-      const offers = offersData?.items ?? [];
-      console.log("[SideOffers] offers", offers);
+      // 1) Traer ofertas del endpoint dedicado
+      const offersRes = await getJson<any>("/api/public/sidebar-offers?take=6");
+      const offers: any[] = Array.isArray(offersRes?.items)
+        ? offersRes.items
+        : [];
+      console.log("[SideOffers] offers crudas", offers.length, offers);
 
       if (!offers.length) {
-        if (!cancelled) setItems([]);
+        setItems([]);
         return;
       }
 
-      // 2) Catálogo con datos completos (fotos, precios, etc.)
-      const catalogData = await getJson<any>(
-        "/api/public/catalogo?perPage=200&sort=-id"
+      // 2) Traer TODO el catálogo (todas las páginas) para poder encontrar los productos
+      const perPage = 200;
+      const firstPage = await getJson<any>(
+        `/api/public/catalogo?perPage=${perPage}&sort=-id`
       );
-      const catalog: Prod[] =
-        (catalogData?.items as Prod[]) ??
-        (catalogData?.data as Prod[]) ??
-        (catalogData?.products as Prod[]) ??
-        [];
-
-      console.log("[SideOffers] catalog length", catalog.length);
-
-      if (!catalog.length) {
-        if (!cancelled) setItems([]);
+      if (!firstPage) {
+        setItems([]);
         return;
       }
 
-      // 3) Mapa id -> producto
-      const byId = new Map<number, Prod>();
-      for (const p of catalog) {
-        if (typeof p.id === "number") byId.set(p.id, p);
+      let all: Prod[] =
+        (firstPage.items as Prod[]) ??
+        (firstPage.data as Prod[]) ??
+        (firstPage.products as Prod[]) ??
+        [];
+      const pageCount: number =
+        typeof firstPage.pageCount === "number" ? firstPage.pageCount : 1;
+
+      if (pageCount > 1) {
+        const promises: Promise<any | null>[] = [];
+        for (let page = 2; page <= pageCount; page++) {
+          promises.push(
+            getJson<any>(
+              `/api/public/catalogo?perPage=${perPage}&sort=-id&page=${page}`
+            )
+          );
+        }
+        const extraPages = await Promise.all(promises);
+        for (const page of extraPages) {
+          if (!page) continue;
+          const chunk: Prod[] =
+            (page.items as Prod[]) ??
+            (page.data as Prod[]) ??
+            (page.products as Prod[]) ??
+            [];
+          all = all.concat(chunk);
+        }
       }
 
-      // 4) Matcheamos ofertas con productos
+      console.log("[SideOffers] catalog length", all.length);
+
+      // 3) Match: por slug (preferente) o productId
       const matched: Prod[] = [];
+
       for (const offer of offers) {
-        const pid =
-          typeof offer.productId === "number"
-            ? offer.productId
-            : typeof offer.product?.id === "number"
-            ? offer.product.id
+        const slug: string | undefined = offer?.product?.slug;
+        const pid: number | undefined = offer?.productId;
+
+        const prod =
+          (slug && all.find((p) => p.slug === slug)) ||
+          (pid && all.find((p) => p.id === pid));
+
+        if (!prod) continue;
+
+        const discountVal = Number(offer.discountVal ?? 0);
+
+        const basePrice =
+          typeof prod.price === "number"
+            ? prod.price
+            : typeof prod.priceOriginal === "number"
+            ? prod.priceOriginal
+            : typeof prod.priceFinal === "number"
+            ? prod.priceFinal
             : null;
 
-        if (!pid) continue;
-        const prod = byId.get(pid);
-        if (prod) matched.push(prod);
+        const priceOriginal =
+          typeof prod.priceOriginal === "number"
+            ? prod.priceOriginal
+            : basePrice;
+
+        const priceFinal =
+          typeof prod.priceFinal === "number"
+            ? prod.priceFinal
+            : basePrice !== null
+            ? basePrice - discountVal
+            : null;
+
+        matched.push({
+          ...prod,
+          priceOriginal,
+          priceFinal,
+        });
       }
 
-      console.log("[SideOffers] matched", matched);
-
-      if (!cancelled) setItems(matched);
-    }
-
-    load();
-
-    return () => {
-      cancelled = true;
-    };
+      console.log("[SideOffers] matched", matched.length, matched);
+      setItems(matched);
+    })();
   }, []);
 
   return (
