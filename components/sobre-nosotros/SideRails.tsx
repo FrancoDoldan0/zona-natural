@@ -2,10 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import ProductCard from "@/components/ui/ProductCard";
-
-/* ---------- Tipos compartidos ---------- */
 
 type Prod = {
   id: number;
@@ -23,17 +20,6 @@ type Prod = {
   offer?: any | null;
 };
 
-type SidebarOffer = {
-  id: number;
-  title?: string | null;
-  productId?: number | null;
-  product?: {
-    id: number;
-    name: string;
-    slug: string;
-  } | null;
-};
-
 function firstImage(p: Prod) {
   return (
     p.cover ??
@@ -43,8 +29,6 @@ function firstImage(p: Prod) {
     (Array.isArray(p.images) && p.images.length ? p.images[0] : null)
   );
 }
-
-/* ---------- UI genérica para listas de productos ---------- */
 
 function SmallList({
   title,
@@ -90,44 +74,51 @@ function SmallList({
   );
 }
 
-/* ---------- Helper genérico para fetch JSON ---------- */
-
 async function getJson<T>(url: string): Promise<T | null> {
   try {
+    console.log("[SideRails] fetch", url);
     const res = await fetch(url, { cache: "no-store" });
-    console.log("[SideRails] fetch", url, res.status);
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      console.warn("[SideRails] non-OK response", url, res.status, text);
+      console.warn("[SideRails] respuesta no OK para", url, res.status);
       return null;
     }
     const json = (await res.json()) as T;
     console.log("[SideRails] json", url, json);
     return json;
   } catch (err) {
-    console.error("[SideRails] error fetching", url, err);
+    console.error("[SideRails] error fetcheando", url, err);
     return null;
   }
 }
 
-/* =========================================================
- *  MÁS VENDIDOS – igual que antes
- * =======================================================*/
-
+// ----------------------
+// Más vendidos
+// ----------------------
 export function SideBestSellers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
+    let alive = true;
+
     (async () => {
-      const data = await getJson<any>("/api/public/catalogo?perPage=48&sort=-id");
+      const data = await getJson<any>(
+        "/api/public/catalogo?perPage=48&sort=-id"
+      );
       const list: Prod[] =
         (data?.items as Prod[]) ??
         (data?.data as Prod[]) ??
         (data?.products as Prod[]) ??
         [];
+
       console.log("[SideBestSellers] productos en catálogo:", list.length);
+
+      if (!alive) return;
       setItems(list.slice(0, 6));
     })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   return (
@@ -139,88 +130,90 @@ export function SideBestSellers() {
   );
 }
 
-/* =========================================================
- *  OFERTAS – versión simple usando solo /api/public/sidebar-offers
- * =======================================================*/
-
+// ----------------------
+// Ofertas (con fotos)
+// ----------------------
 export function SideOffers() {
-  const [offers, setOffers] = useState<SidebarOffer[] | null>(null);
+  const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
+    let alive = true;
+
     (async () => {
       try {
-        console.log("[SideOffers] fetching sidebar offers…");
-        const res = await fetch("/api/public/sidebar-offers?take=6", {
-          cache: "no-store",
-        });
-        console.log("[SideOffers] status", res.status);
-        if (!res.ok) {
-          const txt = await res.text().catch(() => "");
-          console.warn("[SideOffers] non-OK response body:", txt);
-          setOffers([]);
-          return;
-        }
-        const json: any = await res.json();
-        console.log("[SideOffers] json", json);
-
-        const arr: SidebarOffer[] = Array.isArray(json?.items)
-          ? (json.items as SidebarOffer[])
+        // 1) Traemos las ofertas (ids de producto)
+        const offersData = await getJson<any>(
+          "/api/public/sidebar-offers?take=6"
+        );
+        const rawOffers: any[] = Array.isArray(offersData?.items)
+          ? offersData.items
           : [];
 
-        setOffers(arr);
+        // 2) Traemos un bloque del catálogo con datos completos de productos
+        const catalogData = await getJson<any>(
+          "/api/public/catalogo?perPage=96&sort=-id"
+        );
+        const catalog: Prod[] =
+          (catalogData?.items as Prod[]) ??
+          (catalogData?.data as Prod[]) ??
+          (catalogData?.products as Prod[]) ??
+          [];
+
+        console.log(
+          "[SideOffers] ofertas:",
+          rawOffers.length,
+          "productos catálogo:",
+          catalog.length
+        );
+
+        if (!alive) return;
+
+        if (!rawOffers.length || !catalog.length) {
+          setItems([]);
+          return;
+        }
+
+        // 3) Mapa id -> producto para buscar rápido
+        const byId = new Map<number, Prod>();
+        for (const p of catalog) {
+          if (typeof p.id === "number" && !byId.has(p.id)) {
+            byId.set(p.id, p);
+          }
+        }
+
+        // 4) Para cada oferta, buscamos el producto completo
+        const matched: Prod[] = [];
+        for (const offer of rawOffers) {
+          const pid =
+            typeof offer.productId === "number"
+              ? offer.productId
+              : typeof offer.product?.id === "number"
+              ? offer.product.id
+              : null;
+
+          if (!pid) continue;
+          const prod = byId.get(pid);
+          if (prod) matched.push(prod);
+        }
+
+        setItems(matched);
       } catch (err) {
-        console.error("[SideOffers] error general", err);
-        setOffers([]);
+        console.error("[SideOffers] error obteniendo ofertas", err);
+        if (!alive) return;
+        setItems([]);
       }
     })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   return (
-    <div className="rounded-xl ring-1 ring-emerald-100 bg-white p-3">
-      <div className="mb-2 font-semibold">Ofertas</div>
-
-      {/* Cargando */}
-      {offers === null && (
-        <div className="text-sm text-gray-500">Cargando…</div>
-      )}
-
-      {/* Sin ofertas */}
-      {offers !== null && offers.length === 0 && (
-        <div className="text-sm text-emerald-700/80 bg-emerald-50/60 rounded-md px-2 py-1">
-          No hay productos para mostrar.
-        </div>
-      )}
-
-      {/* Lista de ofertas */}
-      {offers !== null && offers.length > 0 && (
-        <ul className="space-y-2">
-          {offers.map((o) => {
-            const name =
-              o.product?.name ?? o.title ?? "Producto en oferta";
-            const slug = o.product?.slug ?? "";
-            const href = slug ? `/producto/${slug}` : undefined;
-
-            return (
-              <li
-                key={o.id}
-                className="text-sm flex items-start gap-2 border-b border-emerald-50 last:border-none pb-1"
-              >
-                <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                {href ? (
-                  <Link
-                    href={href}
-                    className="hover:underline text-emerald-800"
-                  >
-                    {name}
-                  </Link>
-                ) : (
-                  <span className="text-emerald-800">{name}</span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+    <SmallList
+      title="Ofertas"
+      emptyText="No hay productos para mostrar."
+      items={items}
+    />
   );
 }
