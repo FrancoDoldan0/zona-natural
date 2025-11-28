@@ -20,6 +20,18 @@ type Prod = {
   offer?: any | null;
 };
 
+type SidebarOffer = {
+  id: number;
+  title?: string | null;
+  productId?: number | null;
+  product?: { id: number; name: string; slug: string } | null;
+};
+
+type SidebarResponse = {
+  ok?: boolean;
+  items?: SidebarOffer[];
+};
+
 function firstImage(p: Prod) {
   return (
     p.cover ??
@@ -42,15 +54,12 @@ function SmallList({
   return (
     <div className="rounded-xl ring-1 ring-emerald-100 bg-white p-3">
       <div className="mb-2 font-semibold">{title}</div>
-
       {!items && <div className="text-sm text-gray-500">Cargando…</div>}
-
       {items && items.length === 0 && (
         <div className="text-sm text-emerald-700/80 bg-emerald-50/60 rounded-md px-2 py-1">
           {emptyText}
         </div>
       )}
-
       {items && items.length > 0 && (
         <div className="grid gap-2">
           {items.map((p) => (
@@ -77,15 +86,39 @@ function SmallList({
 async function getJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) {
-      console.warn("[SideRails] fetch fallo", url, res.status);
-      return null;
-    }
+    if (!res.ok) return null;
     return (await res.json()) as T;
-  } catch (err) {
-    console.error("[SideRails] error fetch", url, err);
+  } catch {
     return null;
   }
+}
+
+/**
+ * Cache de catálogo en memoria para no pegarle dos veces
+ * a /api/public/catalogo desde Más vendidos y Ofertas.
+ */
+let catalogCache: Prod[] | null = null;
+let catalogPromise: Promise<Prod[] | null> | null = null;
+
+async function loadCatalogOnce(): Promise<Prod[] | null> {
+  if (catalogCache) return catalogCache;
+
+  if (!catalogPromise) {
+    catalogPromise = (async () => {
+      const data = await getJson<any>(
+        "/api/public/catalogo?perPage=48&sort=-id"
+      );
+      const list: Prod[] =
+        (data?.items as Prod[]) ??
+        (data?.data as Prod[]) ??
+        (data?.products as Prod[]) ??
+        [];
+      catalogCache = list;
+      return list;
+    })();
+  }
+
+  return catalogPromise;
 }
 
 export function SideBestSellers() {
@@ -93,24 +126,7 @@ export function SideBestSellers() {
 
   useEffect(() => {
     (async () => {
-      console.log(
-        "[SideRails] fetch /api/public/catalogo?perPage=48&sort=-id"
-      );
-      const data = await getJson<any>(
-        "/api/public/catalogo?perPage=48&sort=-id"
-      );
-
-      const list: Prod[] =
-        (data?.items as Prod[]) ??
-        (data?.data as Prod[]) ??
-        (data?.products as Prod[]) ??
-        [];
-
-      console.log(
-        "[SideBestSellers] productos en catálogo:",
-        list.length ?? 0
-      );
-
+      const list = (await loadCatalogOnce()) ?? [];
       setItems(list.slice(0, 6));
     })();
   }, []);
@@ -129,105 +145,55 @@ export function SideOffers() {
 
   useEffect(() => {
     (async () => {
-      console.log("[SideOffers] start load");
+      const [sidebarData, catalog] = await Promise.all([
+        getJson<SidebarResponse>("/api/public/sidebar-offers?take=9"),
+        loadCatalogOnce(),
+      ]);
 
-      // 1) Traer ofertas del endpoint dedicado
-      const offersRes = await getJson<any>("/api/public/sidebar-offers?take=6");
-      const offers: any[] = Array.isArray(offersRes?.items)
-        ? offersRes.items
-        : [];
-      console.log("[SideOffers] offers crudas", offers.length, offers);
+      const cat = catalog ?? [];
 
-      if (!offers.length) {
-        setItems([]);
-        return;
+      const bySlug = new Map<string, Prod>();
+      for (const p of cat) {
+        if (p.slug) bySlug.set(p.slug, p);
       }
 
-      // 2) Traer TODO el catálogo (todas las páginas) para poder encontrar los productos
-      const perPage = 200;
-      const firstPage = await getJson<any>(
-        `/api/public/catalogo?perPage=${perPage}&sort=-id`
-      );
-      if (!firstPage) {
-        setItems([]);
-        return;
-      }
-
-      let all: Prod[] =
-        (firstPage.items as Prod[]) ??
-        (firstPage.data as Prod[]) ??
-        (firstPage.products as Prod[]) ??
-        [];
-      const pageCount: number =
-        typeof firstPage.pageCount === "number" ? firstPage.pageCount : 1;
-
-      if (pageCount > 1) {
-        const promises: Promise<any | null>[] = [];
-        for (let page = 2; page <= pageCount; page++) {
-          promises.push(
-            getJson<any>(
-              `/api/public/catalogo?perPage=${perPage}&sort=-id&page=${page}`
-            )
-          );
-        }
-        const extraPages = await Promise.all(promises);
-        for (const page of extraPages) {
-          if (!page) continue;
-          const chunk: Prod[] =
-            (page.items as Prod[]) ??
-            (page.data as Prod[]) ??
-            (page.products as Prod[]) ??
-            [];
-          all = all.concat(chunk);
-        }
-      }
-
-      console.log("[SideOffers] catalog length", all.length);
-
-      // 3) Match: por slug (preferente) o productId
       const matched: Prod[] = [];
 
-      for (const offer of offers) {
-        const slug: string | undefined = offer?.product?.slug;
-        const pid: number | undefined = offer?.productId;
-
-        const prod =
-          (slug && all.find((p) => p.slug === slug)) ||
-          (pid && all.find((p) => p.id === pid));
-
-        if (!prod) continue;
-
-        const discountVal = Number(offer.discountVal ?? 0);
-
-        const basePrice =
-          typeof prod.price === "number"
-            ? prod.price
-            : typeof prod.priceOriginal === "number"
-            ? prod.priceOriginal
-            : typeof prod.priceFinal === "number"
-            ? prod.priceFinal
-            : null;
-
-        const priceOriginal =
-          typeof prod.priceOriginal === "number"
-            ? prod.priceOriginal
-            : basePrice;
-
-        const priceFinal =
-          typeof prod.priceFinal === "number"
-            ? prod.priceFinal
-            : basePrice !== null
-            ? basePrice - discountVal
-            : null;
-
-        matched.push({
-          ...prod,
-          priceOriginal,
-          priceFinal,
-        });
+      // 1) Intentamos primero con la lista oficial de ofertas
+      if (sidebarData?.items?.length) {
+        for (const off of sidebarData.items) {
+          const slug = off.product?.slug;
+          if (!slug) continue;
+          const prod = bySlug.get(slug);
+          if (prod && !matched.some((m) => m.id === prod.id)) {
+            matched.push(prod);
+          }
+          if (matched.length >= 6) break;
+        }
       }
 
-      console.log("[SideOffers] matched", matched.length, matched);
+      // 2) Si faltan, completamos con productos del catálogo que tengan
+      //    precioFinal < precioOriginal o flag de oferta.
+      if (matched.length < 6) {
+        const extra = cat.filter((p) => {
+          const fin = Number((p as any).priceFinal ?? p.price ?? NaN);
+          const orig = Number((p as any).priceOriginal ?? NaN);
+          const hasNumeric =
+            !Number.isNaN(fin) && !Number.isNaN(orig) && fin < orig;
+          const hasFlag = !!(
+            (p as any).appliedOffer || (p as any).offer
+          );
+          return hasNumeric || hasFlag;
+        });
+
+        for (const p of extra) {
+          if (matched.length >= 6) break;
+          if (!matched.some((m) => m.id === p.id)) {
+            matched.push(p);
+          }
+        }
+      }
+
       setItems(matched);
     })();
   }, []);
