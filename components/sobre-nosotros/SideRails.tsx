@@ -2,7 +2,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import ProductCard from "@/components/ui/ProductCard";
+
+/* ---------- Tipos compartidos ---------- */
 
 type Prod = {
   id: number;
@@ -22,8 +25,8 @@ type Prod = {
 
 type SidebarOffer = {
   id: number;
-  productId: number | null;
   title?: string | null;
+  productId?: number | null;
   product?: {
     id: number;
     name: string;
@@ -40,6 +43,8 @@ function firstImage(p: Prod) {
     (Array.isArray(p.images) && p.images.length ? p.images[0] : null)
   );
 }
+
+/* ---------- UI genérica para listas de productos ---------- */
 
 function SmallList({
   title,
@@ -85,6 +90,8 @@ function SmallList({
   );
 }
 
+/* ---------- Helper genérico para fetch JSON ---------- */
+
 async function getJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, { cache: "no-store" });
@@ -103,10 +110,10 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/**
- * Sidebar: Más vendidos
- * Igual que antes, usando /api/public/catalogo
- */
+/* =========================================================
+ *  MÁS VENDIDOS – igual que antes
+ * =======================================================*/
+
 export function SideBestSellers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
@@ -132,125 +139,88 @@ export function SideBestSellers() {
   );
 }
 
-/**
- * Sidebar: Ofertas
- * - Usa /api/public/sidebar-offers?take=6
- * - Cruza los IDs con el catálogo público para sacar imagen + precios
- * - Si no hay match, hace fallback y muestra igual los nombres de las ofertas
- */
+/* =========================================================
+ *  OFERTAS – versión simple usando solo /api/public/sidebar-offers
+ * =======================================================*/
+
 export function SideOffers() {
-  const [items, setItems] = useState<Prod[] | null>(null);
+  const [offers, setOffers] = useState<SidebarOffer[] | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        // 1) Catálogo (para imágenes y precios)
-        const catalogPromise = getJson<any>(
-          "/api/public/catalogo?perPage=999&sort=-id"
-        );
+        console.log("[SideOffers] fetching sidebar offers…");
+        const res = await fetch("/api/public/sidebar-offers?take=6", {
+          cache: "no-store",
+        });
+        console.log("[SideOffers] status", res.status);
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          console.warn("[SideOffers] non-OK response body:", txt);
+          setOffers([]);
+          return;
+        }
+        const json: any = await res.json();
+        console.log("[SideOffers] json", json);
 
-        // 2) Ofertas para sidebar (lo que ya probaste en el navegador)
-        const offersPromise = getJson<{ ok?: boolean; items?: SidebarOffer[] }>(
-          "/api/public/sidebar-offers?take=6"
-        );
-
-        const [catalogData, offersData] = await Promise.all([
-          catalogPromise,
-          offersPromise,
-        ]);
-
-        const catalogList: Prod[] =
-          (catalogData?.items as Prod[]) ??
-          (catalogData?.data as Prod[]) ??
-          (catalogData?.products as Prod[]) ??
-          [];
-
-        const offers: SidebarOffer[] = Array.isArray(offersData?.items)
-          ? offersData!.items!
+        const arr: SidebarOffer[] = Array.isArray(json?.items)
+          ? (json.items as SidebarOffer[])
           : [];
 
-        console.log(
-          "[SideOffers] catálogo:",
-          catalogList.length,
-          "ofertas sidebar:",
-          offers.length
-        );
-
-        if (!offers.length) {
-          // No hay ofertas activas en el endpoint
-          setItems([]);
-          return;
-        }
-
-        // IDs de productos en oferta
-        const offerIds = new Set<number>();
-        for (const o of offers) {
-          const rawId: any =
-            (o as any).productId ?? (o as any).product?.id ?? (o as any).id;
-          const pid = Number(rawId);
-          if (!Number.isNaN(pid)) {
-            offerIds.add(pid);
-          }
-        }
-        console.log("[SideOffers] IDs de productos en oferta:", [...offerIds]);
-
-        // Intentamos matchear contra el catálogo público
-        let offersFromCatalog: Prod[] = [];
-        if (catalogList.length && offerIds.size) {
-          offersFromCatalog = catalogList.filter((p) =>
-            offerIds.has(Number((p as any).id))
-          );
-        }
-
-        if (offersFromCatalog.length > 0) {
-          console.log(
-            "[SideOffers] match catálogo + ofertas:",
-            offersFromCatalog.map((p) => ({ id: p.id, name: p.name }))
-          );
-          setItems(offersFromCatalog.slice(0, 6));
-          return;
-        }
-
-        // Fallback: construimos productos mínimos solo con lo que viene del endpoint
-        const fallback: Prod[] = offers.map((o) => {
-          const rawId: any =
-            (o as any).productId ?? (o as any).product?.id ?? (o as any).id;
-          const pid = Number(rawId);
-          const baseId = Number.isNaN(pid) ? Math.random() : pid;
-
-          const name =
-            (o as any).product?.name ??
-            (o as any).title ??
-            "Producto en oferta";
-          const slug =
-            (o as any).product?.slug ??
-            (typeof (o as any).productId === "number"
-              ? String((o as any).productId)
-              : "");
-
-          return {
-            id: baseId,
-            name,
-            slug,
-            price: null,
-            priceOriginal: null,
-          };
-        });
-
-        console.log("[SideOffers] fallback (solo nombres):", fallback);
-        setItems(fallback.slice(0, 6));
+        setOffers(arr);
       } catch (err) {
         console.error("[SideOffers] error general", err);
-        setItems([]);
+        setOffers([]);
       }
     })();
   }, []);
 
   return (
-    <SmallList
-      title="Ofertas"
-      emptyText="No hay productos para mostrar."
-      items={items}
-    />
+    <div className="rounded-xl ring-1 ring-emerald-100 bg-white p-3">
+      <div className="mb-2 font-semibold">Ofertas</div>
+
+      {/* Cargando */}
+      {offers === null && (
+        <div className="text-sm text-gray-500">Cargando…</div>
+      )}
+
+      {/* Sin ofertas */}
+      {offers !== null && offers.length === 0 && (
+        <div className="text-sm text-emerald-700/80 bg-emerald-50/60 rounded-md px-2 py-1">
+          No hay productos para mostrar.
+        </div>
+      )}
+
+      {/* Lista de ofertas */}
+      {offers !== null && offers.length > 0 && (
+        <ul className="space-y-2">
+          {offers.map((o) => {
+            const name =
+              o.product?.name ?? o.title ?? "Producto en oferta";
+            const slug = o.product?.slug ?? "";
+            const href = slug ? `/producto/${slug}` : undefined;
+
+            return (
+              <li
+                key={o.id}
+                className="text-sm flex items-start gap-2 border-b border-emerald-50 last:border-none pb-1"
+              >
+                <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                {href ? (
+                  <Link
+                    href={href}
+                    className="hover:underline text-emerald-800"
+                  >
+                    {name}
+                  </Link>
+                ) : (
+                  <span className="text-emerald-800">{name}</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
