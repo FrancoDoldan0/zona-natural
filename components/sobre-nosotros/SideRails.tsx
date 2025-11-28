@@ -76,50 +76,16 @@ function SmallList({
 
 async function getJson<T>(url: string): Promise<T | null> {
   try {
-    // Dejamos que el navegador/Cloudflare cacheen esta request
-    const res = await fetch(url);
-    if (!res.ok) return null;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      console.warn("[SideRails] fetch fallo", url, res.status);
+      return null;
+    }
     return (await res.json()) as T;
-  } catch {
+  } catch (err) {
+    console.error("[SideRails] error fetch", url, err);
     return null;
   }
-}
-
-/**
- * Cache de catálogo en memoria para no hacer múltiples requests
- * pesados a /api/public/catalogo desde el mismo render.
- */
-let catalogCache: Prod[] | null = null;
-let catalogPromise: Promise<Prod[] | null> | null = null;
-
-async function loadCatalogOnce(): Promise<Prod[] | null> {
-  if (catalogCache) return catalogCache;
-
-  if (!catalogPromise) {
-    console.log(
-      "[SideRails] fetch /api/public/catalogo?perPage=600&sort=-id (cache global)"
-    );
-    catalogPromise = (async () => {
-      const data = await getJson<any>(
-        "/api/public/catalogo?perPage=600&sort=-id"
-      );
-      const list: Prod[] =
-        (data?.items as Prod[]) ??
-        (data?.data as Prod[]) ??
-        (data?.products as Prod[]) ??
-        [];
-      console.log("[SideRails] catálogo cargado:", {
-        ok: data?.ok,
-        total: data?.total,
-        pageCount: data?.pageCount,
-        length: list.length,
-      });
-      catalogCache = list;
-      return list;
-    })();
-  }
-
-  return catalogPromise;
 }
 
 export function SideBestSellers() {
@@ -127,8 +93,24 @@ export function SideBestSellers() {
 
   useEffect(() => {
     (async () => {
-      const list = (await loadCatalogOnce()) ?? [];
-      console.log("[SideBestSellers] productos en catálogo:", list.length);
+      console.log(
+        "[SideRails] fetch /api/public/catalogo?perPage=48&sort=-id"
+      );
+      const data = await getJson<any>(
+        "/api/public/catalogo?perPage=48&sort=-id"
+      );
+
+      const list: Prod[] =
+        (data?.items as Prod[]) ??
+        (data?.data as Prod[]) ??
+        (data?.products as Prod[]) ??
+        [];
+
+      console.log(
+        "[SideBestSellers] productos en catálogo:",
+        list.length ?? 0
+      );
+
       setItems(list.slice(0, 6));
     })();
   }, []);
@@ -147,24 +129,106 @@ export function SideOffers() {
 
   useEffect(() => {
     (async () => {
-      const list = (await loadCatalogOnce()) ?? [];
-      console.log("[SideOffers] catálogo para ofertas:", list.length);
+      console.log("[SideOffers] start load");
 
-      // Filtramos productos que tengan oferta visible
-      const offers = list.filter((p) => {
-        const fin = Number(p.priceFinal ?? p.price ?? NaN);
-        const orig = Number(p.priceOriginal ?? NaN);
+      // 1) Traer ofertas del endpoint dedicado
+      const offersRes = await getJson<any>("/api/public/sidebar-offers?take=6");
+      const offers: any[] = Array.isArray(offersRes?.items)
+        ? offersRes.items
+        : [];
+      console.log("[SideOffers] offers crudas", offers.length, offers);
 
-        const hasNumeric =
-          !Number.isNaN(fin) && !Number.isNaN(orig) && fin < orig;
+      if (!offers.length) {
+        setItems([]);
+        return;
+      }
 
-        const hasFlag = !!(p.appliedOffer || p.offer);
+      // 2) Traer TODO el catálogo (todas las páginas) para poder encontrar los productos
+      const perPage = 200;
+      const firstPage = await getJson<any>(
+        `/api/public/catalogo?perPage=${perPage}&sort=-id`
+      );
+      if (!firstPage) {
+        setItems([]);
+        return;
+      }
 
-        return hasNumeric || hasFlag;
-      });
+      let all: Prod[] =
+        (firstPage.items as Prod[]) ??
+        (firstPage.data as Prod[]) ??
+        (firstPage.products as Prod[]) ??
+        [];
+      const pageCount: number =
+        typeof firstPage.pageCount === "number" ? firstPage.pageCount : 1;
 
-      console.log("[SideOffers] ofertas encontradas:", offers.length);
-      setItems(offers.slice(0, 6));
+      if (pageCount > 1) {
+        const promises: Promise<any | null>[] = [];
+        for (let page = 2; page <= pageCount; page++) {
+          promises.push(
+            getJson<any>(
+              `/api/public/catalogo?perPage=${perPage}&sort=-id&page=${page}`
+            )
+          );
+        }
+        const extraPages = await Promise.all(promises);
+        for (const page of extraPages) {
+          if (!page) continue;
+          const chunk: Prod[] =
+            (page.items as Prod[]) ??
+            (page.data as Prod[]) ??
+            (page.products as Prod[]) ??
+            [];
+          all = all.concat(chunk);
+        }
+      }
+
+      console.log("[SideOffers] catalog length", all.length);
+
+      // 3) Match: por slug (preferente) o productId
+      const matched: Prod[] = [];
+
+      for (const offer of offers) {
+        const slug: string | undefined = offer?.product?.slug;
+        const pid: number | undefined = offer?.productId;
+
+        const prod =
+          (slug && all.find((p) => p.slug === slug)) ||
+          (pid && all.find((p) => p.id === pid));
+
+        if (!prod) continue;
+
+        const discountVal = Number(offer.discountVal ?? 0);
+
+        const basePrice =
+          typeof prod.price === "number"
+            ? prod.price
+            : typeof prod.priceOriginal === "number"
+            ? prod.priceOriginal
+            : typeof prod.priceFinal === "number"
+            ? prod.priceFinal
+            : null;
+
+        const priceOriginal =
+          typeof prod.priceOriginal === "number"
+            ? prod.priceOriginal
+            : basePrice;
+
+        const priceFinal =
+          typeof prod.priceFinal === "number"
+            ? prod.priceFinal
+            : basePrice !== null
+            ? basePrice - discountVal
+            : null;
+
+        matched.push({
+          ...prod,
+          priceOriginal,
+          priceFinal,
+        });
+      }
+
+      console.log("[SideOffers] matched", matched.length, matched);
+      setItems(matched);
     })();
   }, []);
 
