@@ -20,6 +20,12 @@ type Prod = {
   offer?: any | null;
 };
 
+type SidebarOffer = {
+  id: number;
+  productId?: number | null;
+  product?: { id: number; name: string; slug: string } | null;
+};
+
 function firstImage(p: Prod) {
   return (
     p.cover ??
@@ -79,7 +85,7 @@ async function getJson<T>(url: string): Promise<T | null> {
     console.log("[SideRails] fetch", url);
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
-      console.warn("[SideRails] respuesta no OK para", url, res.status);
+      console.warn("[SideRails] respuesta no OK", url, res.status);
       return null;
     }
     const json = (await res.json()) as T;
@@ -91,9 +97,8 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-// ----------------------
-// Más vendidos
-// ----------------------
+/* ------------------  MÁS VENDIDOS  ------------------ */
+
 export function SideBestSellers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
@@ -130,82 +135,76 @@ export function SideBestSellers() {
   );
 }
 
-// ----------------------
-// Ofertas (con fotos)
-// ----------------------
+/* ------------------  OFERTAS CON FOTOS  ------------------ */
+
 export function SideOffers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
-    let alive = true;
+    let cancelled = false;
 
-    (async () => {
-      try {
-        // 1) Traemos las ofertas (ids de producto)
-        const offersData = await getJson<any>(
-          "/api/public/sidebar-offers?take=6"
-        );
-        const rawOffers: any[] = Array.isArray(offersData?.items)
-          ? offersData.items
-          : [];
+    async function load() {
+      console.log("[SideOffers] start load");
 
-        // 2) Traemos un bloque del catálogo con datos completos de productos
-        const catalogData = await getJson<any>(
-          "/api/public/catalogo?perPage=96&sort=-id"
-        );
-        const catalog: Prod[] =
-          (catalogData?.items as Prod[]) ??
-          (catalogData?.data as Prod[]) ??
-          (catalogData?.products as Prod[]) ??
-          [];
+      // 1) Ofertas (ids de producto)
+      const offersData = await getJson<{ ok: boolean; items: SidebarOffer[] }>(
+        "/api/public/sidebar-offers?take=6"
+      );
+      const offers = offersData?.items ?? [];
+      console.log("[SideOffers] offers", offers);
 
-        console.log(
-          "[SideOffers] ofertas:",
-          rawOffers.length,
-          "productos catálogo:",
-          catalog.length
-        );
-
-        if (!alive) return;
-
-        if (!rawOffers.length || !catalog.length) {
-          setItems([]);
-          return;
-        }
-
-        // 3) Mapa id -> producto para buscar rápido
-        const byId = new Map<number, Prod>();
-        for (const p of catalog) {
-          if (typeof p.id === "number" && !byId.has(p.id)) {
-            byId.set(p.id, p);
-          }
-        }
-
-        // 4) Para cada oferta, buscamos el producto completo
-        const matched: Prod[] = [];
-        for (const offer of rawOffers) {
-          const pid =
-            typeof offer.productId === "number"
-              ? offer.productId
-              : typeof offer.product?.id === "number"
-              ? offer.product.id
-              : null;
-
-          if (!pid) continue;
-          const prod = byId.get(pid);
-          if (prod) matched.push(prod);
-        }
-
-        setItems(matched);
-      } catch (err) {
-        console.error("[SideOffers] error obteniendo ofertas", err);
-        if (!alive) return;
-        setItems([]);
+      if (!offers.length) {
+        if (!cancelled) setItems([]);
+        return;
       }
-    })();
+
+      // 2) Catálogo con datos completos (fotos, precios, etc.)
+      const catalogData = await getJson<any>(
+        "/api/public/catalogo?perPage=200&sort=-id"
+      );
+      const catalog: Prod[] =
+        (catalogData?.items as Prod[]) ??
+        (catalogData?.data as Prod[]) ??
+        (catalogData?.products as Prod[]) ??
+        [];
+
+      console.log("[SideOffers] catalog length", catalog.length);
+
+      if (!catalog.length) {
+        if (!cancelled) setItems([]);
+        return;
+      }
+
+      // 3) Mapa id -> producto
+      const byId = new Map<number, Prod>();
+      for (const p of catalog) {
+        if (typeof p.id === "number") byId.set(p.id, p);
+      }
+
+      // 4) Matcheamos ofertas con productos
+      const matched: Prod[] = [];
+      for (const offer of offers) {
+        const pid =
+          typeof offer.productId === "number"
+            ? offer.productId
+            : typeof offer.product?.id === "number"
+            ? offer.product.id
+            : null;
+
+        if (!pid) continue;
+        const prod = byId.get(pid);
+        if (prod) matched.push(prod);
+      }
+
+      console.log("[SideOffers] matched", matched);
+
+      if (!cancelled) setItems(matched);
+    }
+
+    load();
 
     return () => {
-      alive = false;
+      cancelled = true;
     };
   }, []);
 
