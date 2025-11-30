@@ -5,12 +5,18 @@ import { useEffect, useState } from "react";
 import ProductCard from "@/components/ui/ProductCard";
 
 type Prod = {
-  id: number;
-  name: string;
-  slug: string;
+  id: number | string;
+  // Puede venir de catálogo crudo o normalizado
+  name?: string | null;
+  title?: string | null;
+  slug?: string | null;
+
+  // Distintos campos posibles de precio
   price?: number | null;
-  priceOriginal?: number | null;
   priceFinal?: number | null;
+  priceOriginal?: number | null;
+  originalPrice?: number | null;
+
   image?: any;
   imageUrl?: string | null;
   cover?: any;
@@ -57,25 +63,43 @@ function SmallList({
 
       {items && items.length > 0 && (
         <div className="grid gap-2">
-          {items.map((p) => (
-            <ProductCard
-              key={p.id}
-              variant="row"
-              slug={p.slug}
-              title={p.name}
-              image={firstImage(p)}
-              price={
-                typeof p.priceFinal === "number"
-                  ? p.priceFinal
-                  : p.price ?? null
-              }
-              originalPrice={
-                typeof p.priceOriginal === "number"
-                  ? p.priceOriginal
-                  : null
-              }
-            />
-          ))}
+          {items.map((p) => {
+            // Título: aceptamos name o title
+            const title =
+              p.name?.toString() ??
+              p.title?.toString() ??
+              "-";
+
+            // Precio actual: puede venir en varios campos
+            const price =
+              typeof p.priceFinal === "number"
+                ? p.priceFinal
+                : typeof p.price === "number"
+                ? p.price
+                : null;
+
+            // Precio original (para tachado / descuento)
+            const originalPrice =
+              typeof p.priceOriginal === "number"
+                ? p.priceOriginal
+                : typeof p.originalPrice === "number"
+                ? p.originalPrice
+                : null;
+
+            const slug = p.slug ?? "";
+
+            return (
+              <ProductCard
+                key={p.id}
+                variant="row"
+                slug={slug}
+                title={title}
+                image={firstImage(p)}
+                price={price}
+                originalPrice={originalPrice}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -142,22 +166,25 @@ export function SideOffers() {
   useEffect(() => {
     (async () => {
       console.log(
-        "[SideOffers] fetch /api/public/sidebar-offers?take=6",
+        "[SideOffers] fetch /api/public/catalogo?perPage=48&status=all&onSale=1&sort=-id",
       );
+
       const data = await getJson<any>(
-        "/api/public/sidebar-offers?take=6",
+        "/api/public/catalogo?perPage=48&status=all&onSale=1&sort=-id",
       );
+
       const list: Prod[] =
         (data?.items as Prod[]) ??
         (data?.data as Prod[]) ??
         (Array.isArray(data) ? (data as Prod[]) : []);
 
       console.log(
-        "[SideOffers] ofertas recibidas:",
+        "[SideOffers] ofertas encontradas en catálogo:",
         list.length ?? 0,
       );
 
-      setItems(list);
+      // Nos quedamos con las primeras 6 ofertas
+      setItems(list.slice(0, 6));
     })();
   }, []);
 
