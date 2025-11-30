@@ -3,83 +3,51 @@ export const runtime = "edge";
 
 import { NextResponse } from "next/server";
 
+/**
+ * Endpoint público para las ofertas del sidebar.
+ * Ahora actúa como un proxy muy fino hacia /api/public/offers,
+ * que ya unifica:
+ *  - Ofertas de la tabla Offer
+ *  - Productos con priceOriginal / priceFinal
+ */
 export async function GET(req: Request) {
   const url = new URL(req.url);
 
-  // ?take=6 (por defecto 5, máximo 24)
+  // Por si algún día le pasamos ?take=8, lo respetamos, sino usamos 5
   const takeParam = url.searchParams.get("take") ?? "5";
   let take = Number.parseInt(takeParam, 10);
   if (!Number.isFinite(take) || take <= 0) take = 5;
-  if (take > 24) take = 24;
+  if (take > 20) take = 20;
+
+  // Construimos la URL del endpoint REAL de ofertas (el que ya funciona)
+  const upstream = new URL("/api/public/offers", url);
+  upstream.searchParams.set("take", String(take));
+  upstream.searchParams.set("source", "sidebar");
 
   try {
-    const upstream = new URL("/api/public/catalogo", url);
-    upstream.searchParams.set("status", "all");
-    upstream.searchParams.set("onSale", "1");
-    upstream.searchParams.set("perPage", String(take * 4));
-    upstream.searchParams.set("sort", "-id");
-
     const res = await fetch(upstream.toString(), {
+      // No cacheamos para que siempre muestre lo actual
       cache: "no-store",
     });
 
     if (!res.ok) {
-      console.error(
-        "[sidebar-offers] upstream error",
-        res.status,
-      );
+      console.error("sidebar-offers upstream error", res.status);
       return NextResponse.json(
-        { ok: false, error: "upstream_error" },
+        { ok: false, error: "upstream_error", items: [] },
         { status: 500 },
       );
     }
 
-    const data = await res.json();
-    const itemsRaw: any[] =
-      (data?.items as any[]) ??
-      (data?.data as any[]) ??
-      (Array.isArray(data) ? (data as any[]) : []);
+    // Lo tipamos explícitamente como any para que TS no se queje
+    const data: any = await res.json();
 
-    if (!Array.isArray(itemsRaw) || !itemsRaw.length) {
-      return NextResponse.json({ ok: true, items: [] });
-    }
-
-    // Nos quedamos sólo con los que realmente tienen descuento
-    const withDiscount = itemsRaw.filter((p) => {
-      if (typeof p.hasDiscount === "boolean")
-        return p.hasDiscount;
-      const orig =
-        typeof p.priceOriginal === "number"
-          ? p.priceOriginal
-          : null;
-      const fin =
-        typeof p.priceFinal === "number"
-          ? p.priceFinal
-          : null;
-      return orig != null && fin != null && fin < orig;
-    });
-
-    // Ordenar por porcentaje de descuento (si lo tenemos)
-    withDiscount.sort((a, b) => {
-      const da =
-        typeof a.discountPercent === "number"
-          ? a.discountPercent
-          : 0;
-      const db =
-        typeof b.discountPercent === "number"
-          ? b.discountPercent
-          : 0;
-      return db - da;
-    });
-
-    return NextResponse.json({
-      ok: true,
-      items: withDiscount.slice(0, take),
-    });
+    // data ya viene en el mismo formato que usa la página de Ofertas:
+    // { ok: true, items: [...] } — lo devolvemos tal cual
+    return NextResponse.json(data);
   } catch (err) {
-    console.error("[sidebar-offers] internal error", err);
+    console.error("sidebar-offers internal error", err);
     return NextResponse.json(
-      { ok: false, error: "internal_error" },
+      { ok: false, error: "internal_error", items: [] },
       { status: 500 },
     );
   }
