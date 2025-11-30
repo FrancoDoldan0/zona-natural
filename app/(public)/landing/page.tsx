@@ -156,56 +156,34 @@ async function getCatalog(perPage = 48): Promise<Prod[]> {
 
 /**
  * Ofertas para la landing:
- *  - Usa la MISMA lógica que la página /ofertas:
- *    primero consulta /api/public/catalogo?offers=1 / hasDiscount / onSale,
- *    luego normaliza y se queda solo con los productos donde
- *    price < originalPrice.
- *  - Devuelve los ítems en el formato "raw" del catálogo,
- *    que es lo que espera OffersCarousel.
+ *  - Usa la MISMA base que la página /ofertas:
+ *    /api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id
+ *  - Normaliza y filtra para quedarse solo con productos donde
+ *    price < originalPrice, pero devuelve los ítems "raw"
+ *    (lo que espera OffersCarousel).
  */
 async function getOffersRaw(): Promise<Prod[]> {
   type Raw = Record<string, any>;
-  let raw: Raw[] = [];
 
-  // 1) Mismo fetch que en /ofertas
-  const guesses = ["offers=1", "hasDiscount=1", "onSale=1"];
-  for (const qp of guesses) {
-    const data = await safeJson<any>(
-      await abs(
-        `/api/public/catalogo?perPage=200&status=all&${qp}`
-      ),
-      { cache: "no-store", next: { revalidate: 0 } }
-    );
-    const items: Raw[] =
-      (data?.items as Raw[]) ??
-      (data?.data as Raw[]) ??
-      (Array.isArray(data) ? (data as Raw[]) : []);
-    if (Array.isArray(items) && items.length) {
-      raw = items;
-      break;
-    }
-  }
+  const data = await safeJson<any>(
+    await abs(
+      `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id`
+    ),
+    { cache: "no-store", next: { revalidate: 0 } }
+  );
 
-  // Fallback: por si el backend no soporta esos flags
-  if (!raw.length) {
-    const data = await safeJson<any>(
-      await abs(
-        `/api/public/catalogo?perPage=200&status=all&sort=-id`
-      ),
-      { cache: "no-store", next: { revalidate: 0 } }
-    );
-    raw =
-      (data?.items as Raw[]) ??
-      (data?.data as Raw[]) ??
-      (Array.isArray(data) ? (data as Raw[]) : []);
-  }
+  const raw: Raw[] =
+    (data?.items as Raw[]) ??
+    (data?.data as Raw[]) ??
+    (Array.isArray(data) ? (data as Raw[]) : []);
 
   if (!raw.length) return [];
 
-  // 2) Igual que /ofertas: normalizamos y filtramos por descuento real
+  // Normalizamos igual que en /ofertas
   const normalized = raw.map((p) => normalizeProduct(p));
   const keepIds = new Set<number>();
 
+  // Nos quedamos solo con productos donde realmente hay descuento
   for (const p of normalized) {
     const final =
       typeof p.price === "number" ? p.price : null;
@@ -213,6 +191,7 @@ async function getOffersRaw(): Promise<Prod[]> {
       typeof p.originalPrice === "number"
         ? p.originalPrice
         : null;
+
     if (final != null && orig != null && final < orig) {
       const id =
         typeof p.id === "number" ? p.id : Number(p.id);
@@ -221,12 +200,11 @@ async function getOffersRaw(): Promise<Prod[]> {
   }
 
   if (!keepIds.size) {
-    // Si por alguna razón no detectamos descuentos,
-    // preferimos no mostrar nada antes que mostrar cosas sin oferta.
+    // Preferimos no mostrar nada antes que cosas sin oferta real
     return [];
   }
 
-  // 3) Devolvemos SOLO los raw cuyo id coincide con los filtrados
+  // Devolvemos SOLO los raw cuyos id están en keepIds
   const filteredRaw = raw.filter((p) => {
     const id =
       typeof p.id === "number" ? p.id : Number(p.id);
