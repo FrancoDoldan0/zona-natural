@@ -166,11 +166,11 @@ export function SideOffers() {
   useEffect(() => {
     (async () => {
       console.log(
-        "[SideOffers] fetch /api/public/catalogo?perPage=48&status=all&onSale=1&sort=-id",
+        "[SideOffers] fetch /api/public/sidebar-offers?take=6",
       );
 
       const data = await getJson<any>(
-        "/api/public/catalogo?perPage=48&status=all&onSale=1&sort=-id",
+        "/api/public/sidebar-offers?take=6",
       );
 
       const list: Prod[] =
@@ -179,12 +179,12 @@ export function SideOffers() {
         (Array.isArray(data) ? (data as Prod[]) : []);
 
       console.log(
-        "[SideOffers] ofertas encontradas en catálogo:",
+        "[SideOffers] ofertas recibidas:",
         list.length ?? 0,
       );
 
-      // Nos quedamos con las primeras 6 ofertas
-      setItems(list.slice(0, 6));
+      // El endpoint ya respeta ?take=6, mostramos todo lo que venga
+      setItems(list);
     })();
   }, []);
 
