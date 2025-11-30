@@ -48,41 +48,30 @@ async function safeJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/* ================= tipos light ================= */
+/* ================= tipos ================= */
 
-type SidebarOffer = {
-  id: number;
-  productId: number;
-  discountType?: "AMOUNT" | "PERCENT" | string | null;
-  discountVal?: number | null;
-};
-
-type CatalogProduct = {
+type RawProduct = {
   id: number;
   name: string;
   slug: string;
+
   price?: number | null;
+  priceOriginal?: number | null;
   priceFinal?: number | null;
+
   image?: any;
   imageUrl?: string | null;
   cover?: any;
   coverUrl?: string | null;
   images?: { url: string; alt?: string | null }[];
+
   brand?: string | null;
   subtitle?: string | null;
   variants?: any[];
-};
 
-/* elegir imagen como en SideRails */
-function firstImage(p: CatalogProduct) {
-  return (
-    p.cover ??
-    p.coverUrl ??
-    p.image ??
-    p.imageUrl ??
-    (Array.isArray(p.images) && p.images.length ? p.images[0] : null)
-  );
-}
+  appliedOffer?: any | null;
+  offer?: any | null;
+};
 
 type OfferCardData = {
   id: number;
@@ -96,102 +85,116 @@ type OfferCardData = {
   variants?: any[];
 };
 
-/* aplica el descuento de la offer al producto del catálogo */
-function buildOfferCard(prod: CatalogProduct, off: SidebarOffer): OfferCardData {
-  // base: si existe priceFinal lo usamos, sino price
-  const basePriceRaw =
-    typeof prod.priceFinal === "number"
-      ? prod.priceFinal
-      : typeof prod.price === "number"
-      ? prod.price
-      : null;
+/* elegir imagen igual que en otros sidebars */
+function firstImage(p: RawProduct) {
+  return (
+    p.cover ??
+    p.coverUrl ??
+    p.image ??
+    p.imageUrl ??
+    (Array.isArray(p.images) && p.images.length ? p.images[0] : null)
+  );
+}
 
-  let finalPrice = basePriceRaw;
+/* ================= lógica de ofertas ================= */
 
-  if (typeof basePriceRaw === "number" && off) {
-    const val = Number(off.discountVal ?? NaN);
+/**
+ * Devuelve null si el producto NO es oferta.
+ * Si es oferta, calcula price / originalPrice y arma la card.
+ *
+ * Cuenta como oferta si:
+ *  - tiene priceFinal < priceOriginal, o
+ *  - tiene appliedOffer / offer
+ */
+function buildOfferCardFromProduct(p: RawProduct): OfferCardData | null {
+  const fin = Number(p.priceFinal ?? p.price ?? NaN);
+  const origField = Number(p.priceOriginal ?? NaN);
+  const rawOffer = (p.appliedOffer || p.offer) as
+    | { discountType?: "AMOUNT" | "PERCENT"; discountVal?: number | null }
+    | null
+    | undefined;
+
+  const hasNumeric =
+    !Number.isNaN(fin) && !Number.isNaN(origField) && fin < origField;
+  const hasFlag = !!rawOffer;
+
+  if (!hasNumeric && !hasFlag) {
+    // no pinta como oferta
+    return null;
+  }
+
+  let price: number | undefined =
+    !Number.isNaN(fin) && fin >= 0 ? fin : undefined;
+  let originalPrice: number | undefined =
+    !Number.isNaN(origField) && origField > 0 ? origField : undefined;
+
+  // Si viene sólo la offer (discountVal) pero no priceOriginal,
+  // intentamos reconstruir el precio original.
+  if (!originalPrice && price != null && rawOffer?.discountVal) {
+    const val = Number(rawOffer.discountVal);
     if (!Number.isNaN(val) && val > 0) {
-      if (off.discountType === "PERCENT") {
-        finalPrice = Math.max(0, basePriceRaw - (basePriceRaw * val) / 100);
+      if (rawOffer.discountType === "PERCENT") {
+        const base = price / (1 - val / 100);
+        originalPrice = Math.round(base);
       } else {
-        // AMOUNT u otro → restamos monto fijo
-        finalPrice = Math.max(0, basePriceRaw - val);
+        // AMOUNT u otro: sumamos monto
+        originalPrice = price + val;
       }
     }
   }
 
+  // si ni siquiera tenemos price, no sirve
+  if (price == null) return null;
+
   return {
-    id: prod.id,
-    slug: prod.slug,
-    title: prod.name,
-    image: firstImage(prod),
-    price: typeof finalPrice === "number" ? finalPrice : undefined,
-    originalPrice:
-      typeof basePriceRaw === "number" ? basePriceRaw : undefined,
-    brand: (prod as any).brand ?? undefined,
-    subtitle: (prod as any).subtitle ?? undefined,
-    variants: (prod as any).variants,
+    id: p.id,
+    slug: p.slug,
+    title: p.name,
+    image: firstImage(p),
+    price,
+    originalPrice,
+    brand: p.brand ?? undefined,
+    subtitle: p.subtitle ?? undefined,
+    variants: p.variants,
   };
 }
 
-/* ================= fetch de ofertas ================= */
-
 async function fetchOffersProducts(): Promise<OfferCardData[]> {
-  // 1) Traemos las ofertas "oficiales" (tabla Offer)
-  const offersUrl = await abs("/api/public/sidebar-offers?take=60");
-  const offersJson = await safeJson<any>(offersUrl);
-  const offers: SidebarOffer[] = Array.isArray(offersJson?.items)
-    ? offersJson.items
-    : [];
-
-  if (!offers.length) return [];
-
-  // 2) Juntamos los productId
-  const ids = offers
-    .map((o) => o.productId)
-    .filter((id) => typeof id === "number" && id > 0);
-
-  if (!ids.length) return [];
-
-  // 3) Traemos solo esos productos del catálogo (para tener fotos, precios, etc.)
-  const catUrl = await abs(
-    `/api/public/catalogo?ids=${ids.join(",")}&status=all&perPage=${ids.length}`,
+  // Traemos un catálogo grande y filtramos ofertas.
+  // Usamos status=all para no depender de filtros del backend.
+  const url = await abs(
+    "/api/public/catalogo?perPage=600&status=all&sort=-id",
   );
-  const catalogJson = await safeJson<any>(catUrl);
+  const json = await safeJson<any>(url);
 
-  const list: CatalogProduct[] =
-    (catalogJson?.items as CatalogProduct[]) ??
-    (catalogJson?.data as CatalogProduct[]) ??
-    (Array.isArray(catalogJson) ? (catalogJson as CatalogProduct[]) : []);
+  const list: RawProduct[] =
+    (json?.items as RawProduct[]) ??
+    (json?.data as RawProduct[]) ??
+    (Array.isArray(json) ? (json as RawProduct[]) : []);
 
-  if (!list.length) return [];
+  if (!Array.isArray(list) || !list.length) return [];
 
-  const byId = new Map<number, CatalogProduct>();
-  for (const p of list) byId.set(p.id, p);
+  const cards: OfferCardData[] = [];
 
-  // 4) Unimos offer + product y calculamos precios
-  const result = offers
-    .map((off) => {
-      const prod = byId.get(off.productId);
-      if (!prod) return null;
-      return buildOfferCard(prod, off);
-    })
-    .filter(Boolean) as OfferCardData[];
+  for (const p of list) {
+    const card = buildOfferCardFromProduct(p);
+    if (card) cards.push(card);
+  }
 
-  // 5) Orden: mayor % de descuento primero
-  result.sort((a, b) => {
+  // Ordenar por % de descuento (mayor primero)
+  cards.sort((a, b) => {
     const da =
-      a.originalPrice && a.price
+      a.originalPrice && a.price && a.price < a.originalPrice
         ? 1 - a.price / a.originalPrice
         : 0;
     const db =
-      b.originalPrice && b.price
+      b.originalPrice && b.price && b.price < b.originalPrice
         ? 1 - b.price / b.originalPrice
         : 0;
     return db - da;
   });
 
-  return result;
+  return cards;
 }
 
 /* ================= Opiniones inline ================= */
@@ -277,6 +280,9 @@ export default async function OffersPage() {
                     image={p.image}
                     price={p.price}
                     originalPrice={p.originalPrice}
+                    brand={p.brand}
+                    subtitle={p.subtitle}
+                    variants={p.variants}
                   />
                 ))}
               </div>
