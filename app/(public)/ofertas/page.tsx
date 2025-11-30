@@ -7,30 +7,40 @@ import Header from "@/components/landing/Header";
 import MainNav from "@/components/landing/MainNav";
 import ProductCard from "@/components/ui/ProductCard";
 import BestSellersSidebar from "@/components/landing/BestSellersSidebar";
-import { normalizeProduct } from "@/lib/product";
 import Link from "next/link";
 import { headers } from "next/headers";
 import RecipesPopular from "@/components/landing/RecipesPopular";
 import MapHoursTabs from "@/components/landing/MapHoursTabs";
 
-/* helpers */
+/* ================= helpers base ================= */
+
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
+
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   if (base) return `${base}${path}`;
+
   try {
     const h = await headers();
     const proto = h.get("x-forwarded-proto") ?? "https";
     const host =
-      h.get("x-forwarded-host") ?? h.get("host") ?? h.get("X-Host") ?? "";
+      h.get("x-forwarded-host") ??
+      h.get("host") ??
+      h.get("X-Host") ??
+      "";
     if (host) return `${proto}://${host}${path}`;
-  } catch {}
+  } catch {
+    // en edge puede fallar headers(), devolvemos relativo
+  }
   return path;
 }
 
 async function safeJson<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(url, { cache: "no-store", next: { revalidate: 0 } });
+    const res = await fetch(url, {
+      cache: "no-store",
+      next: { revalidate: 0 },
+    });
     if (!res.ok) return null as any;
     return (await res.json()) as T;
   } catch {
@@ -38,34 +48,154 @@ async function safeJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/* fetch ofertas (datos crudos del catálogo) */
-type Raw = Record<string, any>;
+/* ================= tipos light ================= */
 
-async function fetchOffers(): Promise<Raw[]> {
-  const guesses = ["offers=1", "hasDiscount=1", "onSale=1"];
+type SidebarOffer = {
+  id: number;
+  productId: number;
+  discountType?: "AMOUNT" | "PERCENT" | string | null;
+  discountVal?: number | null;
+};
 
-  for (const qp of guesses) {
-    const data = await safeJson<any>(
-      await abs(`/api/public/catalogo?perPage=200&status=all&${qp}`)
-    );
-    const items: Raw[] =
-      (data?.items as Raw[]) ??
-      (data?.data as Raw[]) ??
-      (Array.isArray(data) ? (data as Raw[]) : []);
-    if (Array.isArray(items) && items.length) return items;
-  }
+type CatalogProduct = {
+  id: number;
+  name: string;
+  slug: string;
+  price?: number | null;
+  priceFinal?: number | null;
+  image?: any;
+  imageUrl?: string | null;
+  cover?: any;
+  coverUrl?: string | null;
+  images?: { url: string; alt?: string | null }[];
+  brand?: string | null;
+  subtitle?: string | null;
+  variants?: any[];
+};
 
-  const data = await safeJson<any>(
-    await abs(`/api/public/catalogo?perPage=200&status=all&sort=-id`)
+/* elegir imagen como en SideRails */
+function firstImage(p: CatalogProduct) {
+  return (
+    p.cover ??
+    p.coverUrl ??
+    p.image ??
+    p.imageUrl ??
+    (Array.isArray(p.images) && p.images.length ? p.images[0] : null)
   );
-  const all: Raw[] =
-    (data?.items as Raw[]) ??
-    (data?.data as Raw[]) ??
-    (Array.isArray(data) ? (data as Raw[]) : []);
-  return all;
 }
 
-/* Opiniones inline */
+type OfferCardData = {
+  id: number;
+  slug: string;
+  title: string;
+  image: any;
+  price?: number;
+  originalPrice?: number;
+  brand?: string;
+  subtitle?: string;
+  variants?: any[];
+};
+
+/* aplica el descuento de la offer al producto del catálogo */
+function buildOfferCard(prod: CatalogProduct, off: SidebarOffer): OfferCardData {
+  // base: si existe priceFinal lo usamos, sino price
+  const basePriceRaw =
+    typeof prod.priceFinal === "number"
+      ? prod.priceFinal
+      : typeof prod.price === "number"
+      ? prod.price
+      : null;
+
+  let finalPrice = basePriceRaw;
+
+  if (typeof basePriceRaw === "number" && off) {
+    const val = Number(off.discountVal ?? NaN);
+    if (!Number.isNaN(val) && val > 0) {
+      if (off.discountType === "PERCENT") {
+        finalPrice = Math.max(0, basePriceRaw - (basePriceRaw * val) / 100);
+      } else {
+        // AMOUNT u otro → restamos monto fijo
+        finalPrice = Math.max(0, basePriceRaw - val);
+      }
+    }
+  }
+
+  return {
+    id: prod.id,
+    slug: prod.slug,
+    title: prod.name,
+    image: firstImage(prod),
+    price: typeof finalPrice === "number" ? finalPrice : undefined,
+    originalPrice:
+      typeof basePriceRaw === "number" ? basePriceRaw : undefined,
+    brand: (prod as any).brand ?? undefined,
+    subtitle: (prod as any).subtitle ?? undefined,
+    variants: (prod as any).variants,
+  };
+}
+
+/* ================= fetch de ofertas ================= */
+
+async function fetchOffersProducts(): Promise<OfferCardData[]> {
+  // 1) Traemos las ofertas "oficiales" (tabla Offer)
+  const offersUrl = await abs("/api/public/sidebar-offers?take=60");
+  const offersJson = await safeJson<any>(offersUrl);
+  const offers: SidebarOffer[] = Array.isArray(offersJson?.items)
+    ? offersJson.items
+    : [];
+
+  if (!offers.length) return [];
+
+  // 2) Juntamos los productId
+  const ids = offers
+    .map((o) => o.productId)
+    .filter((id) => typeof id === "number" && id > 0);
+
+  if (!ids.length) return [];
+
+  // 3) Traemos solo esos productos del catálogo (para tener fotos, precios, etc.)
+  const catUrl = await abs(
+    `/api/public/catalogo?ids=${ids.join(",")}&status=all&perPage=${ids.length}`,
+  );
+  const catalogJson = await safeJson<any>(catUrl);
+
+  const list: CatalogProduct[] =
+    (catalogJson?.items as CatalogProduct[]) ??
+    (catalogJson?.data as CatalogProduct[]) ??
+    (Array.isArray(catalogJson) ? (catalogJson as CatalogProduct[]) : []);
+
+  if (!list.length) return [];
+
+  const byId = new Map<number, CatalogProduct>();
+  for (const p of list) byId.set(p.id, p);
+
+  // 4) Unimos offer + product y calculamos precios
+  const result = offers
+    .map((off) => {
+      const prod = byId.get(off.productId);
+      if (!prod) return null;
+      return buildOfferCard(prod, off);
+    })
+    .filter(Boolean) as OfferCardData[];
+
+  // 5) Orden: mayor % de descuento primero
+  result.sort((a, b) => {
+    const da =
+      a.originalPrice && a.price
+        ? 1 - a.price / a.originalPrice
+        : 0;
+    const db =
+      b.originalPrice && b.price
+        ? 1 - b.price / b.originalPrice
+        : 0;
+    return db - da;
+  });
+
+  return result;
+}
+
+/* ================= Opiniones inline ================= */
+
 function OpinionsStrip() {
   const items = [
     {
@@ -84,9 +214,12 @@ function OpinionsStrip() {
               key={i}
               className="rounded-xl ring-1 ring-emerald-100 bg-emerald-50/40 p-3"
             >
-              <blockquote className="text-sm text-gray-800">“{it.q}”</blockquote>
+              <blockquote className="text-sm text-gray-800">
+                “{it.q}”
+              </blockquote>
               <figcaption className="mt-2 text-xs text-gray-600">
-                — {it.a} <span className="ml-2 text-emerald-600">★★★★★</span>
+                — {it.a}{" "}
+                <span className="ml-2 text-emerald-600">★★★★★</span>
               </figcaption>
             </figure>
           ))}
@@ -106,37 +239,10 @@ function OpinionsStrip() {
   );
 }
 
-/* helpers para calcular descuentos sobre datos crudos */
-function hasOffer(row: Raw): boolean {
-  const fin = Number(row.priceFinal ?? row.price ?? NaN);
-  const orig = Number(row.priceOriginal ?? NaN);
+/* ================= Página Ofertas ================= */
 
-  const hasNumeric =
-    !Number.isNaN(fin) && !Number.isNaN(orig) && fin < orig;
-  const hasFlag = !!(row.appliedOffer || row.offer);
-
-  return hasNumeric || hasFlag;
-}
-
-function discountRatio(row: Raw): number {
-  const fin = Number(row.priceFinal ?? row.price ?? NaN);
-  const orig = Number(row.priceOriginal ?? NaN);
-  if (Number.isNaN(fin) || Number.isNaN(orig) || orig <= 0) return 0;
-  return 1 - fin / orig; // 0.20 = 20% off
-}
-
-/* Página Ofertas */
 export default async function OffersPage() {
-  const raw = await fetchOffers();
-
-  // 1) Filtramos sobre los datos crudos, usando la misma lógica que el sidebar
-  const rawOffers = raw.filter(hasOffer);
-
-  // 2) Ordenamos por mayor descuento primero
-  rawOffers.sort((a, b) => discountRatio(b) - discountRatio(a));
-
-  // 3) Normalizamos para poder usar ProductCard como en el resto del sitio
-  const offers = rawOffers.map((row) => normalizeProduct(row));
+  const offers = await fetchOffersProducts();
 
   return (
     <>
@@ -155,6 +261,7 @@ export default async function OffersPage() {
         {/* Layout con sidebar de “Más vendidos” */}
         <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr]">
           <BestSellersSidebar />
+
           <section aria-label="Listado de ofertas">
             {offers.length === 0 ? (
               <p className="text-gray-600">
@@ -168,18 +275,8 @@ export default async function OffersPage() {
                     slug={p.slug}
                     title={p.title}
                     image={p.image}
-                    price={
-                      typeof p.price === "number" ? p.price : undefined
-                    }
-                    originalPrice={
-                      typeof p.originalPrice === "number"
-                        ? p.originalPrice
-                        : undefined
-                    }
-                    outOfStock={p.outOfStock}
-                    brand={p.brand ?? undefined}
-                    subtitle={p.subtitle ?? undefined}
-                    variants={p.variants}
+                    price={p.price}
+                    originalPrice={p.originalPrice}
                   />
                 ))}
               </div>
