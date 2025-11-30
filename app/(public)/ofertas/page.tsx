@@ -21,11 +21,13 @@ async function abs(path: string) {
   try {
     const h = await headers();
     const proto = h.get("x-forwarded-proto") ?? "https";
-    const host = h.get("x-forwarded-host") ?? h.get("host") ?? h.get("X-Host") ?? "";
+    const host =
+      h.get("x-forwarded-host") ?? h.get("host") ?? h.get("X-Host") ?? "";
     if (host) return `${proto}://${host}${path}`;
   } catch {}
   return path;
 }
+
 async function safeJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, { cache: "no-store", next: { revalidate: 0 } });
@@ -36,26 +38,40 @@ async function safeJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/* fetch ofertas */
+/* fetch ofertas (datos crudos del catálogo) */
 type Raw = Record<string, any>;
+
 async function fetchOffers(): Promise<Raw[]> {
   const guesses = ["offers=1", "hasDiscount=1", "onSale=1"];
+
   for (const qp of guesses) {
-    const data = await safeJson<any>(await abs(`/api/public/catalogo?perPage=200&status=all&${qp}`));
+    const data = await safeJson<any>(
+      await abs(`/api/public/catalogo?perPage=200&status=all&${qp}`)
+    );
     const items: Raw[] =
-      (data?.items as Raw[]) ?? (data?.data as Raw[]) ?? (Array.isArray(data) ? (data as Raw[]) : []);
+      (data?.items as Raw[]) ??
+      (data?.data as Raw[]) ??
+      (Array.isArray(data) ? (data as Raw[]) : []);
     if (Array.isArray(items) && items.length) return items;
   }
-  const data = await safeJson<any>(await abs(`/api/public/catalogo?perPage=200&status=all&sort=-id`));
+
+  const data = await safeJson<any>(
+    await abs(`/api/public/catalogo?perPage=200&status=all&sort=-id`)
+  );
   const all: Raw[] =
-    (data?.items as Raw[]) ?? (data?.data as Raw[]) ?? (Array.isArray(data) ? (data as Raw[]) : []);
+    (data?.items as Raw[]) ??
+    (data?.data as Raw[]) ??
+    (Array.isArray(data) ? (data as Raw[]) : []);
   return all;
 }
 
 /* Opiniones inline */
 function OpinionsStrip() {
   const items = [
-    { q: "Me asesoraron súper bien y encontré todo para mis recetas. ¡Llegó rapidísimo!", a: "Natalia" },
+    {
+      q: "Me asesoraron súper bien y encontré todo para mis recetas. ¡Llegó rapidísimo!",
+      a: "Natalia",
+    },
     { q: "Gran variedad y precios claros. Volveré a comprar.", a: "Rodrigo" },
     { q: "La atención es excelente, súper recomendables.", a: "María" },
   ];
@@ -64,7 +80,10 @@ function OpinionsStrip() {
       <div className="rounded-2xl border border-emerald-100 bg-white p-4">
         <div className="grid gap-3 md:grid-cols-3">
           {items.map((it, i) => (
-            <figure key={i} className="rounded-xl ring-1 ring-emerald-100 bg-emerald-50/40 p-3">
+            <figure
+              key={i}
+              className="rounded-xl ring-1 ring-emerald-100 bg-emerald-50/40 p-3"
+            >
               <blockquote className="text-sm text-gray-800">“{it.q}”</blockquote>
               <figcaption className="mt-2 text-xs text-gray-600">
                 — {it.a} <span className="ml-2 text-emerald-600">★★★★★</span>
@@ -87,22 +106,37 @@ function OpinionsStrip() {
   );
 }
 
+/* helpers para calcular descuentos sobre datos crudos */
+function hasOffer(row: Raw): boolean {
+  const fin = Number(row.priceFinal ?? row.price ?? NaN);
+  const orig = Number(row.priceOriginal ?? NaN);
+
+  const hasNumeric =
+    !Number.isNaN(fin) && !Number.isNaN(orig) && fin < orig;
+  const hasFlag = !!(row.appliedOffer || row.offer);
+
+  return hasNumeric || hasFlag;
+}
+
+function discountRatio(row: Raw): number {
+  const fin = Number(row.priceFinal ?? row.price ?? NaN);
+  const orig = Number(row.priceOriginal ?? NaN);
+  if (Number.isNaN(fin) || Number.isNaN(orig) || orig <= 0) return 0;
+  return 1 - fin / orig; // 0.20 = 20% off
+}
+
 /* Página Ofertas */
 export default async function OffersPage() {
   const raw = await fetchOffers();
-  const normalized = raw.map(normalizeProduct);
 
-  const offers = normalized.filter((p) => {
-    const final = typeof p.price === "number" ? p.price : null;
-    const orig = typeof p.originalPrice === "number" ? p.originalPrice : null;
-    return final != null && orig != null && final < orig;
-  });
+  // 1) Filtramos sobre los datos crudos, usando la misma lógica que el sidebar
+  const rawOffers = raw.filter(hasOffer);
 
-  offers.sort((a, b) => {
-    const da = (a.originalPrice ?? 0) && (a.price ?? 0) ? 1 - a.price! / a.originalPrice! : 0;
-    const db = (b.originalPrice ?? 0) && (b.price ?? 0) ? 1 - b.price! / b.originalPrice! : 0;
-    return db - da;
-  });
+  // 2) Ordenamos por mayor descuento primero
+  rawOffers.sort((a, b) => discountRatio(b) - discountRatio(a));
+
+  // 3) Normalizamos para poder usar ProductCard como en el resto del sitio
+  const offers = rawOffers.map((row) => normalizeProduct(row));
 
   return (
     <>
@@ -123,7 +157,9 @@ export default async function OffersPage() {
           <BestSellersSidebar />
           <section aria-label="Listado de ofertas">
             {offers.length === 0 ? (
-              <p className="text-gray-600">Por ahora no hay ofertas activas. Volvé más tarde 🙂</p>
+              <p className="text-gray-600">
+                Por ahora no hay ofertas activas. Volvé más tarde 🙂
+              </p>
             ) : (
               <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
                 {offers.map((p) => (
@@ -132,12 +168,18 @@ export default async function OffersPage() {
                     slug={p.slug}
                     title={p.title}
                     image={p.image}
-                    price={typeof p.price === "number" ? p.price : undefined}
-                    originalPrice={typeof p.originalPrice === "number" ? p.originalPrice : undefined}
+                    price={
+                      typeof p.price === "number" ? p.price : undefined
+                    }
+                    originalPrice={
+                      typeof p.originalPrice === "number"
+                        ? p.originalPrice
+                        : undefined
+                    }
                     outOfStock={p.outOfStock}
                     brand={p.brand ?? undefined}
                     subtitle={p.subtitle ?? undefined}
-                    variants={p.variants} // 🆕
+                    variants={p.variants}
                   />
                 ))}
               </div>
@@ -148,7 +190,7 @@ export default async function OffersPage() {
         {/* Opiniones */}
         <OpinionsStrip />
 
-        {/* Ubicaciones: wrapper “anulador” por si algún estilo global agrega borde */}
+        {/* Ubicaciones */}
         <section className="mt-10">
           <div className="border-0 ring-0 shadow-none bg-transparent rounded-none">
             <MapHoursTabs />
