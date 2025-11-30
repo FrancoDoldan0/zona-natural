@@ -11,13 +11,20 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import RecipesPopular from "@/components/landing/RecipesPopular";
 import MapHoursTabs from "@/components/landing/MapHoursTabs";
+import {
+  normalizeProduct,
+  type NormalizedProduct,
+} from "@/lib/product";
 
 /* ================= helpers base ================= */
 
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
 
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(
+    /\/+$/,
+    "",
+  );
   if (base) return `${base}${path}`;
 
   try {
@@ -48,153 +55,61 @@ async function safeJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/* ================= tipos ================= */
+/* ================= fetch de todas las ofertas ================= */
 
-type RawProduct = {
-  id: number;
-  name: string;
-  slug: string;
+type Raw = Record<string, any>;
 
-  price?: number | null;
-  priceOriginal?: number | null;
-  priceFinal?: number | null;
-
-  image?: any;
-  imageUrl?: string | null;
-  cover?: any;
-  coverUrl?: string | null;
-  images?: { url: string; alt?: string | null }[];
-
-  brand?: string | null;
-  subtitle?: string | null;
-  variants?: any[];
-
-  appliedOffer?: any | null;
-  offer?: any | null;
-};
-
-type OfferCardData = {
-  id: number;
-  slug: string;
-  title: string;
-  image: any;
-  price?: number;
-  originalPrice?: number;
-  brand?: string;
-  subtitle?: string;
-  variants?: any[];
-};
-
-/* elegir imagen igual que en otros sidebars */
-function firstImage(p: RawProduct) {
-  return (
-    p.cover ??
-    p.coverUrl ??
-    p.image ??
-    p.imageUrl ??
-    (Array.isArray(p.images) && p.images.length ? p.images[0] : null)
-  );
-}
-
-/* ================= lógica de ofertas ================= */
-
-/**
- * Devuelve null si el producto NO es oferta.
- * Si es oferta, calcula price / originalPrice y arma la card.
- *
- * Cuenta como oferta si:
- *  - tiene priceFinal < priceOriginal, o
- *  - tiene appliedOffer / offer
- */
-function buildOfferCardFromProduct(p: RawProduct): OfferCardData | null {
-  const fin = Number(p.priceFinal ?? p.price ?? NaN);
-  const origField = Number(p.priceOriginal ?? NaN);
-  const rawOffer = (p.appliedOffer || p.offer) as
-    | { discountType?: "AMOUNT" | "PERCENT"; discountVal?: number | null }
-    | null
-    | undefined;
-
-  const hasNumeric =
-    !Number.isNaN(fin) && !Number.isNaN(origField) && fin < origField;
-  const hasFlag = !!rawOffer;
-
-  if (!hasNumeric && !hasFlag) {
-    // no pinta como oferta
-    return null;
-  }
-
-  let price: number | undefined =
-    !Number.isNaN(fin) && fin >= 0 ? fin : undefined;
-  let originalPrice: number | undefined =
-    !Number.isNaN(origField) && origField > 0 ? origField : undefined;
-
-  // Si viene sólo la offer (discountVal) pero no priceOriginal,
-  // intentamos reconstruir el precio original.
-  if (!originalPrice && price != null && rawOffer?.discountVal) {
-    const val = Number(rawOffer.discountVal);
-    if (!Number.isNaN(val) && val > 0) {
-      if (rawOffer.discountType === "PERCENT") {
-        const base = price / (1 - val / 100);
-        originalPrice = Math.round(base);
-      } else {
-        // AMOUNT u otro: sumamos monto
-        originalPrice = price + val;
-      }
-    }
-  }
-
-  // si ni siquiera tenemos price, no sirve
-  if (price == null) return null;
-
-  return {
-    id: p.id,
-    slug: p.slug,
-    title: p.name,
-    image: firstImage(p),
-    price,
-    originalPrice,
-    brand: p.brand ?? undefined,
-    subtitle: p.subtitle ?? undefined,
-    variants: p.variants,
-  };
-}
-
-async function fetchOffersProducts(): Promise<OfferCardData[]> {
-  // Traemos un catálogo grande y filtramos ofertas.
-  // Usamos status=all para no depender de filtros del backend.
+async function fetchAllOffers(): Promise<NormalizedProduct[]> {
+  // Traemos sólo productos en oferta (onSale=1)
   const url = await abs(
-    "/api/public/catalogo?perPage=600&status=all&sort=-id",
+    `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id`,
   );
-  const json = await safeJson<any>(url);
+  const data = await safeJson<any>(url);
 
-  const list: RawProduct[] =
-    (json?.items as RawProduct[]) ??
-    (json?.data as RawProduct[]) ??
-    (Array.isArray(json) ? (json as RawProduct[]) : []);
+  const raw: Raw[] =
+    (data?.items as Raw[]) ??
+    (data?.data as Raw[]) ??
+    (Array.isArray(data) ? (data as Raw[]) : []);
 
-  if (!Array.isArray(list) || !list.length) return [];
+  if (!raw?.length) return [];
 
-  const cards: OfferCardData[] = [];
+  const normalized = raw.map((p) => normalizeProduct(p));
 
-  for (const p of list) {
-    const card = buildOfferCardFromProduct(p);
-    if (card) cards.push(card);
-  }
+  // Filtro de seguridad: sólo donde price < originalPrice
+  const offers = normalized.filter((p) => {
+    const price =
+      typeof p.price === "number" ? p.price : null;
+    const orig =
+      typeof p.originalPrice === "number"
+        ? p.originalPrice
+        : null;
+    return price != null && orig != null && price < orig;
+  });
 
-  // Ordenar por % de descuento (mayor primero)
-  cards.sort((a, b) => {
+  // Ordenamos por % de descuento (mayor primero)
+  offers.sort((a, b) => {
+    const ap =
+      typeof a.price === "number" ? a.price : null;
+    const ao =
+      typeof a.originalPrice === "number"
+        ? a.originalPrice
+        : null;
+    const bp =
+      typeof b.price === "number" ? b.price : null;
+    const bo =
+      typeof b.originalPrice === "number"
+        ? b.originalPrice
+        : null;
+
     const da =
-      a.originalPrice && a.price && a.price < a.originalPrice
-        ? 1 - a.price / a.originalPrice
-        : 0;
+      ao && ap && ao > 0 && ap < ao ? 1 - ap / ao : 0;
     const db =
-      b.originalPrice && b.price && b.price < b.originalPrice
-        ? 1 - b.price / b.originalPrice
-        : 0;
+      bo && bp && bo > 0 && bp < bo ? 1 - bp / bo : 0;
+
     return db - da;
   });
 
-  return cards;
+  return offers;
 }
 
 /* ================= Opiniones inline ================= */
@@ -205,7 +120,10 @@ function OpinionsStrip() {
       q: "Me asesoraron súper bien y encontré todo para mis recetas. ¡Llegó rapidísimo!",
       a: "Natalia",
     },
-    { q: "Gran variedad y precios claros. Volveré a comprar.", a: "Rodrigo" },
+    {
+      q: "Gran variedad y precios claros. Volveré a comprar.",
+      a: "Rodrigo",
+    },
     { q: "La atención es excelente, súper recomendables.", a: "María" },
   ];
   return (
@@ -222,7 +140,9 @@ function OpinionsStrip() {
               </blockquote>
               <figcaption className="mt-2 text-xs text-gray-600">
                 — {it.a}{" "}
-                <span className="ml-2 text-emerald-600">★★★★★</span>
+                <span className="ml-2 text-emerald-600">
+                  ★★★★★
+                </span>
               </figcaption>
             </figure>
           ))}
@@ -245,7 +165,7 @@ function OpinionsStrip() {
 /* ================= Página Ofertas ================= */
 
 export default async function OffersPage() {
-  const offers = await fetchOffersProducts();
+  const offers = await fetchAllOffers();
 
   return (
     <>
@@ -255,8 +175,13 @@ export default async function OffersPage() {
 
       <main className="mx-auto max-w-7xl px-4 py-8">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl md:text-3xl font-semibold">Ofertas</h1>
-          <Link href="/catalogo" className="text-emerald-700 hover:underline">
+          <h1 className="text-2xl md:text-3xl font-semibold">
+            Ofertas
+          </h1>
+          <Link
+            href="/catalogo"
+            className="text-emerald-700 hover:underline"
+          >
             Volver al catálogo
           </Link>
         </div>
@@ -278,10 +203,19 @@ export default async function OffersPage() {
                     slug={p.slug}
                     title={p.title}
                     image={p.image}
-                    price={p.price}
-                    originalPrice={p.originalPrice}
-                    brand={p.brand}
-                    subtitle={p.subtitle}
+                    price={
+                      typeof p.price === "number"
+                        ? p.price
+                        : undefined
+                    }
+                    originalPrice={
+                      typeof p.originalPrice === "number"
+                        ? p.originalPrice
+                        : undefined
+                    }
+                    outOfStock={p.outOfStock}
+                    brand={p.brand ?? undefined}
+                    subtitle={p.subtitle ?? undefined}
                     variants={p.variants}
                   />
                 ))}

@@ -26,7 +26,9 @@ function firstImage(p: Prod) {
     p.coverUrl ??
     p.image ??
     p.imageUrl ??
-    (Array.isArray(p.images) && p.images.length ? p.images[0] : null)
+    (Array.isArray(p.images) && p.images.length
+      ? p.images[0]
+      : null)
   );
 }
 
@@ -43,7 +45,9 @@ function SmallList({
     <div className="rounded-xl ring-1 ring-emerald-100 bg-white p-3">
       <div className="mb-2 font-semibold">{title}</div>
 
-      {!items && <div className="text-sm text-gray-500">Cargando…</div>}
+      {!items && (
+        <div className="text-sm text-gray-500">Cargando…</div>
+      )}
 
       {items && items.length === 0 && (
         <div className="text-sm text-emerald-700/80 bg-emerald-50/60 rounded-md px-2 py-1">
@@ -61,10 +65,14 @@ function SmallList({
               title={p.name}
               image={firstImage(p)}
               price={
-                typeof p.priceFinal === "number" ? p.priceFinal : p.price ?? null
+                typeof p.priceFinal === "number"
+                  ? p.priceFinal
+                  : p.price ?? null
               }
               originalPrice={
-                typeof p.priceOriginal === "number" ? p.priceOriginal : null
+                typeof p.priceOriginal === "number"
+                  ? p.priceOriginal
+                  : null
               }
             />
           ))}
@@ -78,7 +86,11 @@ async function getJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
-      console.warn("[SideRails] fetch fallo", url, res.status);
+      console.warn(
+        "[SideRails] fetch fallo",
+        url,
+        res.status,
+      );
       return null;
     }
     return (await res.json()) as T;
@@ -94,10 +106,10 @@ export function SideBestSellers() {
   useEffect(() => {
     (async () => {
       console.log(
-        "[SideRails] fetch /api/public/catalogo?perPage=48&sort=-id"
+        "[SideRails] fetch /api/public/catalogo?perPage=48&sort=-id",
       );
       const data = await getJson<any>(
-        "/api/public/catalogo?perPage=48&sort=-id"
+        "/api/public/catalogo?perPage=48&sort=-id",
       );
 
       const list: Prod[] =
@@ -108,7 +120,7 @@ export function SideBestSellers() {
 
       console.log(
         "[SideBestSellers] productos en catálogo:",
-        list.length ?? 0
+        list.length ?? 0,
       );
 
       setItems(list.slice(0, 6));
@@ -129,106 +141,23 @@ export function SideOffers() {
 
   useEffect(() => {
     (async () => {
-      console.log("[SideOffers] start load");
-
-      // 1) Traer ofertas del endpoint dedicado
-      const offersRes = await getJson<any>("/api/public/sidebar-offers?take=6");
-      const offers: any[] = Array.isArray(offersRes?.items)
-        ? offersRes.items
-        : [];
-      console.log("[SideOffers] offers crudas", offers.length, offers);
-
-      if (!offers.length) {
-        setItems([]);
-        return;
-      }
-
-      // 2) Traer TODO el catálogo (todas las páginas) para poder encontrar los productos
-      const perPage = 200;
-      const firstPage = await getJson<any>(
-        `/api/public/catalogo?perPage=${perPage}&sort=-id`
+      console.log(
+        "[SideOffers] fetch /api/public/sidebar-offers?take=6",
       );
-      if (!firstPage) {
-        setItems([]);
-        return;
-      }
+      const data = await getJson<any>(
+        "/api/public/sidebar-offers?take=6",
+      );
+      const list: Prod[] =
+        (data?.items as Prod[]) ??
+        (data?.data as Prod[]) ??
+        (Array.isArray(data) ? (data as Prod[]) : []);
 
-      let all: Prod[] =
-        (firstPage.items as Prod[]) ??
-        (firstPage.data as Prod[]) ??
-        (firstPage.products as Prod[]) ??
-        [];
-      const pageCount: number =
-        typeof firstPage.pageCount === "number" ? firstPage.pageCount : 1;
+      console.log(
+        "[SideOffers] ofertas recibidas:",
+        list.length ?? 0,
+      );
 
-      if (pageCount > 1) {
-        const promises: Promise<any | null>[] = [];
-        for (let page = 2; page <= pageCount; page++) {
-          promises.push(
-            getJson<any>(
-              `/api/public/catalogo?perPage=${perPage}&sort=-id&page=${page}`
-            )
-          );
-        }
-        const extraPages = await Promise.all(promises);
-        for (const page of extraPages) {
-          if (!page) continue;
-          const chunk: Prod[] =
-            (page.items as Prod[]) ??
-            (page.data as Prod[]) ??
-            (page.products as Prod[]) ??
-            [];
-          all = all.concat(chunk);
-        }
-      }
-
-      console.log("[SideOffers] catalog length", all.length);
-
-      // 3) Match: por slug (preferente) o productId
-      const matched: Prod[] = [];
-
-      for (const offer of offers) {
-        const slug: string | undefined = offer?.product?.slug;
-        const pid: number | undefined = offer?.productId;
-
-        const prod =
-          (slug && all.find((p) => p.slug === slug)) ||
-          (pid && all.find((p) => p.id === pid));
-
-        if (!prod) continue;
-
-        const discountVal = Number(offer.discountVal ?? 0);
-
-        const basePrice =
-          typeof prod.price === "number"
-            ? prod.price
-            : typeof prod.priceOriginal === "number"
-            ? prod.priceOriginal
-            : typeof prod.priceFinal === "number"
-            ? prod.priceFinal
-            : null;
-
-        const priceOriginal =
-          typeof prod.priceOriginal === "number"
-            ? prod.priceOriginal
-            : basePrice;
-
-        const priceFinal =
-          typeof prod.priceFinal === "number"
-            ? prod.priceFinal
-            : basePrice !== null
-            ? basePrice - discountVal
-            : null;
-
-        matched.push({
-          ...prod,
-          priceOriginal,
-          priceFinal,
-        });
-      }
-
-      console.log("[SideOffers] matched", matched.length, matched);
-      setItems(matched);
+      setItems(list);
     })();
   }, []);
 

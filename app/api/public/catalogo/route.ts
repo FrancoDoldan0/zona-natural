@@ -65,7 +65,9 @@ type ProductRow = {
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
-  const debug = url.searchParams.get('_debug') === '1' || url.searchParams.get('debug') === '1';
+  const debug =
+    url.searchParams.get('_debug') === '1' ||
+    url.searchParams.get('debug') === '1';
 
   try {
     // 🔹 ACEPTAR q / query / search / term
@@ -77,21 +79,37 @@ export async function GET(req: NextRequest) {
       '';
     const q = rawQ.trim();
 
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10));
+    const page = Math.max(
+      1,
+      parseInt(url.searchParams.get('page') || '1', 10),
+    );
     const perPage = Math.min(
       9999,
       Math.max(1, parseInt(url.searchParams.get('perPage') || '9999', 10)),
     );
-    const categoryId = parseInt(url.searchParams.get('categoryId') || '', 10);
-    const subcategoryId = parseInt(url.searchParams.get('subcategoryId') || '', 10);
+    const categoryId = parseInt(
+      url.searchParams.get('categoryId') || '',
+      10,
+    );
+    const subcategoryId = parseInt(
+      url.searchParams.get('subcategoryId') || '',
+      10,
+    );
 
     // tags
-    const tagIdSingle = parseInt(url.searchParams.get('tagId') || '', 10);
+    const tagIdSingle = parseInt(
+      url.searchParams.get('tagId') || '',
+      10,
+    );
     const tagIdsCsv = (url.searchParams.get('tagIds') || '').trim();
-    const tagIdList = url.searchParams.getAll('tagId').map((s) => parseInt(s, 10));
+    const tagIdList = url
+      .searchParams.getAll('tagId')
+      .map((s) => parseInt(s, 10));
     const tagIds = [
       ...tagIdList,
-      ...(tagIdsCsv ? tagIdsCsv.split(',').map((s) => parseInt(s.trim(), 10)) : []),
+      ...(tagIdsCsv
+        ? tagIdsCsv.split(',').map((s) => parseInt(s.trim(), 10))
+        : []),
       ...(Number.isFinite(tagIdSingle) ? [tagIdSingle] : []),
     ].filter(Number.isFinite) as number[];
     const match = (url.searchParams.get('match') || 'any').toLowerCase();
@@ -107,12 +125,11 @@ export async function GET(req: NextRequest) {
     // status=all     → todos excepto ARCHIVED (DEFAULT)
     // status=raw     → sin filtro de status
     // ─────────────────────────────────────────────────────────────
-    const statusParam = (url.searchParams.get('status') || 'all').toLowerCase() as
-      | 'active'
-      | 'all'
-      | 'raw';
+    const statusParam = (
+      url.searchParams.get('status') || 'all'
+    ).toLowerCase() as 'active' | 'all' | 'raw';
 
-    // Base del WHERE (SIN FILTRO DE ESTADO) → evitamos el bug del enum en Edge/Accelerate
+    // Base del WHERE (SIN FILTRO DE ESTADO)
     const baseWhere: Prisma.ProductWhereInput = {};
 
     // Búsqueda de texto (AND con el resto de filtros)
@@ -127,31 +144,40 @@ export async function GET(req: NextRequest) {
     }
 
     if (Number.isFinite(categoryId)) baseWhere.categoryId = categoryId;
-    if (Number.isFinite(subcategoryId)) baseWhere.subcategoryId = subcategoryId;
+    if (Number.isFinite(subcategoryId))
+      baseWhere.subcategoryId = subcategoryId;
 
     // Tags
     if (tagIds.length) {
       if (match === 'all') {
         // requiere que tenga TODOS los tags
-        const allConds: Prisma.ProductWhereInput[] = tagIds.map((id) => ({
-          productTags: { some: { tagId: id } },
-        }));
+        const allConds: Prisma.ProductWhereInput[] = tagIds.map(
+          (id) => ({
+            productTags: { some: { tagId: id } },
+          }),
+        );
         appendAND(baseWhere, allConds);
       } else {
         // cualquiera de los tags
-        baseWhere.productTags = { some: { tagId: { in: tagIds } } };
+        baseWhere.productTags = {
+          some: { tagId: { in: tagIds } },
+        };
       }
     }
 
     // Precio base (pre-discount)
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
       baseWhere.price = {};
-      if (Number.isFinite(minPrice)) baseWhere.price.gte = minPrice;
-      if (Number.isFinite(maxPrice)) baseWhere.price.lte = maxPrice;
+      if (Number.isFinite(minPrice))
+        baseWhere.price.gte = minPrice;
+      if (Number.isFinite(maxPrice))
+        baseWhere.price.lte = maxPrice;
     }
 
     // Orden principal
-    const sortParam = (url.searchParams.get('sort') || '-id').toLowerCase();
+    const sortParam = (
+      url.searchParams.get('sort') || '-id'
+    ).toLowerCase();
     let orderBy: Prisma.ProductOrderByWithRelationInput;
     switch (sortParam) {
       case 'price':
@@ -212,14 +238,18 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
-    const typedItems = itemsRaw as (ProductRow & { hasVariants?: boolean })[];
+    const typedItems = itemsRaw as (ProductRow & {
+      hasVariants?: boolean;
+    })[];
 
     // Precios: tolerar fallas en computePricesBatch
     const bare = typedItems.map((p) => ({
       id: p.id,
       price: (p.price ?? null) as number | null,
       categoryId: (p.categoryId ?? null) as number | null,
-      tags: (p.productTags ?? []).map((t: ProductTagRow) => t.tagId),
+      tags: (p.productTags ?? []).map(
+        (t: ProductTagRow) => t.tagId,
+      ),
     }));
 
     let priced: Map<
@@ -229,17 +259,31 @@ export async function GET(req: NextRequest) {
     try {
       priced = await computePricesBatch(bare);
     } catch (e) {
-      console.error('[public/catalogo] computePricesBatch falló, fallback a precio base:', e);
+      console.error(
+        '[public/catalogo] computePricesBatch falló, fallback a precio base:',
+        e,
+      );
       priced = new Map();
       for (const b of bare) {
-        const v = typeof b.price === 'number' ? b.price : null;
-        priced.set(b.id, { priceOriginal: v, priceFinal: v, offer: null });
+        const v =
+          typeof b.price === 'number' ? b.price : null;
+        priced.set(b.id, {
+          priceOriginal: v,
+          priceFinal: v,
+          offer: null,
+        });
       }
     }
 
     // Resolver cover: DB o, si no hay, listar en R2
-    async function resolveCoverKey(p: { id: number; images?: ProductImageRow[] }) {
-      const keysFromDb = (Array.isArray(p.images) ? p.images : [])
+    async function resolveCoverKey(p: {
+      id: number;
+      images?: ProductImageRow[];
+    }) {
+      const keysFromDb = (Array.isArray(p.images)
+        ? p.images
+        : []
+      )
         .map((i) => i?.key)
         .filter(Boolean) as string[];
       if (keysFromDb.length > 0) return keysFromDb[0];
@@ -263,18 +307,49 @@ export async function GET(req: NextRequest) {
     const mapped = await Promise.all(
       typedItems.map(async (p) => {
         const pr = priced.get(p.id);
-        let priceOriginal = pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
-        let priceFinal = pr?.priceFinal ?? priceOriginal;
 
-        // 🆕 aplicar el mismo factor de descuento del producto a cada variante
-        const activeVariants = Array.isArray(p.variants) ? p.variants : [];
-        const ratio =
-          priceOriginal && priceFinal && priceOriginal > 0 ? priceFinal / priceOriginal : null;
+        // ====== BASE de ofertas (tabla Offer) ======
+        const basePriceOriginal =
+          pr?.priceOriginal ??
+          (typeof p.price === 'number' ? p.price : null);
+        const basePriceFinal =
+          pr?.priceFinal ?? basePriceOriginal;
 
-        // calcular precios efectivos por variante (sin tocar DB)
+        const hasBase =
+          typeof basePriceOriginal === 'number' &&
+          typeof basePriceFinal === 'number' &&
+          basePriceOriginal > 0;
+        const offerRatio = hasBase
+          ? basePriceFinal / basePriceOriginal
+          : 1;
+
+        let priceOriginal: number | null = basePriceOriginal;
+        let priceFinal: number | null = basePriceFinal;
+
+        // ====== Variantes: respetar descuentos manuales ======
+        const activeVariants = Array.isArray(p.variants)
+          ? p.variants
+          : [];
         const variants = activeVariants.map((v) => {
-          const vOrig = (v.priceOriginal ?? v.price) ?? null;
-          const vFinal = vOrig != null ? (ratio != null ? vOrig * ratio : vOrig) : null;
+          // Descuento manual: priceOriginal (antes) vs price (ahora)
+          const manualOrig =
+            typeof v.priceOriginal === 'number'
+              ? v.priceOriginal
+              : typeof v.price === 'number'
+              ? v.price
+              : null;
+
+          const manualFinal =
+            typeof v.price === 'number'
+              ? v.price
+              : manualOrig;
+
+          const vOrig = manualOrig;
+          const vFinal =
+            manualFinal != null
+              ? manualFinal * (offerRatio || 1)
+              : null;
+
           return {
             ...v,
             priceOriginal: vOrig,
@@ -282,24 +357,36 @@ export async function GET(req: NextRequest) {
           };
         });
 
-        // si hay variantes, usar el mínimo para la card
+        // Si hay variantes, usamos el mínimo de ellas para la card
         if (variants.length) {
           const finals = variants
             .map((v) => v.priceFinal)
-            .filter((x): x is number => typeof x === 'number');
+            .filter(
+              (x): x is number =>
+                typeof x === 'number',
+            );
           const origs = variants
             .map((v) => v.priceOriginal)
-            .filter((x): x is number => typeof x === 'number');
-          if (finals.length) priceFinal = Math.min(...finals);
-          if (origs.length) priceOriginal = Math.min(...origs);
+            .filter(
+              (x): x is number =>
+                typeof x === 'number',
+            );
+          if (finals.length)
+            priceFinal = Math.min(...finals);
+          if (origs.length)
+            priceOriginal = Math.min(...origs);
         }
 
         const hasDiscount =
-          priceOriginal != null && priceFinal != null && priceFinal < priceOriginal;
+          priceOriginal != null &&
+          priceFinal != null &&
+          priceFinal < priceOriginal;
 
         const discountPercent =
           hasDiscount && priceOriginal && priceFinal
-            ? Math.round((1 - priceFinal / priceOriginal) * 100)
+            ? Math.round(
+                (1 - priceFinal / priceOriginal) * 100,
+              )
             : 0;
 
         const coverKey = await resolveCoverKey(p);
@@ -324,7 +411,7 @@ export async function GET(req: NextRequest) {
       }),
     );
 
-    // Filtro de estado EN MEMORIA (evitamos bugs de enum en DB)
+    // Filtro de estado EN MEMORIA
     let filtered = mapped;
     if (statusParam === 'active') {
       filtered = filtered.filter((i) => {
@@ -332,15 +419,24 @@ export async function GET(req: NextRequest) {
         return s === 'ACTIVE' || s === 'AGOTADO';
       });
     } else if (statusParam === 'all') {
-      filtered = filtered.filter((i) => String(i.status || '').toUpperCase() !== 'ARCHIVED');
-    } // raw => no filtro
+      filtered = filtered.filter(
+        (i) =>
+          String(i.status || '').toUpperCase() !==
+          'ARCHIVED',
+      );
+    } // raw => sin filtro
 
     // Post-filtros por precio FINAL
-    if (onSale) filtered = filtered.filter((i) => i.hasDiscount);
+    if (onSale)
+      filtered = filtered.filter((i) => i.hasDiscount);
     if (Number.isFinite(minFinal))
-      filtered = filtered.filter((i) => (i.priceFinal ?? Infinity) >= minFinal);
+      filtered = filtered.filter(
+        (i) => (i.priceFinal ?? Infinity) >= minFinal,
+      );
     if (Number.isFinite(maxFinal))
-      filtered = filtered.filter((i) => (i.priceFinal ?? -Infinity) <= maxFinal);
+      filtered = filtered.filter(
+        (i) => (i.priceFinal ?? -Infinity) <= maxFinal,
+      );
 
     // Orden adicional por precio FINAL (post query)
     if (sortParam === 'final') {
@@ -363,7 +459,9 @@ export async function GET(req: NextRequest) {
 
     const filteredTotal = filtered.length;
     const pageCount = Math.ceil((total ?? 0) / perPage);
-    const filteredPageCount = Math.ceil(filteredTotal / perPage);
+    const filteredPageCount = Math.ceil(
+      filteredTotal / perPage,
+    );
 
     return json({
       ok: true,
@@ -375,18 +473,30 @@ export async function GET(req: NextRequest) {
       filteredPageCount,
       appliedFilters: {
         q,
-        categoryId: Number.isFinite(categoryId) ? categoryId : null,
-        subcategoryId: Number.isFinite(subcategoryId) ? subcategoryId : null,
+        categoryId: Number.isFinite(categoryId)
+          ? categoryId
+          : null,
+        subcategoryId: Number.isFinite(subcategoryId)
+          ? subcategoryId
+          : null,
         tagIds,
         match,
-        minPrice: Number.isFinite(minPrice) ? minPrice : null,
-        maxPrice: Number.isFinite(maxPrice) ? maxPrice : null,
-        minFinal: Number.isFinite(minFinal) ? minFinal : null,
-        maxFinal: Number.isFinite(maxFinal) ? maxFinal : null,
+        minPrice: Number.isFinite(minPrice)
+          ? minPrice
+          : null,
+        maxPrice: Number.isFinite(maxPrice)
+          ? maxPrice
+          : null,
+        minFinal: Number.isFinite(minFinal)
+          ? minFinal
+          : null,
+        maxFinal: Number.isFinite(maxFinal)
+          ? maxFinal
+          : null,
         onSale,
         sort: sortParam,
         status: statusParam,
-        effectiveStatus: statusParam, // ahora siempre coincide (no hay fallback DB)
+        effectiveStatus: statusParam,
         fallbackRaw: false,
       },
       items: filtered,
@@ -397,9 +507,14 @@ export async function GET(req: NextRequest) {
       {
         ok: false,
         error: 'internal_error',
-        ...(debug ? { debug: { message: String(err?.message || err) } } : null),
+        ...(debug
+          ? { debug: { message: String(err?.message || err) } }
+          : null),
       },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } },
+      {
+        status: 500,
+        headers: { 'Cache-Control': 'no-store' },
+      },
     );
   }
 }
