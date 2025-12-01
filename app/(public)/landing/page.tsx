@@ -10,23 +10,11 @@ import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
 import RecipesPopular from "@/components/landing/RecipesPopular";
 import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
+import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
 import { normalizeProduct } from "@/lib/product";
-import dynamic from "next/dynamic";
-import type { Branch } from "@/components/landing/MapHours";
-
-/* ───────── MapHours lazy (para no frenar la carga inicial) ───────── */
-const MapHoursLazy = dynamic(
-  () => import("@/components/landing/MapHours"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="h-64 w-full rounded-xl bg-muted animate-pulse" />
-    ),
-  }
-);
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -127,7 +115,9 @@ async function getBanners(): Promise<BannerItem[]> {
           : ({ url: b.url ?? "" } as any),
       linkUrl: b.linkUrl ?? b.href ?? null,
     }))
-    .filter((x) => !!(typeof x.image === "string" || (x.image as any)?.url));
+    .filter(
+      (x) => !!(typeof x.image === "string" || (x.image as any)?.url)
+    );
 }
 
 async function getCategories(): Promise<Cat[]> {
@@ -226,10 +216,10 @@ export default async function LandingPage() {
 
   // ⬇️ Aumentamos el pool de ofertas para que el carrusel rote
   const OFFERS_COUNT = 24; // antes 3
-  const offersDaily = shuffleSeed(offersAll, `${seed}:offers`).slice(
-    0,
-    OFFERS_COUNT
-  );
+  const offersDaily = shuffleSeed(
+    offersAll,
+    `${seed}:offers`
+  ).slice(0, OFFERS_COUNT);
 
   // ───────── Sucursales (tabs) ─────────
   const hours: [string, string][] = [
@@ -333,8 +323,8 @@ export default async function LandingPage() {
       {/* Testimonios + badges */}
       <TestimonialsBadges />
 
-      {/* Mapa + horarios con múltiples sucursales (lazy) */}
-      <MapHoursLazy
+      {/* Mapa + horarios con múltiples sucursales */}
+      <MapHours
         locations={branches.filter(
           (b) => b.name === "Las Piedras" || b.name === "La Paz"
         )}
