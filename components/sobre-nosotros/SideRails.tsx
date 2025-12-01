@@ -27,7 +27,7 @@ type Prod = {
   appliedOffer?: any | null;
   offer?: any | null;
 
-  product?: any; // por si viene anidado
+  product?: any;
 
   [key: string]: any;
 };
@@ -211,41 +211,34 @@ export function SideOffers() {
   useEffect(() => {
     (async () => {
       console.log(
-        "[SideOffers] fetch /api/public/catalogo?perPage=120&status=all&onSale=1&sort=-id",
+        "[SideOffers] fetch /api/public/sidebar-offers?take=6",
       );
 
       const data = await getJson<any>(
-        "/api/public/catalogo?perPage=120&status=all&onSale=1&sort=-id",
+        "/api/public/sidebar-offers?take=6",
       );
 
-      const raw: any[] =
+      const rawList: any[] =
         (data?.items as any[]) ??
         (data?.data as any[]) ??
         (Array.isArray(data) ? (data as any[]) : []);
 
       console.log(
-        "[SideOffers] raw ofertas desde catálogo:",
-        raw.length ?? 0,
+        "[SideOffers] ofertas crudas:",
+        rawList.length ?? 0,
       );
 
-      // Normalizamos igual que en /ofertas
-      const normalized = raw.map((p) =>
-        normalizeProduct(p),
-      ) as any[];
-
-      // Filtro de seguridad: solo donde price < originalPrice
-      const offers = normalized.filter((p) => {
-        const price = toNumber(p.price);
-        const orig = toNumber(p.originalPrice);
-        return price != null && orig != null && price < orig;
-      });
+      // Normalizamos siempre contra el producto asociado
+      const normalized: Prod[] = rawList.map((item: any) =>
+        normalizeProduct(item.product ?? item),
+      ) as any;
 
       console.log(
-        "[SideOffers] ofertas con descuento real:",
-        offers.length ?? 0,
+        "[SideOffers] ofertas normalizadas:",
+        normalized.length ?? 0,
       );
 
-      setItems(offers.slice(0, 6) as Prod[]);
+      setItems(normalized.slice(0, 6));
     })();
   }, []);
 
