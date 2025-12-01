@@ -7,12 +7,10 @@ import { normalizeProduct } from "@/lib/product";
 
 type Prod = {
   id: number | string;
-  // Puede venir crudo, normalizado o anidado
   name?: string | null;
   title?: string | null;
   slug?: string | null;
 
-  // Distintos campos posibles de precio
   price?: number | string | null;
   priceFinal?: number | string | null;
   priceOriginal?: number | string | null;
@@ -33,7 +31,6 @@ type Prod = {
 };
 
 function firstImage(p: Prod) {
-  // 1) Intentamos con el propio objeto
   const direct =
     p.cover ??
     p.coverUrl ??
@@ -45,7 +42,6 @@ function firstImage(p: Prod) {
 
   if (direct) return direct;
 
-  // 2) Si viene anidado en product, probamos ahí
   const inner = p.product as any;
   if (!inner) return null;
 
@@ -98,39 +94,34 @@ function SmallList({
       {items && items.length > 0 && (
         <div className="grid gap-2">
           {items.map((raw) => {
-            const base: any = raw;
-            const p: any = base.product ?? base;
+            const p: any = raw;
 
-            // Título
             const rawTitle =
               p.name ??
               p.title ??
-              base.name ??
-              base.title ??
+              raw.name ??
+              raw.title ??
               "-";
             const titleStr =
               typeof rawTitle === "string"
                 ? rawTitle
                 : String(rawTitle ?? "-");
 
-            // Slug
             const slug =
               (p.slug ??
-                base.slug ??
+                raw.slug ??
                 "") as string;
 
-            // Precio actual
             const price =
               toNumber(p.price ?? p.priceFinal) ??
-              toNumber(base.price ?? base.priceFinal);
+              toNumber(raw.price ?? raw.priceFinal);
 
-            // Precio original
             const originalPrice =
               toNumber(
                 p.originalPrice ??
                   p.priceOriginal ??
-                  base.originalPrice ??
-                  base.priceOriginal,
+                  raw.originalPrice ??
+                  raw.priceOriginal,
               );
 
             return (
@@ -205,40 +196,165 @@ export function SideBestSellers() {
   );
 }
 
+function getOfferProductId(offer: any): number | null {
+  const candidates = [
+    offer.productId,
+    offer.product?.id,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === "number" && Number.isFinite(c)) {
+      return c;
+    }
+    if (typeof c === "string") {
+      const n = Number.parseInt(c, 10);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+}
+
+function getOfferSlug(offer: any): string | null {
+  const slug =
+    offer.product?.slug ??
+    offer.slug ??
+    null;
+  return typeof slug === "string" && slug.length > 0
+    ? slug
+    : null;
+}
+
 export function SideOffers() {
   const [items, setItems] = useState<Prod[] | null>(null);
 
   useEffect(() => {
     (async () => {
+      // 1) Preguntamos al endpoint unificado cuáles ofertas mostrar
       console.log(
         "[SideOffers] fetch /api/public/sidebar-offers?take=6",
       );
-
-      const data = await getJson<any>(
+      const dataOffers = await getJson<any>(
         "/api/public/sidebar-offers?take=6",
       );
 
-      const rawList: any[] =
-        (data?.items as any[]) ??
-        (data?.data as any[]) ??
-        (Array.isArray(data) ? (data as any[]) : []);
+      const offersRaw: any[] =
+        (dataOffers?.items as any[]) ??
+        (dataOffers?.data as any[]) ??
+        (Array.isArray(dataOffers)
+          ? (dataOffers as any[])
+          : []);
 
       console.log(
-        "[SideOffers] ofertas crudas:",
-        rawList.length ?? 0,
+        "[SideOffers] ofertas del endpoint:",
+        offersRaw.length ?? 0,
       );
 
-      // Normalizamos siempre contra el producto asociado
-      const normalized: Prod[] = rawList.map((item: any) =>
-        normalizeProduct(item.product ?? item),
-      ) as any;
+      if (!offersRaw.length) {
+        setItems([]);
+        return;
+      }
+
+      // 2) Armamos sets de IDs y slugs de los productos
+      const offerInfos = offersRaw.map((o) => ({
+        raw: o,
+        productId: getOfferProductId(o),
+        slug: getOfferSlug(o),
+      }));
+
+      const idSet = new Set<number>();
+      const slugSet = new Set<string>();
+
+      for (const info of offerInfos) {
+        if (
+          typeof info.productId === "number" &&
+          Number.isFinite(info.productId)
+        ) {
+          idSet.add(info.productId);
+        }
+        if (info.slug) slugSet.add(info.slug);
+      }
+
+      // 3) Traemos catálogo completo (sin filtro de onSale)
+      console.log(
+        "[SideOffers] fetch catálogo para resolver productos",
+      );
+      const dataCatalog = await getJson<any>(
+        "/api/public/catalogo?perPage=500&status=all&sort=-id",
+      );
+
+      const rawCatalog: any[] =
+        (dataCatalog?.items as any[]) ??
+        (dataCatalog?.data as any[]) ??
+        (Array.isArray(dataCatalog)
+          ? (dataCatalog as any[])
+          : []);
 
       console.log(
-        "[SideOffers] ofertas normalizadas:",
-        normalized.length ?? 0,
+        "[SideOffers] productos en catálogo:",
+        rawCatalog.length ?? 0,
       );
 
-      setItems(normalized.slice(0, 6));
+      if (!rawCatalog.length) {
+        setItems([]);
+        return;
+      }
+
+      // 4) Normalizamos catálogo (igual que /ofertas)
+      const normalizedCatalog = rawCatalog.map((p: any) =>
+        normalizeProduct(p),
+      ) as any[];
+
+      const byId = new Map<number, any>();
+      const bySlug = new Map<string, any>();
+
+      for (const p of normalizedCatalog) {
+        const id =
+          typeof p.id === "number"
+            ? p.id
+            : Number.parseInt(String(p.id ?? ""), 10);
+        if (Number.isFinite(id)) byId.set(id, p);
+
+        if (
+          typeof p.slug === "string" &&
+          p.slug.length > 0
+        ) {
+          bySlug.set(p.slug, p);
+        }
+      }
+
+      // 5) Para cada oferta del endpoint, buscamos su producto en el catálogo
+      const resolved: Prod[] = [];
+
+      for (const info of offerInfos) {
+        let prod: any = null;
+
+        if (
+          typeof info.productId === "number" &&
+          Number.isFinite(info.productId)
+        ) {
+          prod = byId.get(info.productId);
+        }
+
+        if (!prod && info.slug) {
+          prod = bySlug.get(info.slug);
+        }
+
+        // Fallback: si igual no lo encontramos, intentamos normalizar el propio objeto
+        if (!prod) {
+          prod = normalizeProduct(info.raw.product ?? info.raw);
+        }
+
+        if (prod) {
+          resolved.push(prod as Prod);
+        }
+      }
+
+      console.log(
+        "[SideOffers] ofertas resueltas para sidebar:",
+        resolved.length ?? 0,
+      );
+
+      setItems(resolved.slice(0, 6));
     })();
   }, []);
 
