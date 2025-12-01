@@ -5,7 +5,7 @@ import { publicR2Url } from "@/lib/storage";
 
 const prisma = createPrisma();
 
-type ProductImageRow = { key: string | null };
+type ProductImageRow = { key: string | null; url: string | null };
 type ProductTagRow = { tagId: number };
 type ProductVariantRow = {
   id: number;
@@ -63,8 +63,9 @@ export type LandingOffer = {
  *  - Productos con Offer.productId activo
  *  - Productos con variantes donde priceOriginal > price
  *
- * ⚠️ IMPORTANTE: no hace r2List para buscar imágenes.
- * Solo usa las imágenes que ya están en la base.
+ * Solo usa imágenes que ya están en la DB:
+ *  - primero image.url (legacy)
+ *  - si no, image.key con publicR2Url(key)
  */
 export async function getAllOffersRaw(): Promise<LandingOffer[]> {
   const now = new Date();
@@ -123,7 +124,7 @@ export async function getAllOffersRaw(): Promise<LandingOffer[]> {
     where: { id: { in: Array.from(productIds) } },
     orderBy: { id: "desc" },
     include: {
-      images: { select: { key: true } },
+      images: { select: { key: true, url: true } },
       productTags: { select: { tagId: true } },
       variants: {
         where: { active: true },
@@ -249,10 +250,18 @@ export async function getAllOffersRaw(): Promise<LandingOffer[]> {
           )
         : 0;
 
-    // ⚠️ SIN r2List: solo usamos la primera imagen de DB
-    const key =
-      (Array.isArray(p.images) ? p.images[0]?.key : null) ?? null;
-    const cover = key ? publicR2Url(key) : null;
+    // Imagen de portada:
+    // 1) si hay image.url (legacy), usarla
+    // 2) si hay image.key, usar publicR2Url(key)
+    const firstImg = Array.isArray(p.images) ? p.images[0] : undefined;
+    let cover: string | null = null;
+    if (firstImg) {
+      if (firstImg.url) {
+        cover = firstImg.url;
+      } else if (firstImg.key) {
+        cover = publicR2Url(firstImg.key);
+      }
+    }
 
     return {
       id: p.id,

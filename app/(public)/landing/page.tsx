@@ -138,14 +138,17 @@ export default async function LandingPage() {
     getBanners(),
     getCategories(),
     getAllOffersRaw(),       // helper liviano de ofertas
-    getLandingCatalog(48),   // 👈 nuevo helper liviano de catálogo
+    getLandingCatalog(48),   // helper liviano de catálogo
   ]);
 
-  // Cast suave para reutilizar el tipo Prod en el carrusel y grid
+  // Cast suave para reutilizar el tipo Prod en el carrusel
   const offersAll = offersAllRaw as unknown as Prod[];
+
+  // Adaptamos el catálogo ligero al tipo Prod que espera BestSellersGrid
   const catalog = (catalogRaw as any[]).map((p) => {
     const price =
       typeof p.price === "number" ? p.price : null;
+    const imgUrl = (p as any).imageUrl ?? null;
 
     return {
       id: p.id,
@@ -154,15 +157,10 @@ export default async function LandingPage() {
       price,
       priceOriginal: price,
       priceFinal: price,
-      // Para BestSellersGrid alcanza con imageUrl / image
-      imageUrl:
-        Array.isArray(p.images) && p.images[0]?.key
-          ? (p.images[0] as any).key
-          : null,
-      image:
-        Array.isArray(p.images) && p.images[0]?.key
-          ? (p.images[0] as any).key
-          : null,
+      imageUrl: imgUrl,
+      image: imgUrl ? { url: imgUrl } : undefined,
+      cover: imgUrl,
+      coverUrl: imgUrl,
       status: (p as any).status ?? undefined,
       appliedOffer: null,
       offer: null,

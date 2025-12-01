@@ -4,7 +4,7 @@ import { publicR2Url } from "@/lib/storage";
 
 const prisma = createPrisma();
 
-type ProductImageRow = { key: string | null };
+type ProductImageRow = { key: string | null; url: string | null };
 
 type ProductLiteRow = {
   id: number;
@@ -12,7 +12,7 @@ type ProductLiteRow = {
   slug: string;
   status: string | null;
   price: number | null;
-  images?: ProductImageRow[];
+  imageUrl: string | null;
 };
 
 /**
@@ -20,6 +20,7 @@ type ProductLiteRow = {
  * - NO usa /api/public/catalogo
  * - NO hace computePricesBatch ni r2List
  * - Toma los últimos productos (simulación de "más vendidos" / destacados)
+ * - Devuelve directamente imageUrl lista para usar en la UI
  */
 export async function getLandingCatalog(
   perPage = 48
@@ -32,24 +33,30 @@ export async function getLandingCatalog(
     orderBy: { id: "desc" },
     take: perPage,
     include: {
-      images: { select: { key: true } },
+      images: { select: { key: true, url: true } },
     },
   });
 
   return products.map((p) => {
-    const key =
-      (Array.isArray(p.images) ? p.images[0]?.key : null) ?? null;
-    const url = key ? publicR2Url(key) : null;
+    const imgs = (p as any).images as ProductImageRow[] | undefined;
+    const first = Array.isArray(imgs) ? imgs[0] : undefined;
+
+    let imageUrl: string | null = null;
+    if (first) {
+      if (first.url) {
+        imageUrl = first.url;
+      } else if (first.key) {
+        imageUrl = publicR2Url(first.key);
+      }
+    }
 
     return {
       id: p.id,
       name: p.name,
-      slug: p.slug,
+      slug: (p as any).slug,
       status: (p as any).status ?? null,
       price: (p as any).price ?? null,
-      images: url
-        ? [{ key }]
-        : [],
+      imageUrl,
     };
   });
 }
