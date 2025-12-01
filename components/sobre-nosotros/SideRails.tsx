@@ -12,30 +12,66 @@ type Prod = {
   slug?: string | null;
 
   // Distintos campos posibles de precio
-  price?: number | null;
-  priceFinal?: number | null;
-  priceOriginal?: number | null;
-  originalPrice?: number | null;
+  price?: number | string | null;
+  priceFinal?: number | string | null;
+  priceOriginal?: number | string | null;
+  originalPrice?: number | string | null;
 
   image?: any;
   imageUrl?: string | null;
   cover?: any;
   coverUrl?: string | null;
   images?: { url: string; alt?: string | null }[];
+
   appliedOffer?: any | null;
   offer?: any | null;
+
+  // Algunos endpoints pueden traer el producto anidado
+  product?: any;
+
+  // Permite campos extra sin romper TS
+  [key: string]: any;
 };
 
 function firstImage(p: Prod) {
-  return (
+  // 1) Intentamos con el propio objeto
+  const direct =
     p.cover ??
     p.coverUrl ??
     p.image ??
     p.imageUrl ??
     (Array.isArray(p.images) && p.images.length
       ? p.images[0]
+      : null);
+
+  if (direct) return direct;
+
+  // 2) Si viene anidado en product, probamos ahí
+  const inner = p.product as any;
+  if (!inner) return null;
+
+  return (
+    inner.cover ??
+    inner.coverUrl ??
+    inner.image ??
+    inner.imageUrl ??
+    (Array.isArray(inner.images) && inner.images.length
+      ? inner.images[0]
       : null)
   );
+}
+
+function toNumber(v: unknown): number | null {
+  if (typeof v === "number") {
+    return Number.isFinite(v) ? v : null;
+  }
+  if (typeof v === "string") {
+    // Limpiamos posibles símbolos de moneda
+    const cleaned = v.replace(/[^\d.,-]/g, "").replace(",", ".");
+    const n = Number.parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
 function SmallList({
@@ -63,38 +99,50 @@ function SmallList({
 
       {items && items.length > 0 && (
         <div className="grid gap-2">
-          {items.map((p) => {
-            // Título: aceptamos name o title
-            const title =
-              p.name?.toString() ??
-              p.title?.toString() ??
+          {items.map((raw) => {
+            // Algunos endpoints traen el producto anidado
+            const base: any = raw;
+            const p: any = base.product ?? base;
+
+            // Título: name o title, del producto o del raw
+            const rawTitle =
+              p.name ??
+              p.title ??
+              base.name ??
+              base.title ??
               "-";
+            const titleStr =
+              typeof rawTitle === "string"
+                ? rawTitle
+                : String(rawTitle ?? "-");
 
-            // Precio actual: puede venir en varios campos
+            // Slug: preferimos el del producto
+            const slug =
+              (p.slug ??
+                base.slug ??
+                "") as string;
+
+            // Precio actual: probamos varias combinaciones y parseamos string/number
             const price =
-              typeof p.priceFinal === "number"
-                ? p.priceFinal
-                : typeof p.price === "number"
-                ? p.price
-                : null;
+              toNumber(p.priceFinal ?? p.price) ??
+              toNumber(base.priceFinal ?? base.price);
 
-            // Precio original (para tachado / descuento)
+            // Precio original: igual que arriba
             const originalPrice =
-              typeof p.priceOriginal === "number"
-                ? p.priceOriginal
-                : typeof p.originalPrice === "number"
-                ? p.originalPrice
-                : null;
-
-            const slug = p.slug ?? "";
+              toNumber(
+                p.priceOriginal ??
+                  p.originalPrice ??
+                  base.priceOriginal ??
+                  base.originalPrice,
+              );
 
             return (
               <ProductCard
-                key={p.id}
+                key={String(raw.id)}
                 variant="row"
                 slug={slug}
-                title={title}
-                image={firstImage(p)}
+                title={titleStr}
+                image={firstImage(raw)}
                 price={price}
                 originalPrice={originalPrice}
               />
@@ -183,7 +231,6 @@ export function SideOffers() {
         list.length ?? 0,
       );
 
-      // El endpoint ya respeta ?take=6, mostramos todo lo que venga
       setItems(list);
     })();
   }, []);
