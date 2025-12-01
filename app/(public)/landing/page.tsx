@@ -61,7 +61,8 @@ function hash(s: string) {
 }
 function seededRand(seed: string) {
   let x = hash(seed) || 1;
-  return () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  return () =>
+    (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
 }
 function shuffleSeed<T>(arr: T[], seed: string) {
   const rand = seededRand(seed);
@@ -116,7 +117,8 @@ async function getBanners(): Promise<BannerItem[]> {
       linkUrl: b.linkUrl ?? b.href ?? null,
     }))
     .filter(
-      (x) => !!(typeof x.image === "string" || (x.image as any)?.url)
+      (x) =>
+        !!(typeof x.image === "string" || (x.image as any)?.url)
     );
 }
 
@@ -158,7 +160,7 @@ async function getOffersRaw(): Promise<Prod[]> {
 
   const data = await safeJson<any>(
     await abs(
-      `/api/public/catalogo?perPage=80&status=all&onSale=1&sort=-id`
+      `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id`
     )
   );
 
@@ -177,10 +179,13 @@ async function getOffersRaw(): Promise<Prod[]> {
   for (const p of normalized) {
     const final = typeof p.price === "number" ? p.price : null;
     const orig =
-      typeof p.originalPrice === "number" ? p.originalPrice : null;
+      typeof p.originalPrice === "number"
+        ? p.originalPrice
+        : null;
 
     if (final != null && orig != null && final < orig) {
-      const id = typeof p.id === "number" ? p.id : Number(p.id);
+      const id =
+        typeof p.id === "number" ? p.id : Number(p.id);
       if (Number.isFinite(id)) keepIds.add(id);
     }
   }
@@ -192,7 +197,8 @@ async function getOffersRaw(): Promise<Prod[]> {
 
   // Devolvemos SOLO los raw cuyos id están en keepIds
   const filteredRaw = raw.filter((p) => {
-    const id = typeof p.id === "number" ? p.id : Number(p.id);
+    const id =
+      typeof p.id === "number" ? p.id : Number(p.id);
     return keepIds.has(id);
   });
 
@@ -215,7 +221,7 @@ export default async function LandingPage() {
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
 
   // ⬇️ Aumentamos el pool de ofertas para que el carrusel rote
-  const OFFERS_COUNT = 24; // antes 3
+  const OFFERS_COUNT = 24;
   const offersDaily = shuffleSeed(
     offersAll,
     `${seed}:offers`
