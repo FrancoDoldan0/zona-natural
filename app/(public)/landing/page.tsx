@@ -14,7 +14,11 @@ import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
-import { normalizeProduct } from "@/lib/product";
+import { getAllOffersRaw } from "@/lib/offers-landing";
+import { getLandingCatalog } from "@/lib/catalog-landing";
+
+/** Cantidad de ofertas que usamos en el carrusel de la landing */
+const OFFERS_COUNT = 24;
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -128,100 +132,50 @@ async function getCategories(): Promise<Cat[]> {
   return list as Cat[];
 }
 
-async function getCatalog(perPage = 48): Promise<Prod[]> {
-  const statuses = ["all", "raw"];
-  for (const status of statuses) {
-    const data = await safeJson<any>(
-      await abs(
-        `/api/public/catalogo?status=${status}&perPage=${perPage}&sort=-id`
-      )
-    );
-    const items: any[] =
-      (data as any)?.items ??
-      (data as any)?.data ??
-      (data as any)?.products ??
-      (data as any)?.results ??
-      [];
-    if (Array.isArray(items) && items.length) return items as Prod[];
-  }
-  return [];
-}
-
-/**
- * Ofertas para la landing:
- *  - Usa la MISMA base que la página /ofertas:
- *    /api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id
- *  - Normaliza y filtra para quedarse solo con productos donde
- *    price < originalPrice, pero devuelve los ítems "raw"
- *    (lo que espera OffersCarousel).
- */
-async function getOffersRaw(): Promise<Prod[]> {
-  type Raw = Record<string, any>;
-
-  const data = await safeJson<any>(
-    await abs(
-      `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id`
-    )
-  );
-
-  const raw: Raw[] =
-    (data?.items as Raw[]) ??
-    (data?.data as Raw[]) ??
-    (Array.isArray(data) ? (data as Raw[]) : []);
-
-  if (!raw.length) return [];
-
-  // Normalizamos igual que en /ofertas
-  const normalized = raw.map((p) => normalizeProduct(p));
-  const keepIds = new Set<number>();
-
-  // Nos quedamos solo con productos donde realmente hay descuento
-  for (const p of normalized) {
-    const final = typeof p.price === "number" ? p.price : null;
-    const orig =
-      typeof p.originalPrice === "number"
-        ? p.originalPrice
-        : null;
-
-    if (final != null && orig != null && final < orig) {
-      const id =
-        typeof p.id === "number" ? p.id : Number(p.id);
-      if (Number.isFinite(id)) keepIds.add(id);
-    }
-  }
-
-  if (!keepIds.size) {
-    // Preferimos no mostrar nada antes que cosas sin oferta real
-    return [];
-  }
-
-  // Devolvemos SOLO los raw cuyos id están en keepIds
-  const filteredRaw = raw.filter((p) => {
-    const id =
-      typeof p.id === "number" ? p.id : Number(p.id);
-    return keepIds.has(id);
-  });
-
-  return filteredRaw as Prod[];
-}
-
 /* ───────── página ───────── */
 export default async function LandingPage() {
-  const [banners, cats, offersAll, catalog] = await Promise.all([
+  const [banners, cats, offersAllRaw, catalogRaw] = await Promise.all([
     getBanners(),
     getCategories(),
-    getOffersRaw(),
-    getCatalog(48),
+    getAllOffersRaw(),       // helper liviano de ofertas
+    getLandingCatalog(48),   // 👈 nuevo helper liviano de catálogo
   ]);
+
+  // Cast suave para reutilizar el tipo Prod en el carrusel y grid
+  const offersAll = offersAllRaw as unknown as Prod[];
+  const catalog = (catalogRaw as any[]).map((p) => {
+    const price =
+      typeof p.price === "number" ? p.price : null;
+
+    return {
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      price,
+      priceOriginal: price,
+      priceFinal: price,
+      // Para BestSellersGrid alcanza con imageUrl / image
+      imageUrl:
+        Array.isArray(p.images) && p.images[0]?.key
+          ? (p.images[0] as any).key
+          : null,
+      image:
+        Array.isArray(p.images) && p.images[0]?.key
+          ? (p.images[0] as any).key
+          : null,
+      status: (p as any).status ?? undefined,
+      appliedOffer: null,
+      offer: null,
+    } satisfies Prod;
+  });
 
   // Semilla diaria estable (AAAA-MM-DD)
   const seed = new Date().toISOString().slice(0, 10);
 
-  // Rotación diaria
+  // Rotación diaria de categorías
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
 
-  // ⬇️ Aumentamos el pool de ofertas para que el carrusel rote
-  const OFFERS_COUNT = 24;
+  // Rotación diaria de ofertas (pool completo → mostramos OFFERS_COUNT)
   const offersDaily = shuffleSeed(
     offersAll,
     `${seed}:offers`
@@ -313,14 +267,13 @@ export default async function LandingPage() {
       <CategoriesRow cats={catsDaily} />
 
       {/* Ofertas (rotación diaria) */}
-      {/* ⬇️ Mostrar 3 a la vez y rotar sobre OFFERS_COUNT */}
       <OffersCarousel
         items={offersDaily}
         visible={3}
         rotationMs={6000}
       />
 
-      {/* Más vendidos (simulado por clics + heurística) */}
+      {/* Más vendidos (catálogo liviano) */}
       <BestSellersGrid items={catalog} />
 
       {/* Recetas populares */}
@@ -339,8 +292,6 @@ export default async function LandingPage() {
       {/* Sello sustentable */}
       <Sustainability />
 
-      {/* ⚠️ Footer verde eliminado para evitar el doble pie.
-          El footer blanco global permanece. */}
       <WhatsAppFloat />
     </>
   );
