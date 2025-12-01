@@ -10,11 +10,23 @@ import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
 import RecipesPopular from "@/components/landing/RecipesPopular";
 import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
-import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
 import { normalizeProduct } from "@/lib/product";
+import dynamic from "next/dynamic";
+import type { Branch } from "@/components/landing/MapHours";
+
+/* ───────── MapHours lazy (para no frenar la carga inicial) ───────── */
+const MapHoursLazy = dynamic(
+  () => import("@/components/landing/MapHours"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-64 w-full rounded-xl bg-muted animate-pulse" />
+    ),
+  }
+);
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -28,8 +40,7 @@ async function abs(path: string) {
   try {
     const h = await headers();
     const proto = h.get("x-forwarded-proto") ?? "https";
-    const host =
-      h.get("x-forwarded-host") ?? h.get("host") ?? "";
+    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
     if (host) return `${proto}://${host}${path}`;
   } catch {
     // sin headers(): devolvemos ruta relativa (Next la resuelve en runtime)
@@ -44,7 +55,7 @@ async function safeJson<T>(
 ): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      next: { revalidate: 60 },
+      next: { revalidate: 60 }, // deja que Next cachee por defecto
       ...init,
     });
     if (!res.ok) return null;
@@ -62,8 +73,7 @@ function hash(s: string) {
 }
 function seededRand(seed: string) {
   let x = hash(seed) || 1;
-  return () =>
-    (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  return () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
 }
 function shuffleSeed<T>(arr: T[], seed: string) {
   const rand = seededRand(seed);
@@ -105,10 +115,7 @@ type Prod = {
 
 /* ───────── data fetchers ───────── */
 async function getBanners(): Promise<BannerItem[]> {
-  const data = await safeJson<any>(await abs("/api/public/banners"), {
-    cache: "no-store",
-    next: { revalidate: 0 },
-  });
+  const data = await safeJson<any>(await abs("/api/public/banners"));
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return (list as any[])
     .map((b, i) => ({
@@ -120,16 +127,11 @@ async function getBanners(): Promise<BannerItem[]> {
           : ({ url: b.url ?? "" } as any),
       linkUrl: b.linkUrl ?? b.href ?? null,
     }))
-    .filter(
-      (x) =>
-        !!(typeof x.image === "string" || (x.image as any)?.url)
-    );
+    .filter((x) => !!(typeof x.image === "string" || (x.image as any)?.url));
 }
 
 async function getCategories(): Promise<Cat[]> {
-  const data = await safeJson<any>(
-    await abs("/api/public/categories")
-  );
+  const data = await safeJson<any>(await abs("/api/public/categories"));
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return list as Cat[];
 }
@@ -139,9 +141,8 @@ async function getCatalog(perPage = 48): Promise<Prod[]> {
   for (const status of statuses) {
     const data = await safeJson<any>(
       await abs(
-        `/api/public/catalogo?status=${status}&perPage=${perPage}&sort=-id&_ts=${Date.now()}`
-      ),
-      { cache: "no-store", next: { revalidate: 0 } }
+        `/api/public/catalogo?status=${status}&perPage=${perPage}&sort=-id`
+      )
     );
     const items: any[] =
       (data as any)?.items ??
@@ -167,9 +168,8 @@ async function getOffersRaw(): Promise<Prod[]> {
 
   const data = await safeJson<any>(
     await abs(
-      `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id`
-    ),
-    { cache: "no-store", next: { revalidate: 0 } }
+      `/api/public/catalogo?perPage=80&status=all&onSale=1&sort=-id`
+    )
   );
 
   const raw: Raw[] =
@@ -185,16 +185,12 @@ async function getOffersRaw(): Promise<Prod[]> {
 
   // Nos quedamos solo con productos donde realmente hay descuento
   for (const p of normalized) {
-    const final =
-      typeof p.price === "number" ? p.price : null;
+    const final = typeof p.price === "number" ? p.price : null;
     const orig =
-      typeof p.originalPrice === "number"
-        ? p.originalPrice
-        : null;
+      typeof p.originalPrice === "number" ? p.originalPrice : null;
 
     if (final != null && orig != null && final < orig) {
-      const id =
-        typeof p.id === "number" ? p.id : Number(p.id);
+      const id = typeof p.id === "number" ? p.id : Number(p.id);
       if (Number.isFinite(id)) keepIds.add(id);
     }
   }
@@ -206,8 +202,7 @@ async function getOffersRaw(): Promise<Prod[]> {
 
   // Devolvemos SOLO los raw cuyos id están en keepIds
   const filteredRaw = raw.filter((p) => {
-    const id =
-      typeof p.id === "number" ? p.id : Number(p.id);
+    const id = typeof p.id === "number" ? p.id : Number(p.id);
     return keepIds.has(id);
   });
 
@@ -231,10 +226,10 @@ export default async function LandingPage() {
 
   // ⬇️ Aumentamos el pool de ofertas para que el carrusel rote
   const OFFERS_COUNT = 24; // antes 3
-  const offersDaily = shuffleSeed(
-    offersAll,
-    `${seed}:offers`
-  ).slice(0, OFFERS_COUNT);
+  const offersDaily = shuffleSeed(offersAll, `${seed}:offers`).slice(
+    0,
+    OFFERS_COUNT
+  );
 
   // ───────── Sucursales (tabs) ─────────
   const hours: [string, string][] = [
@@ -299,7 +294,9 @@ export default async function LandingPage() {
         encode("Av. José Artigas, 15900 Progreso, Canelones"),
       embedUrl:
         "https://www.google.com/maps?q=" +
-        encode("Av. José Artigas, 15900 Progreso, Canelones") +
+        encode(
+          "Av. José Artigas, 15900 Progreso, Canelones"
+        ) +
         "&output=embed",
       hours,
     },
@@ -336,9 +333,8 @@ export default async function LandingPage() {
       {/* Testimonios + badges */}
       <TestimonialsBadges />
 
-      {/* Mapa + horarios con múltiples sucursales */}
-      {/* 🔧 Solo Las Piedras y La Paz */}
-      <MapHours
+      {/* Mapa + horarios con múltiples sucursales (lazy) */}
+      <MapHoursLazy
         locations={branches.filter(
           (b) => b.name === "Las Piedras" || b.name === "La Paz"
         )}
