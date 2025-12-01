@@ -3,10 +3,11 @@
 
 import { useEffect, useState } from "react";
 import ProductCard from "@/components/ui/ProductCard";
+import { normalizeProduct } from "@/lib/product";
 
 type Prod = {
   id: number | string;
-  // Puede venir de catálogo crudo o normalizado
+  // Puede venir crudo, normalizado o anidado
   name?: string | null;
   title?: string | null;
   slug?: string | null;
@@ -26,10 +27,8 @@ type Prod = {
   appliedOffer?: any | null;
   offer?: any | null;
 
-  // Algunos endpoints pueden traer el producto anidado
-  product?: any;
+  product?: any; // por si viene anidado
 
-  // Permite campos extra sin romper TS
   [key: string]: any;
 };
 
@@ -66,7 +65,6 @@ function toNumber(v: unknown): number | null {
     return Number.isFinite(v) ? v : null;
   }
   if (typeof v === "string") {
-    // Limpiamos posibles símbolos de moneda
     const cleaned = v.replace(/[^\d.,-]/g, "").replace(",", ".");
     const n = Number.parseFloat(cleaned);
     return Number.isFinite(n) ? n : null;
@@ -100,11 +98,10 @@ function SmallList({
       {items && items.length > 0 && (
         <div className="grid gap-2">
           {items.map((raw) => {
-            // Algunos endpoints traen el producto anidado
             const base: any = raw;
             const p: any = base.product ?? base;
 
-            // Título: name o title, del producto o del raw
+            // Título
             const rawTitle =
               p.name ??
               p.title ??
@@ -116,24 +113,24 @@ function SmallList({
                 ? rawTitle
                 : String(rawTitle ?? "-");
 
-            // Slug: preferimos el del producto
+            // Slug
             const slug =
               (p.slug ??
                 base.slug ??
                 "") as string;
 
-            // Precio actual: probamos varias combinaciones y parseamos string/number
+            // Precio actual
             const price =
-              toNumber(p.priceFinal ?? p.price) ??
-              toNumber(base.priceFinal ?? base.price);
+              toNumber(p.price ?? p.priceFinal) ??
+              toNumber(base.price ?? base.priceFinal);
 
-            // Precio original: igual que arriba
+            // Precio original
             const originalPrice =
               toNumber(
-                p.priceOriginal ??
-                  p.originalPrice ??
-                  base.priceOriginal ??
-                  base.originalPrice,
+                p.originalPrice ??
+                  p.priceOriginal ??
+                  base.originalPrice ??
+                  base.priceOriginal,
               );
 
             return (
@@ -214,24 +211,41 @@ export function SideOffers() {
   useEffect(() => {
     (async () => {
       console.log(
-        "[SideOffers] fetch /api/public/sidebar-offers?take=6",
+        "[SideOffers] fetch /api/public/catalogo?perPage=120&status=all&onSale=1&sort=-id",
       );
 
       const data = await getJson<any>(
-        "/api/public/sidebar-offers?take=6",
+        "/api/public/catalogo?perPage=120&status=all&onSale=1&sort=-id",
       );
 
-      const list: Prod[] =
-        (data?.items as Prod[]) ??
-        (data?.data as Prod[]) ??
-        (Array.isArray(data) ? (data as Prod[]) : []);
+      const raw: any[] =
+        (data?.items as any[]) ??
+        (data?.data as any[]) ??
+        (Array.isArray(data) ? (data as any[]) : []);
 
       console.log(
-        "[SideOffers] ofertas recibidas:",
-        list.length ?? 0,
+        "[SideOffers] raw ofertas desde catálogo:",
+        raw.length ?? 0,
       );
 
-      setItems(list);
+      // Normalizamos igual que en /ofertas
+      const normalized = raw.map((p) =>
+        normalizeProduct(p),
+      ) as any[];
+
+      // Filtro de seguridad: solo donde price < originalPrice
+      const offers = normalized.filter((p) => {
+        const price = toNumber(p.price);
+        const orig = toNumber(p.originalPrice);
+        return price != null && orig != null && price < orig;
+      });
+
+      console.log(
+        "[SideOffers] ofertas con descuento real:",
+        offers.length ?? 0,
+      );
+
+      setItems(offers.slice(0, 6) as Prod[]);
     })();
   }, []);
 
