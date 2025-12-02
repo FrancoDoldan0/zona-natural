@@ -38,15 +38,28 @@ export async function getLandingCatalog(
       },
       where: {
         id: productIds?.length ? { in: productIds } : undefined,
+        // Filtro de estado para productos activos (última corrección)
         status: { equals: ProductStatus.ACTIVE }, 
       },
       take: productIds?.length ? undefined : (perPage > 0 ? perPage : undefined),
-      // CORRECCIÓN FINAL: Usamos 'id' en lugar de 'position' para ordenar la tabla Product
+      // Ordenamiento por ID (última corrección para evitar el error 'position')
       orderBy: { id: "asc" },
     });
 
     const publicR2Url = process.env.PUBLIC_R2_BASE_URL;
 
+    // BLOQUE DE DIAGNÓSTICO TEMPORAL: VERIFICAR DATOS
+    console.log("DIAGNÓSTICO INICIADO:");
+    console.log("PUBLIC_R2_BASE_URL:", publicR2Url);
+    console.log("Primeros 5 productos con datos clave:");
+    items.slice(0, 5).forEach((p, index) => {
+        console.log(`- Producto ${index + 1} (ID: ${p.id}, Nombre: ${p.name}):`);
+        console.log(`  > Precio: ${p.price}`);
+        console.log(`  > Imagen URL Raw: ${p.images[0]?.url ?? 'N/A'}`);
+    });
+    console.log("DIAGNÓSTICO FINALIZADO.");
+    // FIN BLOQUE DE DIAGNÓSTICO
+    
     return items.map((p) => {
       const rawUrl = p.images[0]?.url ?? null;
       let imageUrl: string | null = null;
