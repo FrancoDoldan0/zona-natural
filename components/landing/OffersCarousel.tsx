@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
 import ProductCard from "@/components/ui/ProductCard";
 import { normalizeProduct } from "@/lib/product";
 import Link from "next/link";
@@ -52,12 +53,52 @@ export default function OffersCarousel({
 
   // Normalizar todas las ofertas que llegan
   const all = useMemo(() => {
-    const list = Array.isArray(items) ? items.map(normalizeProduct) : [];
-    return list.sort((a, b) => {
+    if (!Array.isArray(items) || !items.length) return [];
+
+    const normalized = items.map((raw: any) => {
+      const base: any = normalizeProduct(raw) ?? {};
+
+      const pick = (v: any): string | null =>
+        typeof v === "string" && v.trim().length ? v : null;
+
+      // Título: usamos el que venga o derivamos del name
+      const title =
+        base.title ??
+        base.name ??
+        raw.title ??
+        raw.name ??
+        "";
+
+      // Imagen: priorizamos la del normalizador; si no, buscamos en cover/imageUrl/images
+      let image: string | null = pick(base.image);
+      if (!image) {
+        image =
+          pick(base.cover) ||
+          pick(base.imageUrl) ||
+          pick(raw.cover) ||
+          pick(raw.imageUrl) ||
+          (Array.isArray(base.images) && pick(base.images[0]?.url)) ||
+          (Array.isArray(raw.images) && pick(raw.images[0]?.url)) ||
+          null;
+      }
+
+      return {
+        ...base,
+        title,
+        image,
+      };
+    });
+
+    // Ordenamos por % de descuento (como antes)
+    return normalized.sort((a, b) => {
       const da =
-        (a.originalPrice ?? 0) && (a.price ?? 0) ? 1 - a.price! / a.originalPrice! : 0;
+        (a.originalPrice ?? 0) && (a.price ?? 0)
+          ? 1 - a.price! / a.originalPrice!
+          : 0;
       const db =
-        (b.originalPrice ?? 0) && (b.price ?? 0) ? 1 - b.price! / b.originalPrice! : 0;
+        (b.originalPrice ?? 0) && (b.price ?? 0)
+          ? 1 - b.price! / b.originalPrice!
+          : 0;
       return db - da;
     });
   }, [items]);
@@ -97,8 +138,8 @@ export default function OffersCarousel({
     [all, start, showCount]
   );
 
-  // ✅ OPCIÓN A: cada vez que rota o cambia la ventana visible,
-  // los nuevos nodos no están observados; los marcamos como visibles.
+  // ✅ Cada vez que rota o cambia la ventana visible,
+  // marcamos los nuevos nodos como visibles.
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
@@ -118,7 +159,9 @@ export default function OffersCarousel({
     >
       <div className="mx-auto max-w-7xl px-4 py-12">
         <div className="mb-6 flex items-center justify-between gap-3">
-          <h2 className="text-2xl md:text-3xl font-semibold reveal in">Las Mejores Ofertas</h2>
+          <h2 className="text-2xl md:text-3xl font-semibold reveal in">
+            Las Mejores Ofertas
+          </h2>
           <Link
             href="/ofertas"
             className="rounded-full px-3 py-1.5 text-sm ring-1 ring-emerald-200 text-emerald-700 hover:bg-emerald-50 lift"
