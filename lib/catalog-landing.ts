@@ -1,5 +1,7 @@
 // lib/catalog-landing.ts
-import { PrismaClient } from "@prisma/client/edge";
+
+// CAMBIO CLAVE 1: Importar ProductStatus para tipado correcto
+import { PrismaClient, ProductStatus } from "@prisma/client/edge"; 
 import { withAccelerate } from "@prisma/extension-accelerate";
 
 const prisma = new PrismaClient().$extends(withAccelerate());
@@ -32,13 +34,13 @@ export async function getLandingCatalog(
             alt: true,
           },
           take: 1, // Solo la primera imagen
-          orderBy: { id: "asc" }, // 1. CORREGIDO: Error de 'position' en la relación
+          orderBy: { id: "asc" }, // Corrección del orderBy en la relación 'images'
         },
       },
       where: {
         id: productIds?.length ? { in: productIds } : undefined,
-        // 2. CORRECCIÓN CLAVE: Usamos 'equals' para filtrar el Enum 'status'
-        status: { equals: "published" }, 
+        // CAMBIO CLAVE 2: Usamos ProductStatus.published para tipado correcto
+        status: { equals: ProductStatus.published }, 
       },
       take: productIds?.length ? undefined : (perPage > 0 ? perPage : undefined),
       orderBy: { position: "asc" },
