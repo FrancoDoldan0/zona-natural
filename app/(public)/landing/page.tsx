@@ -14,7 +14,6 @@ import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
-import { getAllOffersRaw } from "@/lib/offers-landing";
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
 const OFFERS_COUNT = 24;
@@ -105,49 +104,6 @@ type ProductForGrid = {
   offer?: any | null;
 };
 
-/* ───────── helpers específicos de ofertas ───────── */
-
-// Devuelve la primera URL de imagen válida que encuentre en la oferta
-function getOfferImageUrl(p: any): string | null {
-  const take = (v: any): string | null =>
-    typeof v === "string" && v.trim().length ? v : null;
-
-  const candidates: any[] = [
-    p.cover,
-    p.image,
-    p.imageUrl,
-    p.product?.cover,
-    p.product?.image,
-    p.product?.imageUrl,
-    p.product?.image?.url,
-    p.variant?.cover,
-    p.variant?.image,
-    p.variant?.imageUrl,
-    p.variant?.image?.url,
-  ];
-
-  for (const c of candidates) {
-    const val = take(c);
-    if (val) return val;
-  }
-
-  // arrays de imágenes
-  if (Array.isArray(p.images) && p.images[0]?.url) {
-    const val = take(p.images[0].url);
-    if (val) return val;
-  }
-  if (Array.isArray(p.product?.images) && p.product.images[0]?.url) {
-    const val = take(p.product.images[0].url);
-    if (val) return val;
-  }
-  if (Array.isArray(p.variant?.images) && p.variant.images[0]?.url) {
-    const val = take(p.variant.images[0].url);
-    if (val) return val;
-  }
-
-  return null;
-}
-
 /* ───────── data fetchers ───────── */
 async function getBanners(): Promise<BannerItem[]> {
   const data = await safeJson<any>(await abs("/api/public/banners"));
@@ -178,8 +134,8 @@ async function getCategories(): Promise<Cat[]> {
   return list as Cat[];
 }
 
-// Catálogo liviano para "Más vendidos"
-async function getCatalogForGrid(perPage = 96): Promise<ProductForGrid[]> {
+// Catálogo liviano para "Más vendidos" y también fuente de "Mejores ofertas"
+async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
   const data = await safeJson<any>(
     await abs(
       `/api/public/catalogo?status=all&perPage=${perPage}&sort=-id`
@@ -223,26 +179,11 @@ async function getCatalogForGrid(perPage = 96): Promise<ProductForGrid[]> {
 
 /* ───────── página ───────── */
 export default async function LandingPage() {
-  const [banners, cats, offersAllRaw, catalog] = await Promise.all([
+  const [banners, cats, catalog] = await Promise.all([
     getBanners(),
     getCategories(),
-    getAllOffersRaw(), // pool completo de ofertas normalizadas (con cover y precios)
-    getCatalogForGrid(96),
+    getCatalogForGrid(200),
   ]);
-
-  // Normalizamos las ofertas para asegurarnos de que SIEMPRE tengan:
-  // cover (string), image (string) e imageUrl (string)
-  const offersAll = (offersAllRaw || []).map((p: any) => {
-    const primary = getOfferImageUrl(p);
-
-    return {
-      ...p,
-      cover: primary ?? (typeof p.cover === "string" ? p.cover : null),
-      imageUrl:
-        primary ?? (typeof p.imageUrl === "string" ? p.imageUrl : null),
-      image: primary ?? p.image ?? null,
-    };
-  });
 
   // Semilla diaria estable (AAAA-MM-DD)
   const seed = new Date().toISOString().slice(0, 10);
@@ -250,58 +191,22 @@ export default async function LandingPage() {
   // Rotación diaria de categorías
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
 
+  // ───────── Ofertas a partir del catálogo ─────────
+  // Tomamos del catálogo los productos que tienen descuento real
+  const offersFromCatalog = catalog.filter((p) => {
+    const price =
+      typeof p.price === "number" ? p.price : null;
+    const original =
+      typeof p.originalPrice === "number" ? p.originalPrice : null;
+
+    return price != null && original != null && price < original;
+  });
+
   // Rotación diaria de ofertas (pool completo → mostramos OFFERS_COUNT)
-  const offersDailyRaw = shuffleSeed(
-    offersAll,
+  const offersDaily = shuffleSeed(
+    offersFromCatalog,
     `${seed}:offers`
   ).slice(0, OFFERS_COUNT);
-
-  // Mapa rápido de catálogo por id (para reaprovechar imagen/precios que ya funcionan)
-  const catalogById = new Map<number, ProductForGrid>();
-  for (const item of catalog) {
-    catalogById.set(item.id, item);
-  }
-
-  // Adaptamos las ofertas al formato que espera ProductCard,
-  // usando imagen/precios del catálogo cuando estén disponibles.
-  const offersDailyForCarousel: ProductForGrid[] = offersDailyRaw.map(
-    (p: any) => {
-      const fromCatalog = catalogById.get(Number(p.id));
-
-      const image =
-        (fromCatalog?.image as string | null | undefined) ??
-        getOfferImageUrl(p);
-
-      const priceFinal =
-        typeof p.priceFinal === "number"
-          ? p.priceFinal
-          : typeof p.price === "number"
-          ? p.price
-          : fromCatalog?.price ??
-            null;
-
-      const priceOriginal =
-        typeof p.priceOriginal === "number"
-          ? p.priceOriginal
-          : typeof p.originalPrice === "number"
-          ? p.originalPrice
-          : fromCatalog?.originalPrice ??
-            null;
-
-      return {
-        id: Number(p.id),
-        name: String(p.name ?? fromCatalog?.name ?? ""),
-        slug: String(p.slug ?? fromCatalog?.slug ?? ""),
-        cover: image ?? fromCatalog?.cover ?? null,
-        image: image ?? fromCatalog?.image ?? null,
-        price: priceFinal,
-        originalPrice: priceOriginal,
-        status: p.status ?? fromCatalog?.status ?? null,
-        appliedOffer: p.appliedOffer ?? fromCatalog?.appliedOffer ?? null,
-        offer: p.offer ?? fromCatalog?.offer ?? null,
-      };
-    }
-  );
 
   // ───────── Sucursales (tabs) ─────────
   const hours: [string, string][] = [
@@ -388,9 +293,9 @@ export default async function LandingPage() {
       {/* Categorías con rotación diaria */}
       <CategoriesRow cats={catsDaily} />
 
-      {/* Ofertas (rotación diaria) */}
+      {/* Ofertas (rotación diaria) — ahora derivadas del catálogo */}
       <OffersCarousel
-        items={offersDailyForCarousel as any}
+        items={offersDaily as any}
         visible={3}
         rotationMs={6000}
       />
