@@ -8,7 +8,7 @@ export const runtime = "edge";
 export async function GET() {
     try {
         // 🔑 PRUEBA CLAVE: Forzar la carga de un ID conocido y funcional (ej: 29)
-        const productIdsToTest = [29]; 
+        const productIdsToTest = [454]; 
         const items = await getLandingCatalog(5, productIdsToTest); 
 
         const publicR2Url = process.env.PUBLIC_R2_BASE_URL;
