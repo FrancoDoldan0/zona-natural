@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import ProductCard from "@/components/ui/ProductCard";
-import { normalizeProduct } from "@/lib/product";
 import Link from "next/link";
 
 type Item = any;
@@ -17,6 +16,85 @@ function windowSlice<T>(arr: T[], start: number, count: number): T[] {
   const head = arr.slice(start);
   const tail = arr.slice(0, end % arr.length);
   return head.concat(tail);
+}
+
+/** Normalizamos lo mínimo necesario para ProductCard */
+function normalizeOfferItem(raw: any) {
+  if (!raw) return null;
+
+  // A veces puede venir como { product: {...} }
+  const p = raw.product ?? raw;
+
+  const takeStr = (v: any): string | null =>
+    typeof v === "string" && v.trim().length ? v : null;
+
+  // Título
+  const title =
+    p.title ??
+    p.name ??
+    raw.title ??
+    raw.name ??
+    "";
+
+  // Slug
+  const slug =
+    p.slug ??
+    raw.slug ??
+    p.productSlug ??
+    "";
+
+  // Imagen principal: probamos varias fuentes
+  let image: string | null =
+    takeStr(p.image) ||
+    takeStr(p.cover) ||
+    takeStr(p.imageUrl) ||
+    takeStr(raw.image) ||
+    takeStr(raw.cover) ||
+    takeStr(raw.imageUrl) ||
+    (Array.isArray(p.images) && takeStr(p.images[0]?.url)) ||
+    (Array.isArray(raw.images) && takeStr(raw.images[0]?.url)) ||
+    null;
+
+  // Precios (ofertas landing suelen venir con price / originalPrice o priceFinal / priceOriginal)
+  const price =
+    typeof p.price === "number"
+      ? p.price
+      : typeof p.priceFinal === "number"
+      ? p.priceFinal
+      : typeof raw.price === "number"
+      ? raw.price
+      : typeof raw.priceFinal === "number"
+      ? raw.priceFinal
+      : null;
+
+  const originalPrice =
+    typeof p.originalPrice === "number"
+      ? p.originalPrice
+      : typeof p.priceOriginal === "number"
+      ? p.priceOriginal
+      : typeof raw.originalPrice === "number"
+      ? raw.originalPrice
+      : typeof raw.priceOriginal === "number"
+      ? raw.priceOriginal
+      : null;
+
+  const outOfStock = p.outOfStock ?? raw.outOfStock ?? false;
+  const brand = p.brand ?? raw.brand ?? undefined;
+  const subtitle = p.subtitle ?? raw.subtitle ?? undefined;
+  const variants = p.variants ?? raw.variants ?? undefined;
+
+  return {
+    id: p.id ?? raw.id,
+    title,
+    slug,
+    image,
+    price,
+    originalPrice,
+    outOfStock,
+    brand,
+    subtitle,
+    variants,
+  };
 }
 
 export default function OffersCarousel({
@@ -55,49 +133,19 @@ export default function OffersCarousel({
   const all = useMemo(() => {
     if (!Array.isArray(items) || !items.length) return [];
 
-    const normalized = items.map((raw: any) => {
-      const base: any = normalizeProduct(raw) ?? {};
+    const normalized = items
+      .map((raw) => normalizeOfferItem(raw))
+      .filter((x): x is NonNullable<typeof x> => !!x);
 
-      const pick = (v: any): string | null =>
-        typeof v === "string" && v.trim().length ? v : null;
-
-      // Título: usamos el que venga o derivamos del name
-      const title =
-        base.title ??
-        base.name ??
-        raw.title ??
-        raw.name ??
-        "";
-
-      // Imagen: priorizamos la del normalizador; si no, buscamos en cover/imageUrl/images
-      let image: string | null = pick(base.image);
-      if (!image) {
-        image =
-          pick(base.cover) ||
-          pick(base.imageUrl) ||
-          pick(raw.cover) ||
-          pick(raw.imageUrl) ||
-          (Array.isArray(base.images) && pick(base.images[0]?.url)) ||
-          (Array.isArray(raw.images) && pick(raw.images[0]?.url)) ||
-          null;
-      }
-
-      return {
-        ...base,
-        title,
-        image,
-      };
-    });
-
-    // Ordenamos por % de descuento (como antes)
+    // Ordenamos por % de descuento si tenemos ambos precios
     return normalized.sort((a, b) => {
       const da =
         (a.originalPrice ?? 0) && (a.price ?? 0)
-          ? 1 - a.price! / a.originalPrice!
+          ? 1 - (a.price as number) / (a.originalPrice as number)
           : 0;
       const db =
         (b.originalPrice ?? 0) && (b.price ?? 0)
-          ? 1 - b.price! / b.originalPrice!
+          ? 1 - (b.price as number) / (b.originalPrice as number)
           : 0;
       return db - da;
     });
