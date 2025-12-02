@@ -32,16 +32,15 @@ export async function getLandingCatalog(
             alt: true,
           },
           take: 1, // Solo la primera imagen
-          // 🔑 CORRECCIÓN CLAVE: Se cambió 'position' por 'id' para evitar Type error de Prisma.
-          orderBy: { id: "asc" },
+          orderBy: { id: "asc" }, // 1. CORREGIDO: Error de 'position' en la relación
         },
       },
       where: {
         id: productIds?.length ? { in: productIds } : undefined,
-        status: "published",
+        // 2. CORRECCIÓN CLAVE: Usamos 'equals' para filtrar el Enum 'status'
+        status: { equals: "published" }, 
       },
       take: productIds?.length ? undefined : (perPage > 0 ? perPage : undefined),
-      // Asumimos que 'position' SÍ existe en el modelo 'Product' para el orden principal.
       orderBy: { position: "asc" },
     });
 
