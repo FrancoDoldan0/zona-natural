@@ -187,19 +187,27 @@ export default async function LandingPage() {
     getCatalogForGrid(48),
   ]);
 
-  // offersAllRaw viene normalizado desde lib/offers-landing
-  // Lo adaptamos mínimamente a lo que espera OffersCarousel
+  // offersAllRaw viene de lib/offers-landing (tiene cover y precios)
+  // Acá nos aseguramos de setear TODOS los campos de imagen
+  // que pueden usar OffersCarousel/ProductCard: cover, imageUrl, image.url
   const offersAll = (offersAllRaw || []).map((p: any) => {
-    const image =
-      typeof p.image === "string"
-        ? p.image
-        : p.cover && typeof p.cover === "string"
-        ? p.cover
-        : null;
+    const primary =
+      (p.cover && typeof p.cover === "string" && p.cover) ||
+      (p.image &&
+        typeof p.image === "object" &&
+        typeof p.image.url === "string" &&
+        p.image.url) ||
+      (typeof p.image === "string" && p.image) ||
+      (typeof p.imageUrl === "string" && p.imageUrl) ||
+      null;
+
+    const imageObj = primary ? { url: primary } : p.image;
 
     return {
       ...p,
-      image,
+      cover: primary ?? p.cover ?? null,
+      imageUrl: primary ?? p.imageUrl ?? null,
+      image: imageObj,
     };
   });
 
