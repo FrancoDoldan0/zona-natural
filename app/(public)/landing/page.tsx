@@ -1,4 +1,3 @@
-// app/(public)/landing/page.tsx
 export const revalidate = 60; // cache incremental
 
 import InfoBar from "@/components/landing/InfoBar";
@@ -19,7 +18,12 @@ import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 
 import { headers } from "next/headers";
 import { getAllOffersRaw, type LandingOffer } from "@/lib/offers-landing";
-import { getLandingCatalog, type ProductLiteRow } from "@/lib/catalog-landing"; 
+// ❌ ELIMINAMOS la importación de getLandingCatalog, ya no se usará.
+// import { getLandingCatalog, type ProductLiteRow } from "@/lib/catalog-landing"; 
+
+// 🔑 NUEVO IMPORT: Traemos el tipo de dato final de la nueva API
+import { type LandingProduct } from "@/lib/catalog-helpers";
+
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
 const OFFERS_COUNT = 24;
@@ -73,7 +77,7 @@ function shuffleSeed<T>(arr: T[], seed: string) {
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
-  }
+    }
   return a;
 }
 
@@ -100,6 +104,33 @@ type ProductForGrid = {
   appliedOffer?: any | null;
   offer?: any | null;
 };
+
+/* ───────── NUEVO: DATA FETCHER PARA LA LANDING (usa la nueva API) ───────── */
+
+type LandingApiResponse = {
+    status: string;
+    products: LandingProduct[];
+};
+
+/**
+ * Función que consume la nueva API dedicada para la landing,
+ * la cual garantiza el fallback de imagen y el cálculo de precios.
+ */
+async function getLandingData(ids?: number[], perPage: number = 200): Promise<LandingProduct[]> {
+    const idsString = ids && ids.length > 0 ? `ids=${ids.join(',')}` : `perPage=${perPage}`;
+    
+    // 🔑 Llamamos a la nueva API /api/public/landing-catalog
+    const url = await abs(`/api/public/landing-catalog?${idsString}`);
+    
+    const data = await safeJson<LandingApiResponse>(url);
+
+    if (!data || data.status !== "success") {
+        console.error("Error al obtener datos de la nueva API de landing.");
+        return [];
+    }
+    
+    return data.products;
+}
 
 /* ───────── data fetchers (getBanners, getCategories) ───────── */
 
@@ -132,9 +163,11 @@ async function getCategories(): Promise<Cat[]> {
   return list as Cat[];
 }
 
-// FUNCIÓN CORREGIDA: Mapeo de datos para BestSellersGrid (Más vendidos)
+// FUNCIÓN MODIFICADA: Ahora usa la nueva API genérica para obtener el catálogo completo
+// (Solo para los "Más vendidos", que no tienen IDs predefinidos)
 async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
-    const items = await getLandingCatalog(perPage); 
+    // Carga los 200 primeros productos activos usando la nueva API
+    const items = await getLandingData(undefined, perPage); 
 
     return items.map((p) => ({
         id: p.id,
@@ -142,8 +175,9 @@ async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
         slug: p.slug,
         cover: p.imageUrl, 
         image: p.imageUrl, 
-        price: p.price, 
-        originalPrice: undefined, 
+        // 🔑 Usamos el campo resuelto priceFinal de la nueva API
+        price: p.priceFinal, 
+        originalPrice: undefined, // Esta API no devuelve el originalPrice en este modo
         status: p.status,
     })) as ProductForGrid[];
 }
@@ -156,7 +190,7 @@ export default async function LandingPage() {
   const [banners, cats, catalogRaw, offersAllRaw] = await Promise.all([
     getBanners(),
     getCategories(),
-    getCatalogForGrid(200), 
+    getCatalogForGrid(200), // Para Más Vendidos (productos genéricos)
     getAllOffersRaw(),
   ]);
 
@@ -171,20 +205,25 @@ export default async function LandingPage() {
   let offersPool: ProductForGrid[] = [];
   
   if (offerIds.length > 0) {
-      const rawOffers = await getLandingCatalog(0, offerIds);
+      // 🔑 LLAMADA CRÍTICA CORREGIDA: Usamos la nueva API dedicada para las ofertas
+      const rawOffers = await getLandingData(offerIds);
       
       // LÓGICA CORREGIDA: Mapeo de datos para OffersCarousel
       offersPool = rawOffers.map(p => {
+          // Buscamos la data original de la oferta (que contiene metadatos de precio/aplicación)
           const offerData = offersAllRaw.find(o => o.id === p.id);
           
           return {
               id: p.id,
               name: p.name,
               slug: p.slug,
-              cover: offerData?.cover ?? p.imageUrl, 
-              image: offerData?.cover ?? p.imageUrl, 
-              price: offerData?.priceFinal ?? p.price,
-              originalPrice: offerData?.priceOriginal ?? p.price,
+              // Usamos la URL resuelta por la API (con fallback de R2)
+              cover: p.imageUrl, 
+              image: p.imageUrl, 
+              // 🔑 Usamos el campo resuelto priceFinal de la nueva API
+              price: p.priceFinal,
+              // Asumimos que la nueva API no devuelve originalPrice, o que la info de offerData es más precisa
+              originalPrice: offerData?.priceOriginal,
               status: p.status,
               appliedOffer: offerData?.offer,
               offer: offerData?.offer,
