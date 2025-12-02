@@ -32,17 +32,17 @@ export async function getLandingCatalog(
             url: true,
             alt: true,
           },
-          take: 1, // Solo la primera imagen
-          orderBy: { id: "asc" }, // Corrección anterior 1: Usar 'id' en lugar de 'position' para la relación
+          take: 1, 
+          orderBy: { id: "asc" }, 
         },
       },
       where: {
         id: productIds?.length ? { in: productIds } : undefined,
-        // CORRECCIÓN FINAL: Usar el Enum correcto de tu esquema
         status: { equals: ProductStatus.ACTIVE }, 
       },
       take: productIds?.length ? undefined : (perPage > 0 ? perPage : undefined),
-      orderBy: { position: "asc" },
+      // CORRECCIÓN FINAL: Usamos 'id' en lugar de 'position' para ordenar la tabla Product
+      orderBy: { id: "asc" },
     });
 
     const publicR2Url = process.env.PUBLIC_R2_BASE_URL;
