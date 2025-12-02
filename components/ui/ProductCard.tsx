@@ -61,7 +61,28 @@ export default function ProductCard({
   variants,
 }: Props) {
   const href = resolveHref(slug);
-  const src = toR2Url(image);
+
+  // 🔧 NUEVO: hacemos toR2Url(image) pero con fallback a cualquier string útil
+  let src: any = toR2Url(image);
+  if (!src && image) {
+    if (typeof image === "string" && image.trim().length) {
+      src = image;
+    } else if (typeof image === "object") {
+      if (typeof image.url === "string" && image.url.trim().length) {
+        src = image.url;
+      } else if (
+        typeof (image as any).cover === "string" &&
+        (image as any).cover.trim().length
+      ) {
+        src = (image as any).cover;
+      } else if (
+        typeof (image as any).imageUrl === "string" &&
+        (image as any).imageUrl.trim().length
+      ) {
+        src = (image as any).imageUrl;
+      }
+    }
+  }
 
   // --- Selección de variante ---
   const [selIdx, setSelIdx] = useState(() => findCheapestIndex(variants));
