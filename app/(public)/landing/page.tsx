@@ -105,6 +105,49 @@ type ProductForGrid = {
   offer?: any | null;
 };
 
+/* ───────── helpers específicos de ofertas ───────── */
+
+// Devuelve la primera URL de imagen válida que encuentre en la oferta
+function getOfferImageUrl(p: any): string | null {
+  const take = (v: any): string | null =>
+    typeof v === "string" && v.trim().length ? v : null;
+
+  const candidates: any[] = [
+    p.cover,
+    p.image,
+    p.imageUrl,
+    p.product?.cover,
+    p.product?.image,
+    p.product?.imageUrl,
+    p.product?.image?.url,
+    p.variant?.cover,
+    p.variant?.image,
+    p.variant?.imageUrl,
+    p.variant?.image?.url,
+  ];
+
+  for (const c of candidates) {
+    const val = take(c);
+    if (val) return val;
+  }
+
+  // arrays de imágenes
+  if (Array.isArray(p.images) && p.images[0]?.url) {
+    const val = take(p.images[0].url);
+    if (val) return val;
+  }
+  if (Array.isArray(p.product?.images) && p.product.images[0]?.url) {
+    const val = take(p.product.images[0].url);
+    if (val) return val;
+  }
+  if (Array.isArray(p.variant?.images) && p.variant.images[0]?.url) {
+    const val = take(p.variant.images[0].url);
+    if (val) return val;
+  }
+
+  return null;
+}
+
 /* ───────── data fetchers ───────── */
 async function getBanners(): Promise<BannerItem[]> {
   const data = await safeJson<any>(await abs("/api/public/banners"));
@@ -183,31 +226,21 @@ export default async function LandingPage() {
   const [banners, cats, offersAllRaw, catalog] = await Promise.all([
     getBanners(),
     getCategories(),
-    getAllOffersRaw(), // pool completo de ofertas normalizadas
+    getAllOffersRaw(), // pool completo de ofertas normalizadas (con cover y precios)
     getCatalogForGrid(48),
   ]);
 
-  // offersAllRaw viene de lib/offers-landing (tiene cover y precios)
-  // Acá nos aseguramos de setear TODOS los campos de imagen
-  // que pueden usar OffersCarousel/ProductCard: cover, imageUrl, image.url
+  // Normalizamos las ofertas para asegurarnos de que SIEMPRE tengan:
+  // cover (string), image (string) e imageUrl (string)
   const offersAll = (offersAllRaw || []).map((p: any) => {
-    const primary =
-      (p.cover && typeof p.cover === "string" && p.cover) ||
-      (p.image &&
-        typeof p.image === "object" &&
-        typeof p.image.url === "string" &&
-        p.image.url) ||
-      (typeof p.image === "string" && p.image) ||
-      (typeof p.imageUrl === "string" && p.imageUrl) ||
-      null;
-
-    const imageObj = primary ? { url: primary } : p.image;
+    const primary = getOfferImageUrl(p);
 
     return {
       ...p,
-      cover: primary ?? p.cover ?? null,
-      imageUrl: primary ?? p.imageUrl ?? null,
-      image: imageObj,
+      cover: primary ?? (typeof p.cover === "string" ? p.cover : null),
+      imageUrl:
+        primary ?? (typeof p.imageUrl === "string" ? p.imageUrl : null),
+      image: primary ?? p.image ?? null,
     };
   });
 
@@ -218,10 +251,44 @@ export default async function LandingPage() {
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
 
   // Rotación diaria de ofertas (pool completo → mostramos OFFERS_COUNT)
-  const offersDaily = shuffleSeed(
+  const offersDailyRaw = shuffleSeed(
     offersAll,
     `${seed}:offers`
   ).slice(0, OFFERS_COUNT);
+
+  // Adaptamos las ofertas al formato que espera ProductCard (igual que "Más vendidos")
+  const offersDailyForCarousel: ProductForGrid[] = offersDailyRaw.map(
+    (p: any) => {
+      const image = getOfferImageUrl(p);
+
+      const priceFinal =
+        typeof p.priceFinal === "number"
+          ? p.priceFinal
+          : typeof p.price === "number"
+          ? p.price
+          : null;
+
+      const priceOriginal =
+        typeof p.priceOriginal === "number"
+          ? p.priceOriginal
+          : typeof p.originalPrice === "number"
+          ? p.originalPrice
+          : null;
+
+      return {
+        id: Number(p.id),
+        name: String(p.name ?? ""),
+        slug: String(p.slug ?? ""),
+        cover: image,
+        image,
+        price: priceFinal,
+        originalPrice: priceOriginal,
+        status: p.status ?? null,
+        appliedOffer: p.appliedOffer ?? p.offer ?? null,
+        offer: p.offer ?? null,
+      };
+    }
+  );
 
   // ───────── Sucursales (tabs) ─────────
   const hours: [string, string][] = [
@@ -310,7 +377,7 @@ export default async function LandingPage() {
 
       {/* Ofertas (rotación diaria) */}
       <OffersCarousel
-        items={offersDaily}
+        items={offersDailyForCarousel as any}
         visible={3}
         rotationMs={6000}
       />
