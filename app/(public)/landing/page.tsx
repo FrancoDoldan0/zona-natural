@@ -4,7 +4,7 @@ export const revalidate = 60; // cache incremental
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
 
-// 💡 IMPORTS DE COMPONENTES RESTAURADOS (CAUSA DEL ERROR DE COMPILACIÓN)
+// 🟢 IMPORTS DE COMPONENTES RESTAURADOS
 import MainNav from "@/components/landing/MainNav";
 import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
@@ -15,7 +15,7 @@ import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
-// FIN IMPORTS DE COMPONENTES RESTAURADOS
+// FIN IMPORTS DE COMPONENTES
 
 import { headers } from "next/headers";
 import { getAllOffersRaw, type LandingOffer } from "@/lib/offers-landing";
@@ -25,18 +25,12 @@ import { getLandingCatalog, type ProductLiteRow } from "@/lib/catalog-landing";
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
 const OFFERS_COUNT = 24;
 
-/* ───────── helpers comunes ───────── */
-
-// 💡 RESTAURACIÓN DE HELPERS (DEBEN ESTAR DEFINIDOS)
+/* ───────── helpers comunes (abs, safeJson, hash, seededRand, shuffleSeed) ───────── */
 
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
-
-  // Si está seteada la base pública, la usamos.
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   if (base) return `${base}${path}`;
-
-  // En SSR/hidratación puede que no haya Request context; evitamos tirar error.
   try {
     const h = await headers();
     const proto = h.get("x-forwarded-proto") ?? "https";
@@ -45,7 +39,6 @@ async function abs(path: string) {
   } catch {
     // sin headers(): devolvemos ruta relativa (Next la resuelve en runtime)
   }
-
   return path;
 }
 
@@ -65,7 +58,6 @@ async function safeJson<T>(
   }
 }
 
-/* ───────── helpers de shuffle con seed diaria ───────── */
 function hash(s: string) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -86,8 +78,6 @@ function shuffleSeed<T>(arr: T[], seed: string) {
   return a;
 }
 
-// 💡 FIN RESTAURACIÓN DE HELPERS
-
 /* ───────── tipos ───────── */
 type Cat = {
   id: number;
@@ -99,26 +89,20 @@ type Cat = {
   cover?: any;
 };
 
-// Este tipo está pensado para ser compatible con ProductCard / BestSellersGrid
 type ProductForGrid = {
   id: number;
   name: string;
   slug: string;
-  // BestSellersGrid espera image como string | null | undefined
   image?: string | null;
   cover?: string | null;
-  // precios ya calculados
-  price?: number | null; // usamos priceFinal
-  originalPrice?: number | null; // usamos priceOriginal
+  price?: number | null; 
+  originalPrice?: number | null; 
   status?: string | null;
-  // campos extra opcionales que ProductCard ignora si no existen
   appliedOffer?: any | null;
   offer?: any | null;
 };
 
 /* ───────── data fetchers (getBanners, getCategories) ───────── */
-
-// 💡 RESTAURACIÓN DE getBanners y getCategories
 
 async function getBanners(): Promise<BannerItem[]> {
   const data = await safeJson<any>(await abs("/api/public/banners"));
@@ -149,27 +133,17 @@ async function getCategories(): Promise<Cat[]> {
   return list as Cat[];
 }
 
-// 💡 FIN RESTAURACIÓN getBanners y getCategories
-
-// =========================================================================
-// CAMBIO CLAVE: Reemplazamos getCatalogForGrid (que llamaba a /api/public/catalogo)
-// por la función getLandingCatalog (que llama a Prisma directamente)
-// El catálogo de ofertas lo obtendremos de forma eficiente en el flujo principal.
-// =========================================================================
+// 🟢 FUNCIÓN CORREGIDA: Mapeo de datos para BestSellersGrid (Más vendidos)
 async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
-    // Usamos la función optimizada para el catálogo general (ej. Más Vendidos)
     const items = await getLandingCatalog(perPage); 
 
-    // Dado que getLandingCatalog devuelve ProductLiteRow, debemos mapear 
-    // a ProductForGrid para que las secciones como BestSellersGrid funcionen.
     return items.map((p) => ({
         id: p.id,
         name: p.name,
         slug: p.slug,
-        cover: p.imageUrl,
-        image: p.imageUrl, // 👈 lo que usa ProductCard
-        price: p.price,
-        // En el catálogo ligero el precio es solo el base, pero el BestSellersGrid lo acepta
+        cover: p.imageUrl, // 🔑 CORREGIDO: Mapeamos imageUrl a cover
+        image: p.imageUrl, // 🔑 CORREGIDO: Mapeamos imageUrl a image
+        price: p.price, // 🔑 CORREGIDO: Usamos el precio base
         originalPrice: undefined, 
         status: p.status,
     })) as ProductForGrid[];
@@ -178,50 +152,39 @@ async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
 /* ───────── página ───────── */
 export default async function LandingPage() {
     
-  // Semilla diaria estable (AAAA-MM-DD)
   const seed = new Date().toISOString().slice(0, 10);
   
-  // PASO 1: Ejecutar las consultas INICIALES en paralelo
   const [banners, cats, catalogRaw, offersAllRaw] = await Promise.all([
     getBanners(),
     getCategories(),
-    // Mantenemos esta llamada para la sección "Más vendidos" (BestSellersGrid)
     getCatalogForGrid(200), 
-    getAllOffersRaw(), // Fuente de verdad de las ofertas
+    getAllOffersRaw(),
   ]);
 
-  // Rotación diaria de categorías
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
   
-  // ───────── Ofertas unificadas con la lógica de /ofertas ─────────
+  // ───────── Ofertas unificadas ─────────
   
-  // 1) Set de IDs de productos que están en oferta según la lógica "core"
-  // Aquí usamos la data de offersAllRaw
   const offerIds = (offersAllRaw || [])
       .map((o: LandingOffer) => o.id)
       .filter((id): id is number => typeof id === "number");
 
   let offersPool: ProductForGrid[] = [];
   
-  // PASO 2: Consulta eficiente SÓLO para los productos en oferta
-  // Este bloque reemplaza el filtro manual ineficiente
   if (offerIds.length > 0) {
-      // Usamos getLandingCatalog (Prisma directo) con la lista de IDs.
-      // ESTO ES CLAVE: Carga solo las ofertas, no 2000+ productos.
       const rawOffers = await getLandingCatalog(0, offerIds);
       
-      // Mapeamos los datos de ofertas con los precios correctos (priceFinal/priceOriginal)
-      // que vienen en offersAllRaw.
+      // 🟢 LÓGICA CORREGIDA: Mapeo de datos para OffersCarousel
       offersPool = rawOffers.map(p => {
-          // Buscamos el objeto de oferta para obtener los precios calculados
           const offerData = offersAllRaw.find(o => o.id === p.id);
           
           return {
               id: p.id,
               name: p.name,
               slug: p.slug,
-              cover: p.imageUrl,
-              image: p.imageUrl, // URL de R2 del catálogo
+              // 🔑 CORREGIDO: Aseguramos que 'cover' e 'image' tengan la URL
+              cover: offerData?.cover ?? p.imageUrl, 
+              image: offerData?.cover ?? p.imageUrl, 
               // Usamos los precios calculados por getAllOffersRaw
               price: offerData?.priceFinal ?? p.price,
               originalPrice: offerData?.priceOriginal ?? p.price,
@@ -232,16 +195,13 @@ export default async function LandingPage() {
       });
   }
 
-  // 4) Rotación diaria de ofertas (pool completo → mostramos OFFERS_COUNT)
   const offersDaily = shuffleSeed(
     offersPool,
     `${seed}:offers`
   ).slice(0, OFFERS_COUNT);
 
-  // ───────── Resto de la página (branches, etc.) ─────────
+  // ───────── Lógica de sucursales ─────────
   
-// 💡 RESTAURACIÓN DE LA LÓGICA DE SUCURSALES (NECESARIA PARA MapHours)
-
   const hours: [string, string][] = [
     ["Lun–Vie", "09:00–19:00"],
     ["Sábado", "09:00–13:00"],
@@ -311,8 +271,6 @@ export default async function LandingPage() {
       hours,
     },
   ];
-  
-// 💡 FIN RESTAURACIÓN DE LA LÓGICA DE SUCURSALES
 
   return (
     <>

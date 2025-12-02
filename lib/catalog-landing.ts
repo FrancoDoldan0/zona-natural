@@ -1,83 +1,88 @@
 // lib/catalog-landing.ts
-import { createPrisma } from "@/lib/prisma-edge";
-import { publicR2Url } from "@/lib/storage";
+import { PrismaClient } from "@prisma/client/edge";
+import { withAccelerate } from "@prisma/extension-accelerate";
 
-const prisma = createPrisma();
+// 💡 Cliente Prisma con Accelerate (usa el cache de Cloudflare)
+const prisma = new PrismaClient().$extends(withAccelerate());
 
-type ProductImageRow = { key: string | null; url: string | null };
-
+// 💡 Tipo de datos que devuelve la consulta ligera
 export type ProductLiteRow = {
-  id: number;
-  name: string;
-  slug: string;
-  status: string | null;
-  price: number | null;
-  imageUrl: string | null;
-  // Añadimos estas dos para compatibilidad con la card de oferta, 
-  // aunque el catálogo ligero no las use, la card las puede esperar
-  originalPrice?: number | null; 
-  appliedOffer?: any | null;
+  id: number;
+  name: string;
+  slug: string;
+  status: string | null;
+  price: number | null; // <-- Precio base (sin ofertas)
+  imageUrl: string | null; // <-- URL de la imagen de R2
 };
 
 /**
- * Catálogo liviano para la landing.
- * Acepta opcionalmente un array de IDs para obtener SÓLO esos productos (ALTA PERFORMANCE).
- * Si se pasan IDs, se ignora perPage.
+ * Función optimizada para cargar productos de forma ligera,
+ * ideal para carruseles o grillas de catálogo sin todos los detalles.
+ *
+ * @param perPage El número máximo de productos a cargar (0 para infinito).
+ * @param productIds Lista de IDs específicos a cargar (prioritario sobre perPage).
+ * @returns Lista de objetos ProductLiteRow.
  */
 export async function getLandingCatalog(
-  perPage = 48,
-  productIds?: number[] // <--- Argumento NUEVO
+  perPage: number = 200,
+  productIds?: number[]
 ): Promise<ProductLiteRow[]> {
-  
-  // Condición WHERE dinámica
-  let whereClause: any = {
-    // Puedes ajustar este filtro si quieres excluir borradores, etc.
-    // status: "ACTIVE" as any, 
-  } as any;
-  
-  // CLAVE: Si se pasa una lista de IDs, filtramos por ellos
-  if (productIds && productIds.length > 0) {
-    whereClause = {
-      ...whereClause,
-      id: { in: productIds },
-    };
-  }
+  try {
+    const items = await prisma.product.findMany({
+      // Usa cache de 60s
+      cacheStrategy: { ttl: 60 }, 
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
+        price: true,
+        images: {
+          select: {
+            url: true,
+            alt: true,
+          },
+          take: 1, // Solo la primera imagen
+          orderBy: { position: "asc" },
+        },
+      },
+      where: {
+        // 🔑 FILTRADO CLAVE: Si se proporcionan IDs, filtra solo por esos.
+        id: productIds?.length ? { in: productIds } : undefined,
+        status: "published",
+      },
+      // Solo aplica take si no estamos filtrando por IDs específicos.
+      take: productIds?.length ? undefined : (perPage > 0 ? perPage : undefined),
+      // Ordenar por más vendidos (ejemplo) o por defecto.
+      orderBy: { position: "asc" },
+    });
 
-  const products = await prisma.product.findMany({
-    where: whereClause,
-    orderBy: { id: "desc" },
-    // Si filtramos por IDs, no necesitamos el 'take' (ya es selectivo)
-    take: productIds && productIds.length > 0 ? undefined : perPage, 
-    include: {
-      images: { select: { key: true, url: true } },
-      // Añade aquí cualquier otra inclusión que necesites para la ProductCard
-      // ejemplo: variants, si la card necesita saber si el producto tiene variantes
-    },
-  });
+    // Mapear el resultado para incluir la URL de R2
+    const publicR2Url = process.env.PUBLIC_R2_BASE_URL;
 
-  return products.map((p) => {
-    const imgs = (p as any).images as ProductImageRow[] | undefined;
-    const first = Array.isArray(imgs) ? imgs[0] : undefined;
+    return items.map((p) => {
+      const rawUrl = p.images[0]?.url ?? null;
+      let imageUrl: string | null = null;
 
-    let imageUrl: string | null = null;
-    if (first) {
-      if (first.url) {
-        imageUrl = first.url;
-      } else if (first.key) {
-        imageUrl = publicR2Url(first.key);
-      }
-    }
+      if (rawUrl && publicR2Url) {
+        // Asumimos que la URL de la DB es un path relativo a R2
+        imageUrl = `${publicR2Url.replace(/\/+$/, "")}/${rawUrl.replace(
+          /^\/|\/+$/,
+          ""
+        )}`;
+      }
 
-    return {
-      id: p.id,
-      name: p.name,
-      slug: (p as any).slug,
-      status: (p as any).status ?? null,
-      price: (p as any).price ?? null, // Price base, no final
-      imageUrl,
-      // Los campos originalPrice/appliedOffer/offer serán null o undefined
-      // si el catálogo es lite, PERO la lógica de page.tsx ya no usará este catálogo
-      // para las ofertas, así que esto es solo un contenedor seguro.
-    };
-  });
+      return {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        status: p.status,
+        price: p.price,
+        imageUrl,
+      };
+    });
+  } catch (error) {
+    console.error("Error fetching landing catalog:", error);
+    return [];
+  }
 }
