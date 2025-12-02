@@ -14,6 +14,7 @@ import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
+import { getAllOffersRaw } from "@/lib/offers-landing";
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
 const OFFERS_COUNT = 24;
@@ -179,10 +180,11 @@ async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
 
 /* ───────── página ───────── */
 export default async function LandingPage() {
-  const [banners, cats, catalog] = await Promise.all([
+  const [banners, cats, catalog, offersAllRaw] = await Promise.all([
     getBanners(),
     getCategories(),
     getCatalogForGrid(200),
+    getAllOffersRaw(),
   ]);
 
   // Semilla diaria estable (AAAA-MM-DD)
@@ -191,20 +193,46 @@ export default async function LandingPage() {
   // Rotación diaria de categorías
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
 
-  // ───────── Ofertas a partir del catálogo ─────────
-  // Tomamos del catálogo los productos que tienen descuento real
-  const offersFromCatalog = catalog.filter((p) => {
-    const price =
-      typeof p.price === "number" ? p.price : null;
-    const original =
-      typeof p.originalPrice === "number" ? p.originalPrice : null;
+  // ───────── Ofertas unificadas con la lógica de /ofertas ─────────
 
-    return price != null && original != null && price < original;
-  });
+  // 1) Set de IDs de productos que están en oferta según la lógica "core"
+  const offerIdSet = new Set<number>(
+    (offersAllRaw || [])
+      .map((o: any) => {
+        if (!o || typeof o !== "object") return undefined;
+        // si getAllOffersRaw expone productId lo usamos, si no caemos a id
+        if (typeof o.productId === "number") return o.productId;
+        if (typeof o.id === "number") return o.id;
+        return undefined;
+      })
+      .filter((id: unknown): id is number => typeof id === "number")
+  );
 
-  // Rotación diaria de ofertas (pool completo → mostramos OFFERS_COUNT)
+  // 2) Del catálogo tomamos sólo los productos que están en ese set
+  let offersPool: ProductForGrid[] = catalog.filter((p) =>
+    offerIdSet.has(p.id)
+  );
+
+  // 3) Fallback defensivo: si por algún motivo no matcheamos nada,
+  //    usamos el criterio clásico price < originalPrice
+  if (offersPool.length === 0) {
+    offersPool = catalog.filter((p) => {
+      const price =
+        typeof p.price === "number"
+          ? p.price
+          : null;
+      const original =
+        typeof p.originalPrice === "number"
+          ? p.originalPrice
+          : null;
+
+      return price != null && original != null && price < original;
+    });
+  }
+
+  // 4) Rotación diaria de ofertas (pool completo → mostramos OFFERS_COUNT)
   const offersDaily = shuffleSeed(
-    offersFromCatalog,
+    offersPool,
     `${seed}:offers`
   ).slice(0, OFFERS_COUNT);
 
@@ -293,7 +321,7 @@ export default async function LandingPage() {
       {/* Categorías con rotación diaria */}
       <CategoriesRow cats={catsDaily} />
 
-      {/* Ofertas (rotación diaria) — ahora derivadas del catálogo */}
+      {/* Ofertas (rotación diaria) — unificadas con la lógica de /ofertas */}
       <OffersCarousel
         items={offersDaily as any}
         visible={3}
