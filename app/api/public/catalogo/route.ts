@@ -275,9 +275,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Resolver cover: DB o, si no hay, listar en R2
+    // Resolver cover: DB → carpeta por id → fallback por slug
     async function resolveCoverKey(p: {
       id: number;
+      slug?: string | null;
       images?: ProductImageRow[];
     }) {
       const keysFromDb = (Array.isArray(p.images)
@@ -288,19 +289,40 @@ export async function GET(req: NextRequest) {
         .filter(Boolean) as string[];
       if (keysFromDb.length > 0) return keysFromDb[0];
 
+      // 1️⃣ Legacy: carpeta por ID (products/{id}/…)
       try {
-        const prefix = `products/${p.id}/`;
-        const listed = await r2List(prefix, 1);
-        const first =
-          Array.isArray(listed) && listed[0]
-            ? typeof listed[0] === 'string'
-              ? listed[0]
-              : (listed[0] as any).key
+        const prefixById = `products/${p.id}/`;
+        const listedById = await r2List(prefixById, 1);
+        const firstById =
+          Array.isArray(listedById) && listedById[0]
+            ? typeof listedById[0] === 'string'
+              ? listedById[0]
+              : (listedById[0] as any).key
             : null;
-        return first || null;
+        if (firstById) return firstById;
       } catch {
-        return null;
+        // ignoramos y probamos por slug
       }
+
+      // 2️⃣ Alojadas directo por slug: products/{slug}*.jpg
+      const slug = (p.slug || '').trim();
+      if (slug) {
+        try {
+          const prefixBySlug = `products/${slug}`;
+          const listedBySlug = await r2List(prefixBySlug, 1);
+          const firstBySlug =
+            Array.isArray(listedBySlug) && listedBySlug[0]
+              ? typeof listedBySlug[0] === 'string'
+                ? listedBySlug[0]
+                : (listedBySlug[0] as any).key
+              : null;
+          if (firstBySlug) return firstBySlug;
+        } catch {
+          // sin imagen, devolvemos null
+        }
+      }
+
+      return null;
     }
 
     // Mapeo base (antes del filtro de estado)
