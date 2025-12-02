@@ -15,7 +15,6 @@ import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
 import { getAllOffersRaw } from "@/lib/offers-landing";
-import { getLandingCatalog } from "@/lib/catalog-landing";
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
 const OFFERS_COUNT = 24;
@@ -89,19 +88,19 @@ type Cat = {
   cover?: any;
 };
 
-type Prod = {
+// Este tipo está pensado para ser compatible con ProductCard / BestSellersGrid
+type ProductForGrid = {
   id: number;
   name: string;
   slug: string;
-  price?: number | null;
-  priceOriginal: number | null;
-  priceFinal: number | null;
-  images?: { url: string; alt?: string | null }[];
-  imageUrl?: string | null;
-  cover?: any;
-  coverUrl?: any;
-  image?: any;
-  status?: string;
+  // BestSellersGrid espera image como string | null | undefined
+  image?: string | null;
+  cover?: string | null;
+  // precios ya calculados por la API pública
+  price?: number | null; // usamos priceFinal
+  originalPrice?: number | null; // usamos priceOriginal
+  status?: string | null;
+  // campos extra opcionales que ProductCard ignora si no existen
   appliedOffer?: any | null;
   offer?: any | null;
 };
@@ -111,19 +110,23 @@ async function getBanners(): Promise<BannerItem[]> {
   const data = await safeJson<any>(await abs("/api/public/banners"));
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return (list as any[])
-    .map((b, i) => ({
-      id: Number(b.id ?? i),
-      title: String(b.title ?? b.name ?? ""),
-      image:
-        b.image ?? b.imageUrl
-          ? (b.image ?? b.imageUrl)
-          : ({ url: b.url ?? "" } as any),
-      linkUrl: b.linkUrl ?? b.href ?? null,
-    }))
-    .filter(
-      (x) =>
-        !!(typeof x.image === "string" || (x.image as any)?.url)
-    );
+    .map((b, i) => {
+      const rawImage = b.image ?? b.imageUrl ?? null;
+      const image =
+        typeof rawImage === "string"
+          ? rawImage
+          : rawImage && typeof rawImage.url === "string"
+          ? rawImage.url
+          : b.url ?? null;
+
+      return {
+        id: Number(b.id ?? i),
+        title: String(b.title ?? b.name ?? ""),
+        image,
+        linkUrl: b.linkUrl ?? b.href ?? null,
+      };
+    })
+    .filter((x) => !!x.image);
 }
 
 async function getCategories(): Promise<Cat[]> {
@@ -132,39 +135,72 @@ async function getCategories(): Promise<Cat[]> {
   return list as Cat[];
 }
 
-/* ───────── página ───────── */
-export default async function LandingPage() {
-  const [banners, cats, offersAllRaw, catalogRaw] = await Promise.all([
-    getBanners(),
-    getCategories(),
-    getAllOffersRaw(),       // helper liviano de ofertas
-    getLandingCatalog(48),   // helper liviano de catálogo
-  ]);
+// Catálogo liviano para "Más vendidos"
+async function getCatalogForGrid(perPage = 48): Promise<ProductForGrid[]> {
+  const data = await safeJson<any>(
+    await abs(
+      `/api/public/catalogo?status=all&perPage=${perPage}&sort=-id`
+    )
+  );
 
-  // Cast suave para reutilizar el tipo Prod en el carrusel
-  const offersAll = offersAllRaw as unknown as Prod[];
+  const items: any[] =
+    (data as any)?.items ??
+    (data as any)?.data ??
+    (data as any)?.products ??
+    (data as any)?.results ??
+    [];
 
-  // Adaptamos el catálogo ligero al tipo Prod que espera BestSellersGrid
-  const catalog = (catalogRaw as any[]).map((p) => {
-    const price =
-      typeof p.price === "number" ? p.price : null;
-    const imgUrl = (p as any).imageUrl ?? null;
+  if (!Array.isArray(items) || !items.length) return [];
+
+  return items.map((p: any) => {
+    // La API ya nos da cover con URL pública (R2)
+    const cover: string | null =
+      typeof p.cover === "string" ? p.cover : null;
+
+    // priceFinal / priceOriginal ya vienen calculados en /api/public/catalogo
+    const priceFinal =
+      typeof p.priceFinal === "number" ? p.priceFinal : null;
+    const priceOriginal =
+      typeof p.priceOriginal === "number" ? p.priceOriginal : null;
 
     return {
-      id: p.id,
-      name: p.name,
-      slug: p.slug,
-      price,
-      priceOriginal: price,
-      priceFinal: price,
-      imageUrl: imgUrl,
-      image: imgUrl ? { url: imgUrl } : undefined,
-      cover: imgUrl,
-      coverUrl: imgUrl,
-      status: (p as any).status ?? undefined,
-      appliedOffer: null,
-      offer: null,
-    } satisfies Prod;
+      id: Number(p.id),
+      name: String(p.name ?? ""),
+      slug: String(p.slug ?? ""),
+      cover,
+      image: cover, // 👈 lo que usa ProductCard
+      price: priceFinal,
+      originalPrice: priceOriginal,
+      status: p.status ?? null,
+      appliedOffer: p.appliedOffer ?? null,
+      offer: p.offer ?? null,
+    } satisfies ProductForGrid;
+  });
+}
+
+/* ───────── página ───────── */
+export default async function LandingPage() {
+  const [banners, cats, offersAllRaw, catalog] = await Promise.all([
+    getBanners(),
+    getCategories(),
+    getAllOffersRaw(), // pool completo de ofertas normalizadas
+    getCatalogForGrid(48),
+  ]);
+
+  // offersAllRaw viene normalizado desde lib/offers-landing
+  // Lo adaptamos mínimamente a lo que espera OffersCarousel
+  const offersAll = (offersAllRaw || []).map((p: any) => {
+    const image =
+      typeof p.image === "string"
+        ? p.image
+        : p.cover && typeof p.cover === "string"
+        ? p.cover
+        : null;
+
+    return {
+      ...p,
+      image,
+    };
   });
 
   // Semilla diaria estable (AAAA-MM-DD)
@@ -271,8 +307,8 @@ export default async function LandingPage() {
         rotationMs={6000}
       />
 
-      {/* Más vendidos (catálogo liviano) */}
-      <BestSellersGrid items={catalog} />
+      {/* Más vendidos (catálogo liviano, con imágenes y precios) */}
+      <BestSellersGrid items={catalog as any} />
 
       {/* Recetas populares */}
       <RecipesPopular />
