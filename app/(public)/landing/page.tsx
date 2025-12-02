@@ -4,7 +4,7 @@ export const revalidate = 60; // cache incremental
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
 
-// 🟢 IMPORTS DE COMPONENTES RESTAURADOS
+// IMPORTS DE COMPONENTES RESTAURADOS
 import MainNav from "@/components/landing/MainNav";
 import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
@@ -19,7 +19,6 @@ import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 
 import { headers } from "next/headers";
 import { getAllOffersRaw, type LandingOffer } from "@/lib/offers-landing";
-// IMPORTANTE: Cambiamos el alias para usar el nuevo lib/catalog-landing.ts
 import { getLandingCatalog, type ProductLiteRow } from "@/lib/catalog-landing"; 
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
@@ -133,7 +132,7 @@ async function getCategories(): Promise<Cat[]> {
   return list as Cat[];
 }
 
-// 🟢 FUNCIÓN CORREGIDA: Mapeo de datos para BestSellersGrid (Más vendidos)
+// FUNCIÓN CORREGIDA: Mapeo de datos para BestSellersGrid (Más vendidos)
 async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
     const items = await getLandingCatalog(perPage); 
 
@@ -141,9 +140,9 @@ async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
         id: p.id,
         name: p.name,
         slug: p.slug,
-        cover: p.imageUrl, // 🔑 CORREGIDO: Mapeamos imageUrl a cover
-        image: p.imageUrl, // 🔑 CORREGIDO: Mapeamos imageUrl a image
-        price: p.price, // 🔑 CORREGIDO: Usamos el precio base
+        cover: p.imageUrl, 
+        image: p.imageUrl, 
+        price: p.price, 
         originalPrice: undefined, 
         status: p.status,
     })) as ProductForGrid[];
@@ -174,7 +173,7 @@ export default async function LandingPage() {
   if (offerIds.length > 0) {
       const rawOffers = await getLandingCatalog(0, offerIds);
       
-      // 🟢 LÓGICA CORREGIDA: Mapeo de datos para OffersCarousel
+      // LÓGICA CORREGIDA: Mapeo de datos para OffersCarousel
       offersPool = rawOffers.map(p => {
           const offerData = offersAllRaw.find(o => o.id === p.id);
           
@@ -182,10 +181,8 @@ export default async function LandingPage() {
               id: p.id,
               name: p.name,
               slug: p.slug,
-              // 🔑 CORREGIDO: Aseguramos que 'cover' e 'image' tengan la URL
               cover: offerData?.cover ?? p.imageUrl, 
               image: offerData?.cover ?? p.imageUrl, 
-              // Usamos los precios calculados por getAllOffersRaw
               price: offerData?.priceFinal ?? p.price,
               originalPrice: offerData?.priceOriginal ?? p.price,
               status: p.status,
