@@ -18,83 +18,39 @@ function windowSlice<T>(arr: T[], start: number, count: number): T[] {
   return head.concat(tail);
 }
 
-/** Normalizamos lo mínimo necesario para ProductCard */
-function normalizeOfferItem(raw: any) {
-  if (!raw) return null;
-
-  // A veces puede venir como { product: {...} }
-  const p = raw.product ?? raw;
-
-  const takeStr = (v: any): string | null =>
+// helper simple para quedarnos con una URL de imagen
+function pickImage(raw: any): string | null {
+  const take = (v: any): string | null =>
     typeof v === "string" && v.trim().length ? v : null;
 
-  // Título
-  const title =
-    p.title ??
-    p.name ??
-    raw.title ??
-    raw.name ??
-    "";
+  if (!raw) return null;
 
-  // Slug
-  const slug =
-    p.slug ??
-    raw.slug ??
-    p.productSlug ??
-    "";
+  // intentamos en este orden
+  const candidates: any[] = [
+    raw.image,
+    raw.cover,
+    raw.imageUrl,
+    raw.product?.image,
+    raw.product?.cover,
+    raw.product?.imageUrl,
+  ];
 
-  // Imagen principal: probamos varias fuentes
-  let image: string | null =
-    takeStr(p.image) ||
-    takeStr(p.cover) ||
-    takeStr(p.imageUrl) ||
-    takeStr(raw.image) ||
-    takeStr(raw.cover) ||
-    takeStr(raw.imageUrl) ||
-    (Array.isArray(p.images) && takeStr(p.images[0]?.url)) ||
-    (Array.isArray(raw.images) && takeStr(raw.images[0]?.url)) ||
-    null;
+  for (const c of candidates) {
+    const v = take(c);
+    if (v) return v;
+  }
 
-  // Precios (ofertas landing suelen venir con price / originalPrice o priceFinal / priceOriginal)
-  const price =
-    typeof p.price === "number"
-      ? p.price
-      : typeof p.priceFinal === "number"
-      ? p.priceFinal
-      : typeof raw.price === "number"
-      ? raw.price
-      : typeof raw.priceFinal === "number"
-      ? raw.priceFinal
-      : null;
+  // arrays de imágenes
+  if (Array.isArray(raw.images) && raw.images[0]?.url) {
+    const v = take(raw.images[0].url);
+    if (v) return v;
+  }
+  if (Array.isArray(raw.product?.images) && raw.product.images[0]?.url) {
+    const v = take(raw.product.images[0].url);
+    if (v) return v;
+  }
 
-  const originalPrice =
-    typeof p.originalPrice === "number"
-      ? p.originalPrice
-      : typeof p.priceOriginal === "number"
-      ? p.priceOriginal
-      : typeof raw.originalPrice === "number"
-      ? raw.originalPrice
-      : typeof raw.priceOriginal === "number"
-      ? raw.priceOriginal
-      : null;
-
-  const outOfStock = p.outOfStock ?? raw.outOfStock ?? false;
-  const brand = p.brand ?? raw.brand ?? undefined;
-  const subtitle = p.subtitle ?? raw.subtitle ?? undefined;
-  const variants = p.variants ?? raw.variants ?? undefined;
-
-  return {
-    id: p.id ?? raw.id,
-    title,
-    slug,
-    image,
-    price,
-    originalPrice,
-    outOfStock,
-    brand,
-    subtitle,
-    variants,
-  };
+  return null;
 }
 
 export default function OffersCarousel({
@@ -109,7 +65,7 @@ export default function OffersCarousel({
 }) {
   const ref = useRef<HTMLElement>(null);
 
-  // Reveal inicial (observa lo que está montado al principio)
+  // Reveal inicial
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
@@ -129,15 +85,49 @@ export default function OffersCarousel({
     return () => io.disconnect();
   }, []);
 
-  // Normalizar todas las ofertas que llegan
+  // Normalizamos lo mínimo necesario para ProductCard
   const all = useMemo(() => {
     if (!Array.isArray(items) || !items.length) return [];
 
-    const normalized = items
-      .map((raw) => normalizeOfferItem(raw))
-      .filter((x): x is NonNullable<typeof x> => !!x);
+    const normalized = items.map((raw: any) => {
+      const img = pickImage(raw);
+      const title =
+        raw.title ??
+        raw.name ??
+        raw.product?.title ??
+        raw.product?.name ??
+        "";
 
-    // Ordenamos por % de descuento si tenemos ambos precios
+      const slug =
+        raw.slug ??
+        raw.product?.slug ??
+        "";
+
+      const price =
+        typeof raw.price === "number"
+          ? raw.price
+          : typeof raw.priceFinal === "number"
+          ? raw.priceFinal
+          : null;
+
+      const originalPrice =
+        typeof raw.originalPrice === "number"
+          ? raw.originalPrice
+          : typeof raw.priceOriginal === "number"
+          ? raw.priceOriginal
+          : null;
+
+      return {
+        ...raw,
+        title,
+        slug,
+        image: img,
+        price,
+        originalPrice,
+      };
+    });
+
+    // Ordenamos por % de descuento
     return normalized.sort((a, b) => {
       const da =
         (a.originalPrice ?? 0) && (a.price ?? 0)
@@ -151,10 +141,24 @@ export default function OffersCarousel({
     });
   }, [items]);
 
+  // Logueamos las primeras ofertas para ver qué imagen llega
+  useEffect(() => {
+    if (!all.length) return;
+    console.log(
+      "[OffersCarousel] primeros items normalizados:",
+      all.slice(0, 3).map((p) => ({
+        id: p.id,
+        title: p.title,
+        image: p.image,
+        cover: p.cover,
+        imageUrl: p.imageUrl,
+      }))
+    );
+  }, [all]);
+
   // Rotación
   const [start, setStart] = useState(0);
   const [playing, setPlaying] = useState(true);
-  // Inicialmente visible para que empiece a rotar, luego el IO lo ajusta.
   const [visibleInView, setVisibleInView] = useState(true);
 
   // Detectar visibilidad para pausar fuera de viewport
@@ -170,7 +174,6 @@ export default function OffersCarousel({
   }, []);
 
   const showCount = Math.max(1, Math.min(visible, all.length || visible));
-  // Paso adaptable: si hay pocas ofertas, avanzar de a 1; si hay muchas, por “página”
   const step = all.length <= showCount ? 1 : showCount;
 
   useEffect(() => {
@@ -186,8 +189,6 @@ export default function OffersCarousel({
     [all, start, showCount]
   );
 
-  // ✅ Cada vez que rota o cambia la ventana visible,
-  // marcamos los nuevos nodos como visibles.
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
@@ -220,26 +221,42 @@ export default function OffersCarousel({
         </div>
 
         <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
-          {current.map((p, i) => (
-            <div
-              key={`${p.id}-${(start + i) % all.length}`}
-              data-reveal
-              style={{ "--i": i } as React.CSSProperties}
-              className="reveal"
-            >
-              <ProductCard
-                slug={p.slug}
-                title={p.title}
-                image={p.image}
-                price={p.price ?? undefined}
-                originalPrice={p.originalPrice ?? undefined}
-                outOfStock={p.outOfStock}
-                brand={p.brand ?? undefined}
-                subtitle={p.subtitle ?? undefined}
-                variants={p.variants}
-              />
-            </div>
-          ))}
+          {current.map((p, i) => {
+            // Para asegurarnos, volvemos a calcular una imagen “plana” aquí
+            const img =
+              p.image ??
+              p.cover ??
+              p.imageUrl ??
+              (Array.isArray(p.images) ? p.images[0]?.url : undefined) ??
+              null;
+
+            console.log("[OffersCarousel] card", {
+              id: p.id,
+              title: p.title,
+              img,
+            });
+
+            return (
+              <div
+                key={`${p.id}-${(start + i) % all.length}`}
+                data-reveal
+                style={{ "--i": i } as React.CSSProperties}
+                className="reveal"
+              >
+                <ProductCard
+                  slug={p.slug}
+                  title={p.title}
+                  image={img}
+                  price={p.price ?? undefined}
+                  originalPrice={p.originalPrice ?? undefined}
+                  outOfStock={p.outOfStock}
+                  brand={p.brand ?? undefined}
+                  subtitle={p.subtitle ?? undefined}
+                  variants={p.variants}
+                />
+              </div>
+            );
+          })}
         </div>
 
         {all.length > showCount && (
