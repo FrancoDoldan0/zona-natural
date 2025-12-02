@@ -179,7 +179,7 @@ async function getCategories(): Promise<Cat[]> {
 }
 
 // Catálogo liviano para "Más vendidos"
-async function getCatalogForGrid(perPage = 48): Promise<ProductForGrid[]> {
+async function getCatalogForGrid(perPage = 96): Promise<ProductForGrid[]> {
   const data = await safeJson<any>(
     await abs(
       `/api/public/catalogo?status=all&perPage=${perPage}&sort=-id`
@@ -227,7 +227,7 @@ export default async function LandingPage() {
     getBanners(),
     getCategories(),
     getAllOffersRaw(), // pool completo de ofertas normalizadas (con cover y precios)
-    getCatalogForGrid(48),
+    getCatalogForGrid(96),
   ]);
 
   // Normalizamos las ofertas para asegurarnos de que SIEMPRE tengan:
@@ -256,36 +256,49 @@ export default async function LandingPage() {
     `${seed}:offers`
   ).slice(0, OFFERS_COUNT);
 
-  // Adaptamos las ofertas al formato que espera ProductCard (igual que "Más vendidos")
+  // Mapa rápido de catálogo por id (para reaprovechar imagen/precios que ya funcionan)
+  const catalogById = new Map<number, ProductForGrid>();
+  for (const item of catalog) {
+    catalogById.set(item.id, item);
+  }
+
+  // Adaptamos las ofertas al formato que espera ProductCard,
+  // usando imagen/precios del catálogo cuando estén disponibles.
   const offersDailyForCarousel: ProductForGrid[] = offersDailyRaw.map(
     (p: any) => {
-      const image = getOfferImageUrl(p);
+      const fromCatalog = catalogById.get(Number(p.id));
+
+      const image =
+        (fromCatalog?.image as string | null | undefined) ??
+        getOfferImageUrl(p);
 
       const priceFinal =
         typeof p.priceFinal === "number"
           ? p.priceFinal
           : typeof p.price === "number"
           ? p.price
-          : null;
+          : fromCatalog?.price ??
+            null;
 
       const priceOriginal =
         typeof p.priceOriginal === "number"
           ? p.priceOriginal
           : typeof p.originalPrice === "number"
           ? p.originalPrice
-          : null;
+          : fromCatalog?.originalPrice ??
+            null;
 
       return {
         id: Number(p.id),
-        name: String(p.name ?? ""),
-        slug: String(p.slug ?? ""),
-        cover: image,
-        image,
+        name: String(p.name ?? fromCatalog?.name ?? ""),
+        slug: String(p.slug ?? fromCatalog?.slug ?? ""),
+        cover: image ?? fromCatalog?.cover ?? null,
+        image: image ?? fromCatalog?.image ?? null,
         price: priceFinal,
         originalPrice: priceOriginal,
-        status: p.status ?? null,
-        appliedOffer: p.appliedOffer ?? p.offer ?? null,
-        offer: p.offer ?? null,
+        status: p.status ?? fromCatalog?.status ?? null,
+        appliedOffer: p.appliedOffer ?? fromCatalog?.appliedOffer ?? null,
+        offer: p.offer ?? fromCatalog?.offer ?? null,
       };
     }
   );
