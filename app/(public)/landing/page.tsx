@@ -20,22 +20,22 @@ const OFFERS_COUNT = 24;
 
 const RecipesPopularLazy = dynamic(
   () => import("@/components/landing/RecipesPopular"),
-  { ssr: false, loading: () => null }
+  { loading: () => null }
 );
 
 const TestimonialsBadgesLazy = dynamic(
   () => import("@/components/landing/TestimonialsBadges"),
-  { ssr: false, loading: () => null }
+  { loading: () => null }
 );
 
 const MapHoursLazy = dynamic(
   () => import("@/components/landing/MapHours"),
-  { ssr: false, loading: () => null }
+  { loading: () => null }
 );
 
 const WhatsAppFloatLazy = dynamic(
   () => import("@/components/landing/WhatsAppFloat"),
-  { ssr: false, loading: () => null }
+  { loading: () => null }
 );
 
 /* ───────── helpers comunes ───────── */
