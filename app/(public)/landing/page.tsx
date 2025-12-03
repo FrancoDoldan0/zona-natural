@@ -7,7 +7,7 @@ import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
 import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
-// estos 4 ahora se cargarán con dynamic:
+// estos 4 ahora se cargan con dynamic (sin ssr:false)
 import dynamic from "next/dynamic";
 import type { Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
@@ -194,30 +194,68 @@ async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
 }
 
 /**
- * Ofertas para la landing (versión optimizada):
- * - NO vuelve a llamar a /api/public/catalogo.
- * - Usa directamente los datos que ya devuelve getAllOffersRaw().
+ * Ofertas para la landing (optimizado para:
+ *  - solo las ofertas declaradas en /admin/ofertas (las que tienen `offer`)
+ *  - mantener las imágenes correctas reutilizando /api/public/catalogo
  */
 async function getOffersForLanding(
   offersAllRaw: LandingOffer[]
 ): Promise<ProductForGrid[]> {
   if (!offersAllRaw || !offersAllRaw.length) return [];
 
-  return offersAllRaw.map((o) => {
-    const cover =
-      typeof o.cover === "string" ? o.cover : null;
+  // 1) Preferimos SOLO las ofertas que vienen de la tabla Offer (admin/ofertas)
+  const adminOffers = offersAllRaw.filter((o) => !!o.offer);
+  const source = adminOffers.length ? adminOffers : offersAllRaw;
+
+  const ids = source
+    .map((o) => o.id)
+    .filter((id): id is number => typeof id === "number");
+
+  if (!ids.length) return [];
+
+  // 2) Reutilizamos la API general de catálogo, pero solo con esos IDs
+  const url = await abs(
+    `/api/public/catalogo?status=all&perPage=${ids.length}&ids=${ids.join(",")}`
+  );
+  const data = await safeJson<any>(url);
+
+  const items: any[] = (data as any)?.items ?? [];
+
+  if (!Array.isArray(items) || !items.length) return [];
+
+  // 3) Mapeamos al formato que usa el carrusel
+  return items.map((p: any) => {
+    const cover: string | null =
+      typeof p.cover === "string"
+        ? p.cover
+        : typeof p.imageUrl === "string"
+        ? p.imageUrl
+        : null;
+
+    const priceFinal =
+      typeof p.priceFinal === "number" ? p.priceFinal : null;
+    const priceOriginal =
+      typeof p.priceOriginal === "number" ? p.priceOriginal : null;
+
+    const offerData = source.find((o) => o.id === p.id) as
+      | LandingOffer
+      | undefined;
 
     return {
-      id: o.id,
-      name: o.name,
-      slug: o.slug,
+      id: Number(p.id),
+      name: String(p.name ?? ""),
+      slug: String(p.slug ?? ""),
       cover,
       image: cover,
-      price: o.priceFinal ?? null,
-      originalPrice: o.priceOriginal ?? null,
-      status: o.status ?? null,
-      appliedOffer: o.offer ?? null,
-      offer: o.offer ?? null,
+      price: priceFinal,
+      originalPrice:
+        priceOriginal ??
+        (typeof offerData?.priceOriginal === "number"
+          ? offerData.priceOriginal
+          : null),
+      status: p.status ?? null,
+      appliedOffer: offerData?.offer ?? null,
+      offer: offerData?.offer ?? null,
     } satisfies ProductForGrid;
   });
 }
@@ -327,7 +365,8 @@ export default async function LandingPage() {
       {/* Categorías con rotación diaria */}
       <CategoriesRow cats={catsDaily} />
 
-      {/* Ofertas (rotación diaria) — mismas que /ofertas */}
+      {/* Ofertas (rotación diaria) — mismas que /ofertas,
+          pero solo las declaradas en admin/ofertas */}
       <OffersCarousel
         items={offersDaily as any}
         visible={3}
