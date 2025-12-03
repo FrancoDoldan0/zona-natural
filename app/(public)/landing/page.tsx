@@ -1,4 +1,3 @@
-// app/(public)/landing/page.tsx
 export const revalidate = 60; // cache incremental (igual que antes)
 
 import InfoBar from "@/components/landing/InfoBar";
@@ -8,17 +7,15 @@ import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
 import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
+// estos 4 ahora se cargarán con dynamic:
 import dynamic from "next/dynamic";
 import type { Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import { headers } from "next/headers";
-import {
-  getLandingOffersExplicit,
-  type LandingOffer,
-} from "@/lib/offers-landing";
+import { getAllOffersRaw, type LandingOffer } from "@/lib/offers-landing";
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
-const OFFERS_COUNT = 9;
+const OFFERS_COUNT = 24;
 
 /* ───────── CARGA DIFERIDA DE BLOQUES PESADOS ───────── */
 
@@ -81,7 +78,8 @@ function hash(s: string) {
 }
 function seededRand(seed: string) {
   let x = hash(seed) || 1;
-  return () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  return () =>
+    (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
 }
 function shuffleSeed<T>(arr: T[], seed: string) {
   const rand = seededRand(seed);
@@ -196,40 +194,48 @@ async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
 }
 
 /**
- * Mapea las LandingOffer (ya con precios e imagen resueltos)
- * al tipo que espera el carrusel / ProductCard.
+ * Ofertas para la landing (versión optimizada):
+ * - NO vuelve a llamar a /api/public/catalogo.
+ * - Usa directamente los datos que ya devuelve getAllOffersRaw().
  */
-function mapOffersToGrid(offers: LandingOffer[]): ProductForGrid[] {
-  return (offers || []).map((o) => ({
-    id: o.id,
-    name: o.name,
-    slug: o.slug,
-    cover: o.cover,
-    image: o.cover,
-    price: o.priceFinal,
-    originalPrice: o.priceOriginal,
-    status: o.status ?? null,
-    appliedOffer: o.offer,
-    offer: o.offer,
-  }));
+async function getOffersForLanding(
+  offersAllRaw: LandingOffer[]
+): Promise<ProductForGrid[]> {
+  if (!offersAllRaw || !offersAllRaw.length) return [];
+
+  return offersAllRaw.map((o) => {
+    const cover =
+      typeof o.cover === "string" ? o.cover : null;
+
+    return {
+      id: o.id,
+      name: o.name,
+      slug: o.slug,
+      cover,
+      image: cover,
+      price: o.priceFinal ?? null,
+      originalPrice: o.priceOriginal ?? null,
+      status: o.status ?? null,
+      appliedOffer: o.offer ?? null,
+      offer: o.offer ?? null,
+    } satisfies ProductForGrid;
+  });
 }
 
 /* ───────── página ───────── */
 export default async function LandingPage() {
   const seed = new Date().toISOString().slice(0, 10);
 
-  const [banners, cats, catalog, landingOffersRaw] = await Promise.all([
+  const [banners, cats, catalog, offersAllRaw] = await Promise.all([
     getBanners(),
     getCategories(),
     getCatalogForGrid(200),
-    // 🔑 Solo ofertas explícitas de /admin/ofertas, máximo OFFERS_COUNT
-    getLandingOffersExplicit( OFFERS_COUNT ),
+    getAllOffersRaw(),
   ]);
 
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
 
-  // Ofertas ya vienen con precios/imágenes desde lib/offers-landing
-  const offersPool = mapOffersToGrid(landingOffersRaw || []);
+  const offersPool = await getOffersForLanding(offersAllRaw || []);
 
   const offersDaily = shuffleSeed(
     offersPool,
@@ -321,7 +327,7 @@ export default async function LandingPage() {
       {/* Categorías con rotación diaria */}
       <CategoriesRow cats={catsDaily} />
 
-      {/* Ofertas (rotación diaria) — SOLO /admin/ofertas, máx 9 */}
+      {/* Ofertas (rotación diaria) — mismas que /ofertas */}
       <OffersCarousel
         items={offersDaily as any}
         visible={3}
