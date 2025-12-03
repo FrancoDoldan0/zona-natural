@@ -1,5 +1,5 @@
 // app/(public)/landing/page.tsx
-export const revalidate = 60; // cache incremental (igual que antes)
+export const revalidate = 300; // cache incremental (antes 60)
 
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
@@ -61,7 +61,7 @@ async function abs(path: string) {
 async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      next: { revalidate: 60 }, // igual que tu versión original
+      next: { revalidate: 300 }, // antes 60
       ...init,
     });
     if (!res.ok) return null;
