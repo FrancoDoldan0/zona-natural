@@ -1,9 +1,4 @@
-// app/(public)/landing/page.tsx
-
-// Tiempo de revalidación de la landing (ISR)
-const LANDING_REVALIDATE = 600; // 10 minutos (podés subirlo/bajarlo si querés)
-// 👇 Next sólo acepta literales acá, no constantes
-export const revalidate = 600;
+export const revalidate = 300; // cache incremental (5 minutos)
 
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
@@ -12,80 +7,38 @@ import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
 import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
-import RecipesPopular from "@/components/landing/RecipesPopular";
-import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
-import MapHours, { type Branch } from "@/components/landing/MapHours";
+import dynamic from "next/dynamic";
+import type { Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
-import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
 import { getAllOffersRaw, type LandingOffer } from "@/lib/offers-landing";
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
 const OFFERS_COUNT = 24;
 
-/* ───────── constantes de sucursales (fuera del componente) ───────── */
+/* ───────── CARGA DIFERIDA DE BLOQUES PESADOS ───────── */
 
-const HOURS: [string, string][] = [
-  ["Lun–Vie", "09:00–19:00"],
-  ["Sábado", "09:00–13:00"],
-  ["Domingo", "Cerrado"],
-];
+const RecipesPopularLazy = dynamic(
+  () => import("@/components/landing/RecipesPopular"),
+  { ssr: false, loading: () => null }
+);
 
-const enc = (s: string) => encodeURIComponent(s);
+const TestimonialsBadgesLazy = dynamic(
+  () => import("@/components/landing/TestimonialsBadges"),
+  { ssr: false, loading: () => null }
+);
 
-const BRANCHES: Branch[] = [
-  {
-    name: "Las Piedras",
-    address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
-    mapsUrl:
-      "https://www.google.com/maps/search/?api=1&query=" +
-      enc("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
-    embedUrl:
-      "https://www.google.com/maps?q=" +
-      enc("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
-      "&output=embed",
-    hours: HOURS,
-  },
-  {
-    name: "Maroñas",
-    address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
-    mapsUrl:
-      "https://www.google.com/maps/search/?api=1&query=" +
-      enc("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
-    embedUrl:
-      "https://www.google.com/maps?q=" +
-      enc("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
-      "&output=embed",
-    hours: HOURS,
-  },
-  {
-    name: "La Paz",
-    address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
-    mapsUrl:
-      "https://www.google.com/maps/search/?api=1&query=" +
-      enc("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
-    embedUrl:
-      "https://www.google.com/maps?q=" +
-      enc("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
-      "&output=embed",
-    hours: HOURS,
-  },
-  {
-    name: "Progreso",
-    address: "Av. José Artigas, 15900 Progreso, Canelones",
-    mapsUrl:
-      "https://www.google.com/maps/search/?api=1&query=" +
-      enc("Av. José Artigas, 15900 Progreso, Canelones"),
-    embedUrl:
-      "https://www.google.com/maps?q=" +
-      enc("Av. José Artigas, 15900 Progreso, Canelones") +
-      "&output=embed",
-    hours: HOURS,
-  },
-];
+const MapHoursLazy = dynamic(
+  () => import("@/components/landing/MapHours"),
+  { ssr: false, loading: () => null }
+);
+
+const WhatsAppFloatLazy = dynamic(
+  () => import("@/components/landing/WhatsAppFloat"),
+  { ssr: false, loading: () => null }
+);
 
 /* ───────── helpers comunes ───────── */
-
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
 
@@ -103,12 +56,11 @@ async function abs(path: string) {
   return path;
 }
 
-// Ahora safeJson recibe SIEMPRE una ruta relativa y adentro resuelve el URL
-async function safeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
+async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
-    const url = await abs(path);
     const res = await fetch(url, {
-      next: { revalidate: LANDING_REVALIDATE },
+      cache: "force-cache",
+      next: { revalidate: 300 },
       ...init,
     });
     if (!res.ok) return null;
@@ -166,7 +118,7 @@ type ProductForGrid = {
 /* ───────── data fetchers básicos ───────── */
 
 async function getBanners(): Promise<BannerItem[]> {
-  const data = await safeJson<any>("/api/public/banners");
+  const data = await safeJson<any>(await abs("/api/public/banners"));
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return (list as any[])
     .map((b, i) => {
@@ -189,7 +141,7 @@ async function getBanners(): Promise<BannerItem[]> {
 }
 
 async function getCategories(): Promise<Cat[]> {
-  const data = await safeJson<any>("/api/public/categories");
+  const data = await safeJson<any>(await abs("/api/public/categories"));
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return list as Cat[];
 }
@@ -199,7 +151,9 @@ async function getCategories(): Promise<Cat[]> {
  * Usa el endpoint general /api/public/catalogo, que ya resuelve imágenes y precios.
  */
 async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
-  const url = `/api/public/catalogo?status=active&perPage=${perPage}&sort=-id`;
+  const url = await abs(
+    `/api/public/catalogo?status=active&perPage=${perPage}&sort=-id`
+  );
   const data = await safeJson<any>(url);
 
   const items: any[] =
@@ -254,7 +208,9 @@ async function getOffersForLanding(
   if (!offerIds.length) return [];
 
   const idsParam = offerIds.join(",");
-  const url = `/api/public/catalogo?status=all&perPage=${offerIds.length}&ids=${idsParam}`;
+  const url = await abs(
+    `/api/public/catalogo?status=all&perPage=${offerIds.length}&ids=${idsParam}`
+  );
   const data = await safeJson<any>(url);
 
   const items: any[] = (data as any)?.items ?? [];
@@ -298,7 +254,6 @@ async function getOffersForLanding(
 }
 
 /* ───────── página ───────── */
-
 export default async function LandingPage() {
   const seed = new Date().toISOString().slice(0, 10);
 
@@ -313,10 +268,81 @@ export default async function LandingPage() {
 
   const offersPool = await getOffersForLanding(offersAllRaw || []);
 
-  const offersDaily = shuffleSeed(offersPool, `${seed}:offers`).slice(
-    0,
-    OFFERS_COUNT
-  );
+  const offersDaily = shuffleSeed(
+    offersPool,
+    `${seed}:offers`
+  ).slice(0, OFFERS_COUNT);
+
+  // ───────── Lógica de sucursales ─────────
+  const hours: [string, string][] = [
+    ["Lun–Vie", "09:00–19:00"],
+    ["Sábado", "09:00–13:00"],
+    ["Domingo", "Cerrado"],
+  ];
+  const encode = (s: string) => encodeURIComponent(s);
+
+  const branches: Branch[] = [
+    {
+      name: "Las Piedras",
+      address:
+        "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode(
+          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
+        ),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode(
+          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
+        ) +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "Maroñas",
+      address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "La Paz",
+      address:
+        "César Mayo Gutiérrez, 15900 La Paz, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode(
+          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
+        ),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode(
+          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
+        ) +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "Progreso",
+      address: "Av. José Artigas, 15900 Progreso, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Av. José Artigas, 15900 Progreso, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode(
+          "Av. José Artigas, 15900 Progreso, Canelones"
+        ) +
+        "&output=embed",
+      hours,
+    },
+  ];
 
   return (
     <>
@@ -333,20 +359,24 @@ export default async function LandingPage() {
       <CategoriesRow cats={catsDaily} />
 
       {/* Ofertas (rotación diaria) — mismas que /ofertas */}
-      <OffersCarousel items={offersDaily as any} visible={3} rotationMs={6000} />
+      <OffersCarousel
+        items={offersDaily as any}
+        visible={3}
+        rotationMs={6000}
+      />
 
       {/* Más vendidos (catálogo liviano) */}
       <BestSellersGrid items={catalog as any} />
 
-      {/* Recetas populares */}
-      <RecipesPopular />
+      {/* Recetas populares (lazy) */}
+      <RecipesPopularLazy />
 
-      {/* Testimonios + badges */}
-      <TestimonialsBadges />
+      {/* Testimonios + badges (lazy) */}
+      <TestimonialsBadgesLazy />
 
-      {/* Mapa + horarios con múltiples sucursales */}
-      <MapHours
-        locations={BRANCHES.filter(
+      {/* Mapa + horarios con múltiples sucursales (lazy) */}
+      <MapHoursLazy
+        locations={branches.filter(
           (b) => b.name === "Las Piedras" || b.name === "La Paz"
         )}
       />
@@ -354,7 +384,8 @@ export default async function LandingPage() {
       {/* Sello sustentable */}
       <Sustainability />
 
-      <WhatsAppFloat />
+      {/* WhatsApp flotante (lazy) */}
+      <WhatsAppFloatLazy />
     </>
   );
 }
