@@ -1,3 +1,4 @@
+// app/(public)/landing/page.tsx
 export const revalidate = 60; // cache incremental (igual que antes)
 
 import InfoBar from "@/components/landing/InfoBar";
@@ -195,35 +196,35 @@ async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
 
 /**
  * Ofertas para la landing (optimizado para:
- *  - solo las ofertas declaradas en /admin/ofertas (las que tienen `offer`)
- *  - mantener las imágenes correctas reutilizando /api/public/catalogo
+ *  - reutilizar /api/public/catalogo
+ *  - respetar todas las ofertas que devuelve getAllOffersRaw()
  */
 async function getOffersForLanding(
   offersAllRaw: LandingOffer[]
 ): Promise<ProductForGrid[]> {
   if (!offersAllRaw || !offersAllRaw.length) return [];
 
-  // 1) Preferimos SOLO las ofertas que vienen de la tabla Offer (admin/ofertas)
-  const adminOffers = offersAllRaw.filter((o) => !!o.offer);
-  const source = adminOffers.length ? adminOffers : offersAllRaw;
-
-  const ids = source
+  // Usamos TODOS los ids que getAllOffersRaw marcó como ofertas
+  const ids = offersAllRaw
     .map((o) => o.id)
     .filter((id): id is number => typeof id === "number");
 
   if (!ids.length) return [];
 
-  // 2) Reutilizamos la API general de catálogo, pero solo con esos IDs
   const url = await abs(
     `/api/public/catalogo?status=all&perPage=${ids.length}&ids=${ids.join(",")}`
   );
   const data = await safeJson<any>(url);
 
-  const items: any[] = (data as any)?.items ?? [];
+  const items: any[] =
+    (data as any)?.items ??
+    (data as any)?.data ??
+    (data as any)?.products ??
+    (Array.isArray(data) ? data : []);
 
   if (!Array.isArray(items) || !items.length) return [];
 
-  // 3) Mapeamos al formato que usa el carrusel
+  // Mapeamos al formato que usa el carrusel
   return items.map((p: any) => {
     const cover: string | null =
       typeof p.cover === "string"
@@ -237,7 +238,7 @@ async function getOffersForLanding(
     const priceOriginal =
       typeof p.priceOriginal === "number" ? p.priceOriginal : null;
 
-    const offerData = source.find((o) => o.id === p.id) as
+    const offerData = offersAllRaw.find((o) => o.id === p.id) as
       | LandingOffer
       | undefined;
 
@@ -365,8 +366,7 @@ export default async function LandingPage() {
       {/* Categorías con rotación diaria */}
       <CategoriesRow cats={catsDaily} />
 
-      {/* Ofertas (rotación diaria) — mismas que /ofertas,
-          pero solo las declaradas en admin/ofertas */}
+      {/* Ofertas (rotación diaria) — mismas que /ofertas */}
       <OffersCarousel
         items={offersDaily as any}
         visible={3}
@@ -392,7 +392,7 @@ export default async function LandingPage() {
       {/* Sello sustentable */}
       <Sustainability />
 
-      {/* WhatsApp flotante (lazy) */}
+      {/* WhatsApp flotante */}
       <WhatsAppFloatLazy />
     </>
   );
