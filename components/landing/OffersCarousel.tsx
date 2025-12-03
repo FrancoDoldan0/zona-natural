@@ -65,6 +65,9 @@ export default function OffersCarousel({
 }) {
   const ref = useRef<HTMLElement>(null);
 
+  // 👉 total real de ofertas que recibe el carrusel
+  const totalOffers = Array.isArray(items) ? items.length : 0;
+
   // Reveal inicial
   useEffect(() => {
     const root = ref.current;
@@ -98,10 +101,7 @@ export default function OffersCarousel({
         raw.product?.name ??
         "";
 
-      const slug =
-        raw.slug ??
-        raw.product?.slug ??
-        "";
+      const slug = raw.slug ?? raw.product?.slug ?? "";
 
       const price =
         typeof raw.price === "number"
@@ -259,9 +259,9 @@ export default function OffersCarousel({
           })}
         </div>
 
-        {all.length > showCount && (
+        {totalOffers > showCount && (
           <div className="mt-3 text-xs text-gray-500">
-            Mostrando {showCount} de {all.length} ofertas
+            Mostrando {showCount} de {totalOffers} ofertas
           </div>
         )}
       </div>
