@@ -1,3 +1,4 @@
+// components/ui/ProductCard.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -48,6 +49,47 @@ function findCheapestIndex(vs?: VariantLite[]) {
   return idx;
 }
 
+/**
+ * Normaliza la imagen a una URL lista para <Image>, priorizando:
+ * - URL ya final (string)
+ * - toR2Url() para rutas relativas / keys de R2
+ * - objetos con .url / .cover / .imageUrl
+ */
+function resolveImageSrc(image: any): string | undefined {
+  if (!image) return undefined;
+
+  // caso más barato: ya es string usable
+  if (typeof image === "string" && image.trim().length) {
+    const viaR2 = toR2Url(image);
+    return viaR2 || image;
+  }
+
+  // dejamos que toR2Url intente si soporta otros formatos
+  const viaR2 = toR2Url(image);
+  if (viaR2) return viaR2;
+
+  // fallback a propiedades típicas de objetos de imagen
+  if (typeof image === "object") {
+    if (typeof image.url === "string" && image.url.trim().length) {
+      return image.url;
+    }
+    if (
+      typeof (image as any).cover === "string" &&
+      (image as any).cover.trim().length
+    ) {
+      return (image as any).cover;
+    }
+    if (
+      typeof (image as any).imageUrl === "string" &&
+      (image as any).imageUrl.trim().length
+    ) {
+      return (image as any).imageUrl;
+    }
+  }
+
+  return undefined;
+}
+
 export default function ProductCard({
   slug,
   title,
@@ -62,30 +104,12 @@ export default function ProductCard({
 }: Props) {
   const href = resolveHref(slug);
 
-  // 🔧 NUEVO: hacemos toR2Url(image) pero con fallback a cualquier string útil
-  let src: any = toR2Url(image);
-  if (!src && image) {
-    if (typeof image === "string" && image.trim().length) {
-      src = image;
-    } else if (typeof image === "object") {
-      if (typeof image.url === "string" && image.url.trim().length) {
-        src = image.url;
-      } else if (
-        typeof (image as any).cover === "string" &&
-        (image as any).cover.trim().length
-      ) {
-        src = (image as any).cover;
-      } else if (
-        typeof (image as any).imageUrl === "string" &&
-        (image as any).imageUrl.trim().length
-      ) {
-        src = (image as any).imageUrl;
-      }
-    }
-  }
+  // Normalizamos la imagen a una URL (memorizado para evitar trabajo extra en re-renders)
+  const src = useMemo(() => resolveImageSrc(image), [image]);
 
   // --- Selección de variante ---
   const [selIdx, setSelIdx] = useState(() => findCheapestIndex(variants));
+
   const selVar = useMemo(() => {
     if (!variants?.length) return undefined;
     const i = Math.min(Math.max(selIdx, 0), variants.length - 1);
@@ -94,10 +118,11 @@ export default function ProductCard({
 
   // Precios a mostrar: priorizamos la variante seleccionada
   const displayPrice =
-    (typeof selVar?.price === "number" ? selVar?.price : null) ??
+    (typeof selVar?.price === "number" ? selVar.price : null) ??
     (typeof price === "number" ? price : null);
+
   const displayOriginal =
-    (typeof selVar?.originalPrice === "number" ? selVar?.originalPrice : null) ??
+    (typeof selVar?.originalPrice === "number" ? selVar.originalPrice : null) ??
     (typeof originalPrice === "number" ? originalPrice : null);
 
   const hasOffer =
@@ -164,8 +189,11 @@ export default function ProductCard({
       </div>
     ) : null;
 
-  const trackSlug = slug?.startsWith("/") ? slug.split("/").pop() || slug : slug;
+  const trackSlug = slug?.startsWith("/")
+    ? slug.split("/").pop() || slug
+    : slug;
 
+  // Variante "row" / "compact": imagen pequeña + texto a la derecha
   if (variant === "row" || variant === "compact") {
     return (
       <TrackLink
@@ -182,6 +210,8 @@ export default function ProductCard({
               sizes="64px"
               className="object-cover"
               unoptimized
+              loading="lazy"
+              decoding="async"
             />
           ) : (
             <div className="w-full h-full bg-gray-100" />
@@ -207,7 +237,7 @@ export default function ProductCard({
     );
   }
 
-  // estilo “grid” (como tu primera captura)
+  // estilo “grid” (como la vista principal de catálogo / ofertas / más vendidos)
   return (
     <TrackLink
       href={href}
@@ -220,10 +250,15 @@ export default function ProductCard({
             src={src}
             alt={title}
             fill
-            sizes="(min-width:1024px) 22vw, (min-width:640px) 33vw, 50vw"
+            // Pensado para cards en grilla responsive:
+            // - desktop: ~22vw
+            // - tablet: ~33vw
+            // - mobile: ~50vw
+            sizes="(min-width: 1024px) 22vw, (min-width: 640px) 33vw, 50vw"
             className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             unoptimized
-            priority={false}
+            loading="lazy"
+            decoding="async"
           />
         ) : (
           <div className="w-full h-full bg-gray-100" />
@@ -246,7 +281,9 @@ export default function ProductCard({
           {title}
         </h3>
         {subtitle && (
-          <p className="text-[12px] text-gray-600 line-clamp-1">{subtitle}</p>
+          <p className="text-[12px] text-gray-600 line-clamp-1">
+            {subtitle}
+          </p>
         )}
         <div className="mt-1">{Price}</div>
         {VariantChips}

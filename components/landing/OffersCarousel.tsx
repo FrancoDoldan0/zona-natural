@@ -6,8 +6,36 @@ import type React from "react";
 import ProductCard from "@/components/ui/ProductCard";
 import Link from "next/link";
 
-type Item = any;
 const DEFAULT_VISIBLE = 8;
+
+type Item = {
+  id: number | string;
+  slug: string;
+
+  name?: string;
+  title?: string;
+
+  image?: string | null;
+  cover?: string | null;
+  imageUrl?: string | null;
+  images?: { url?: string | null }[];
+
+  price?: number | null;
+  originalPrice?: number | null;
+
+  priceFinal?: number | null;
+  priceOriginal?: number | null;
+  discountPercent?: number | null;
+
+  status?: string | null;
+  outOfStock?: boolean;
+
+  brand?: string | null;
+  subtitle?: string | null;
+  variants?: any;
+
+  [key: string]: any;
+};
 
 function windowSlice<T>(arr: T[], start: number, count: number): T[] {
   if (arr.length <= count) return arr.slice(); // devuelve todo si entra en una “página”
@@ -18,39 +46,21 @@ function windowSlice<T>(arr: T[], start: number, count: number): T[] {
   return head.concat(tail);
 }
 
-// helper simple para quedarnos con una URL de imagen
-function pickImage(raw: any): string | null {
+/**
+ * Toma la mejor URL de imagen posible, sin lógica pesada.
+ * Asume que la landing ya resolvió la portada en imageUrl / image / cover.
+ */
+function pickImageLight(raw: Item): string | null {
   const take = (v: any): string | null =>
     typeof v === "string" && v.trim().length ? v : null;
 
-  if (!raw) return null;
+  const direct =
+    take(raw.imageUrl) ??
+    take(raw.image) ??
+    take(raw.cover) ??
+    (Array.isArray(raw.images) ? take(raw.images[0]?.url) : null);
 
-  // intentamos en este orden
-  const candidates: any[] = [
-    raw.image,
-    raw.cover,
-    raw.imageUrl,
-    raw.product?.image,
-    raw.product?.cover,
-    raw.product?.imageUrl,
-  ];
-
-  for (const c of candidates) {
-    const v = take(c);
-    if (v) return v;
-  }
-
-  // arrays de imágenes
-  if (Array.isArray(raw.images) && raw.images[0]?.url) {
-    const v = take(raw.images[0].url);
-    if (v) return v;
-  }
-  if (Array.isArray(raw.product?.images) && raw.product.images[0]?.url) {
-    const v = take(raw.product.images[0].url);
-    if (v) return v;
-  }
-
-  return null;
+  return direct;
 }
 
 export default function OffersCarousel({
@@ -65,10 +75,100 @@ export default function OffersCarousel({
 }) {
   const ref = useRef<HTMLElement>(null);
 
-  // Reveal inicial
+  // Normalizamos lo mínimo necesario para ProductCard y orden por % descuento
+  const all = useMemo(() => {
+    if (!Array.isArray(items) || !items.length) return [];
+
+    const normalized = items.map((raw) => {
+      const image = pickImageLight(raw);
+
+      const title =
+        raw.title ??
+        raw.name ??
+        "";
+
+      const slug = raw.slug ?? "";
+
+      const priceFinal =
+        typeof raw.priceFinal === "number"
+          ? raw.priceFinal
+          : typeof raw.price === "number"
+          ? raw.price
+          : null;
+
+      const priceOriginal =
+        typeof raw.priceOriginal === "number"
+          ? raw.priceOriginal
+          : typeof raw.originalPrice === "number"
+          ? raw.originalPrice
+          : null;
+
+      const discountPercent =
+        typeof raw.discountPercent === "number"
+          ? raw.discountPercent
+          : priceFinal != null &&
+            priceOriginal != null &&
+            priceOriginal > 0
+          ? Math.round((1 - priceFinal / priceOriginal) * 100)
+          : null;
+
+      return {
+        ...raw,
+        slug,
+        title,
+        image,
+        price: priceFinal,
+        originalPrice: priceOriginal,
+        priceFinal,
+        priceOriginal,
+        discountPercent,
+      };
+    });
+
+    // Ordenamos por % de descuento (mayor primero)
+    return normalized.sort((a, b) => {
+      const da = typeof a.discountPercent === "number" ? a.discountPercent : 0;
+      const db = typeof b.discountPercent === "number" ? b.discountPercent : 0;
+      return db - da;
+    });
+  }, [items]);
+
+  // Rotación
+  const [start, setStart] = useState(0);
+  const [playing, setPlaying] = useState(true);
+
+  // hasEverBeenVisible: para iniciar lógica solo cuando entra en viewport
+  const [isActive, setIsActive] = useState(false);
+  // visibleInView: para pausar cuando se scrollea fuera
+  const [visibleInView, setVisibleInView] = useState(false);
+
+  // Detectar visibilidad del bloque raíz
   useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsActive(true); // se activa la lógica al entrar por primera vez
+          setVisibleInView(true);
+        } else {
+          setVisibleInView(false);
+        }
+      },
+      { threshold: 0.2 }
+    );
+
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  // Reveal inicial de cards (solo cuando el carrusel está activo)
+  useEffect(() => {
+    if (!isActive) return;
     const root = ref.current;
     if (!root) return;
+
     const els = Array.from(root.querySelectorAll<HTMLElement>("[data-reveal]"));
     const io = new IntersectionObserver(
       (ents, obs) => {
@@ -83,118 +183,47 @@ export default function OffersCarousel({
     );
     els.forEach((el) => io.observe(el));
     return () => io.disconnect();
-  }, []);
+  }, [isActive]);
 
-  // Normalizamos lo mínimo necesario para ProductCard
-  const all = useMemo(() => {
-    if (!Array.isArray(items) || !items.length) return [];
+  const showCount = useMemo(() => {
+    if (!all.length) return 0;
+    return Math.max(1, Math.min(visible, all.length));
+  }, [all.length, visible]);
 
-    const normalized = items.map((raw: any) => {
-      const img = pickImage(raw);
-      const title =
-        raw.title ??
-        raw.name ??
-        raw.product?.title ??
-        raw.product?.name ??
-        "";
+  const step = useMemo(
+    () => (all.length <= showCount ? 1 : showCount),
+    [all.length, showCount]
+  );
 
-      const slug =
-        raw.slug ??
-        raw.product?.slug ??
-        "";
-
-      const price =
-        typeof raw.price === "number"
-          ? raw.price
-          : typeof raw.priceFinal === "number"
-          ? raw.priceFinal
-          : null;
-
-      const originalPrice =
-        typeof raw.originalPrice === "number"
-          ? raw.originalPrice
-          : typeof raw.priceOriginal === "number"
-          ? raw.priceOriginal
-          : null;
-
-      return {
-        ...raw,
-        title,
-        slug,
-        image: img,
-        price,
-        originalPrice,
-      };
-    });
-
-    // Ordenamos por % de descuento
-    return normalized.sort((a, b) => {
-      const da =
-        (a.originalPrice ?? 0) && (a.price ?? 0)
-          ? 1 - (a.price as number) / (a.originalPrice as number)
-          : 0;
-      const db =
-        (b.originalPrice ?? 0) && (b.price ?? 0)
-          ? 1 - (b.price as number) / (b.originalPrice as number)
-          : 0;
-      return db - da;
-    });
-  }, [items]);
-
-  // Logueamos las primeras ofertas para ver qué imagen llega
+  // Auto-rotación: solo cuando:
+  // - el carrusel ya se activó (entró en viewport al menos una vez)
+  // - está visible actualmente
+  // - está reproduciendo (no hover)
   useEffect(() => {
-    if (!all.length) return;
-    console.log(
-      "[OffersCarousel] primeros items normalizados:",
-      all.slice(0, 3).map((p) => ({
-        id: p.id,
-        title: p.title,
-        image: p.image,
-        cover: p.cover,
-        imageUrl: p.imageUrl,
-      }))
-    );
-  }, [all]);
+    if (!isActive || !visibleInView || !playing || all.length <= showCount) {
+      return;
+    }
 
-  // Rotación
-  const [start, setStart] = useState(0);
-  const [playing, setPlaying] = useState(true);
-  const [visibleInView, setVisibleInView] = useState(true);
-
-  // Detectar visibilidad para pausar fuera de viewport
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      ([entry]) => setVisibleInView(entry.isIntersecting),
-      { threshold: 0.2 }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  const showCount = Math.max(1, Math.min(visible, all.length || visible));
-  const step = all.length <= showCount ? 1 : showCount;
-
-  useEffect(() => {
-    if (!playing || !visibleInView || all.length <= 1) return;
     const id = setInterval(() => {
       setStart((s) => (s + step) % all.length);
     }, Math.max(2000, rotationMs));
+
     return () => clearInterval(id);
-  }, [playing, visibleInView, all.length, rotationMs, step]);
+  }, [isActive, visibleInView, playing, all.length, showCount, step, rotationMs]);
 
   const current = useMemo(
-    () => windowSlice(all, start, showCount),
+    () => (showCount > 0 ? windowSlice(all, start, showCount) : []),
     [all, start, showCount]
   );
 
+  // Cuando cambiamos de "ventana", marcamos los nuevos elementos como revelados
   useEffect(() => {
+    if (!isActive) return;
     const root = ref.current;
     if (!root) return;
     const fresh = root.querySelectorAll<HTMLElement>("[data-reveal]:not(.in)");
     fresh.forEach((el) => el.classList.add("in"));
-  }, [start, showCount, all.length]);
+  }, [isActive, start, showCount, all.length]);
 
   if (!all.length) return null;
 
@@ -222,19 +251,21 @@ export default function OffersCarousel({
 
         <div className="grid gap-6 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))]">
           {current.map((p, i) => {
-            // Para asegurarnos, volvemos a calcular una imagen “plana” aquí
-            const img =
+            const image =
               p.image ??
-              p.cover ??
               p.imageUrl ??
-              (Array.isArray(p.images) ? p.images[0]?.url : undefined) ??
-              null;
+              p.cover ??
+              (Array.isArray(p.images) ? p.images[0]?.url ?? null : null) ??
+              undefined;
 
-            console.log("[OffersCarousel] card", {
-              id: p.id,
-              title: p.title,
-              img,
-            });
+            const price = p.priceFinal ?? p.price ?? undefined;
+            const originalPrice =
+              p.priceOriginal ?? p.originalPrice ?? undefined;
+
+            const outOfStock =
+              typeof p.outOfStock === "boolean"
+                ? p.outOfStock
+                : (p.status ?? "").toUpperCase() === "AGOTADO";
 
             return (
               <div
@@ -245,11 +276,11 @@ export default function OffersCarousel({
               >
                 <ProductCard
                   slug={p.slug}
-                  title={p.title}
-                  image={img}
-                  price={p.price ?? undefined}
-                  originalPrice={p.originalPrice ?? undefined}
-                  outOfStock={p.outOfStock}
+                  title={p.title ?? p.name ?? ""}
+                  image={image}
+                  price={price}
+                  originalPrice={originalPrice}
+                  outOfStock={outOfStock}
                   brand={p.brand ?? undefined}
                   subtitle={p.subtitle ?? undefined}
                   variants={p.variants}
