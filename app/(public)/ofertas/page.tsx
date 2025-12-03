@@ -9,22 +9,12 @@ import ProductCard from "@/components/ui/ProductCard";
 import BestSellersSidebar from "@/components/landing/BestSellersSidebar";
 import Link from "next/link";
 import { headers } from "next/headers";
+import RecipesPopular from "@/components/landing/RecipesPopular";
+import MapHoursTabs from "@/components/landing/MapHoursTabs";
 import {
   normalizeProduct,
   type NormalizedProduct,
 } from "@/lib/product";
-import dynamic from "next/dynamic";
-
-// Bloques pesados en lazy/dynamic (sin ssr:false)
-const RecipesPopularLazy = dynamic(
-  () => import("@/components/landing/RecipesPopular"),
-  { loading: () => null }
-);
-
-const MapHoursTabsLazy = dynamic(
-  () => import("@/components/landing/MapHoursTabs"),
-  { loading: () => null }
-);
 
 /* ================= helpers base ================= */
 
@@ -33,7 +23,7 @@ async function abs(path: string) {
 
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(
     /\/+$/,
-    ""
+    "",
   );
   if (base) return `${base}${path}`;
 
@@ -55,8 +45,8 @@ async function abs(path: string) {
 async function safeJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      // dejamos que Next.js cachee y regenere según revalidate
-      next: { revalidate },
+      cache: "no-store",
+      next: { revalidate: 0 },
     });
     if (!res.ok) return null as any;
     return (await res.json()) as T;
@@ -72,7 +62,7 @@ type Raw = Record<string, any>;
 async function fetchAllOffers(): Promise<NormalizedProduct[]> {
   // Traemos sólo productos en oferta (onSale=1)
   const url = await abs(
-    `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id`
+    `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id`,
   );
   const data = await safeJson<any>(url);
 
@@ -237,16 +227,16 @@ export default async function OffersPage() {
         {/* Opiniones */}
         <OpinionsStrip />
 
-        {/* Ubicaciones (lazy) */}
+        {/* Ubicaciones */}
         <section className="mt-10">
           <div className="border-0 ring-0 shadow-none bg-transparent rounded-none">
-            <MapHoursTabsLazy />
+            <MapHoursTabs />
           </div>
         </section>
 
-        {/* Recetas populares (lazy) */}
+        {/* Recetas populares */}
         <section className="mt-10">
-          <RecipesPopularLazy />
+          <RecipesPopular />
         </section>
       </main>
     </>
