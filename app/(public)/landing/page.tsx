@@ -1,4 +1,3 @@
-// app/(public)/landing/page.tsx
 export const revalidate = 60; // cache incremental (igual que antes)
 
 import InfoBar from "@/components/landing/InfoBar";
@@ -41,7 +40,6 @@ const WhatsAppFloatLazy = dynamic(
 );
 
 /* ───────── helpers comunes ───────── */
-
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
 
@@ -103,93 +101,19 @@ type Cat = {
   cover?: any;
 };
 
-// Tipo compatible con ProductCard / BestSellersGrid / OffersCarousel
+// Tipo compatible con ProductCard / BestSellersGrid
 type ProductForGrid = {
   id: number;
   name: string;
   slug: string;
-
-  // imagenes
   image?: string | null;
   cover?: string | null;
-  imageUrl?: string | null;
-
-  // precios
   price?: number | null;
   originalPrice?: number | null;
-
-  // alias más explícitos para el carrusel
-  priceFinal?: number | null;
-  priceOriginal?: number | null;
-  discountPercent?: number | null;
-
   status?: string | null;
   appliedOffer?: any | null;
   offer?: any | null;
 };
-
-/* ───────── sucursales (constantes fuera del render) ───────── */
-
-const HOURS_DEFAULT: [string, string][] = [
-  ["Lun–Vie", "09:00–19:00"],
-  ["Sábado", "09:00–13:00"],
-  ["Domingo", "Cerrado"],
-];
-
-const BRANCHES_ALL: Branch[] = (() => {
-  const encode = (s: string) => encodeURIComponent(s);
-
-  return [
-    {
-      name: "Las Piedras",
-      address: "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
-      mapsUrl:
-        "https://www.google.com/maps/search/?api=1&query=" +
-        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
-      embedUrl:
-        "https://www.google.com/maps?q=" +
-        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
-        "&output=embed",
-      hours: HOURS_DEFAULT,
-    },
-    {
-      name: "Maroñas",
-      address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
-      mapsUrl:
-        "https://www.google.com/maps/search/?api=1&query=" +
-        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
-      embedUrl:
-        "https://www.google.com/maps?q=" +
-        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
-        "&output=embed",
-      hours: HOURS_DEFAULT,
-    },
-    {
-      name: "La Paz",
-      address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
-      mapsUrl:
-        "https://www.google.com/maps/search/?api=1&query=" +
-        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
-      embedUrl:
-        "https://www.google.com/maps?q=" +
-        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
-        "&output=embed",
-      hours: HOURS_DEFAULT,
-    },
-    {
-      name: "Progreso",
-      address: "Av. José Artigas, 15900 Progreso, Canelones",
-      mapsUrl:
-        "https://www.google.com/maps/search/?api=1&query=" +
-        encode("Av. José Artigas, 15900 Progreso, Canelones"),
-      embedUrl:
-        "https://www.google.com/maps?q=" +
-        encode("Av. José Artigas, 15900 Progreso, Canelones") +
-        "&output=embed",
-      hours: HOURS_DEFAULT,
-    },
-  ];
-})();
 
 /* ───────── data fetchers básicos ───────── */
 
@@ -223,16 +147,12 @@ async function getCategories(): Promise<Cat[]> {
 }
 
 /**
- * Catálogo base para la landing (se reutiliza para:
- * - "Más vendidos"
- * - "Las mejores ofertas" (via join con getAllOffersRaw)
- *
- * Usa el endpoint general /api/public/catalogo,
- * que ya resuelve imágenes y precios (incluye ofertas).
+ * Catálogo liviano para "Más vendidos".
+ * Usa el endpoint general /api/public/catalogo, que ya resuelve imágenes y precios.
  */
-async function getCatalogForLanding(perPage = 200): Promise<ProductForGrid[]> {
+async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
   const url = await abs(
-    `/api/public/catalogo?status=all&perPage=${perPage}&sort=-id`
+    `/api/public/catalogo?status=active&perPage=${perPage}&sort=-id`
   );
   const data = await safeJson<any>(url);
 
@@ -252,35 +172,19 @@ async function getCatalogForLanding(perPage = 200): Promise<ProductForGrid[]> {
         ? p.imageUrl
         : null;
 
-    const priceFinalRaw =
-      typeof p.priceFinal === "number"
-        ? p.priceFinal
-        : typeof p.price === "number"
-        ? p.price
-        : null;
-
-    const priceOriginalRaw =
+    const priceFinal =
+      typeof p.priceFinal === "number" ? p.priceFinal : null;
+    const priceOriginal =
       typeof p.priceOriginal === "number" ? p.priceOriginal : null;
-
-    const discountPercent =
-      priceFinalRaw != null &&
-      priceOriginalRaw != null &&
-      priceOriginalRaw > 0
-        ? Math.round((1 - priceFinalRaw / priceOriginalRaw) * 100)
-        : null;
 
     return {
       id: Number(p.id),
       name: String(p.name ?? ""),
       slug: String(p.slug ?? ""),
       cover,
-      image: cover,
-      imageUrl: cover,
-      price: priceFinalRaw,
-      priceFinal: priceFinalRaw,
-      originalPrice: priceOriginalRaw,
-      priceOriginal: priceOriginalRaw,
-      discountPercent,
+      image: cover, // lo que usa ProductCard
+      price: priceFinal,
+      originalPrice: priceOriginal,
       status: p.status ?? null,
       appliedOffer: p.offer ?? p.appliedOffer ?? null,
       offer: p.offer ?? null,
@@ -289,102 +193,156 @@ async function getCatalogForLanding(perPage = 200): Promise<ProductForGrid[]> {
 }
 
 /**
- * Une el catálogo general con las ofertas "oficiales" de getAllOffersRaw
- * para generar la lista de items que se muestran en el carrusel de landing.
- *
- * Importante: NO hace otra llamada HTTP.
+ * Ofertas para la landing:
+ * 1) Usa getAllOffersRaw() para obtener la lista "oficial" de productos en oferta.
+ * 2) Pide esos productos a /api/public/catalogo pasando sus IDs,
+ *    para reutilizar la misma lógica de imágenes/precios que /ofertas y /tienda.
  */
-function buildOffersFromCatalog(
-  catalog: ProductForGrid[],
-  offersAllRaw: LandingOffer[] | null | undefined
-): ProductForGrid[] {
-  if (!catalog.length || !offersAllRaw?.length) return [];
+async function getOffersForLanding(
+  offersAllRaw: LandingOffer[]
+): Promise<ProductForGrid[]> {
+  const offerIds = (offersAllRaw || [])
+    .map((o) => o.id)
+    .filter((id): id is number => typeof id === "number");
 
-  const byId = new Map<number, ProductForGrid>();
-  for (const p of catalog) {
-    byId.set(Number(p.id), p);
-  }
+  if (!offerIds.length) return [];
 
-  const result: ProductForGrid[] = [];
+  const idsParam = offerIds.join(",");
+  const url = await abs(
+    `/api/public/catalogo?status=all&perPage=${offerIds.length}&ids=${idsParam}`
+  );
+  const data = await safeJson<any>(url);
 
-  for (const offer of offersAllRaw) {
-    const idNum = Number((offer as any).id);
-    if (!Number.isFinite(idNum)) continue;
+  const items: any[] = (data as any)?.items ?? [];
 
-    const base = byId.get(idNum);
-    if (!base) continue;
+  if (!Array.isArray(items) || !items.length) return [];
 
-    const offerOriginal =
-      typeof (offer as any).priceOriginal === "number"
-        ? (offer as any).priceOriginal
+  return items.map((p: any) => {
+    const cover: string | null =
+      typeof p.cover === "string"
+        ? p.cover
+        : typeof p.imageUrl === "string"
+        ? p.imageUrl
         : null;
 
     const priceFinal =
-      base.priceFinal ?? base.price ?? null;
+      typeof p.priceFinal === "number" ? p.priceFinal : null;
+    const priceOriginal =
+      typeof p.priceOriginal === "number" ? p.priceOriginal : null;
 
-    const baseOriginal =
-      base.priceOriginal ?? base.originalPrice ?? null;
+    const offerData = (offersAllRaw || []).find(
+      (o) => o.id === p.id
+    ) as LandingOffer | undefined;
 
-    const finalOriginal = baseOriginal ?? offerOriginal ?? null;
-
-    const discountPercent =
-      priceFinal != null &&
-      finalOriginal != null &&
-      finalOriginal > 0
-        ? Math.round((1 - priceFinal / finalOriginal) * 100)
-        : base.discountPercent ?? null;
-
-    result.push({
-      ...base,
-      originalPrice: finalOriginal,
-      priceOriginal: finalOriginal,
+    return {
+      id: Number(p.id),
+      name: String(p.name ?? ""),
+      slug: String(p.slug ?? ""),
+      cover,
+      image: cover,
       price: priceFinal,
-      priceFinal,
-      discountPercent,
-      appliedOffer: (offer as any).offer ?? base.appliedOffer ?? null,
-      offer: (offer as any).offer ?? base.offer ?? null,
-    });
-  }
-
-  return result;
+      originalPrice:
+        priceOriginal ??
+        (typeof offerData?.priceOriginal === "number"
+          ? offerData.priceOriginal
+          : null),
+      status: p.status ?? null,
+      appliedOffer: offerData?.offer ?? null,
+      offer: offerData?.offer ?? null,
+    } satisfies ProductForGrid;
+  });
 }
 
 /* ───────── página ───────── */
-
 export default async function LandingPage() {
   const seed = new Date().toISOString().slice(0, 10);
 
-  // 3 llamadas HTTP en paralelo: banners, categorías, catálogo
-  const [banners, cats, catalogAll, offersAllRaw] = await Promise.all([
+  const [banners, cats, catalog, offersAllRaw] = await Promise.all([
     getBanners(),
     getCategories(),
-    getCatalogForLanding(200),
+    getCatalogForGrid(200),
     getAllOffersRaw(),
   ]);
 
-  // categorías con rotación diaria (máx 8)
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
 
-  // catálogo para "Más vendidos" (filtramos activos por si acaso)
-  const bestSellersItems = catalogAll.filter((p) => {
-    const status = (p.status ?? "").toString().toUpperCase();
-    return !status || status === "ACTIVE";
-  });
-
-  // ofertas construidas a partir del catálogo + getAllOffersRaw (sin nueva llamada HTTP)
-  const offersPool = buildOffersFromCatalog(
-    catalogAll,
-    offersAllRaw ?? []
-  );
+  const offersPool = await getOffersForLanding(offersAllRaw || []);
 
   const offersDaily = shuffleSeed(
     offersPool,
     `${seed}:offers`
   ).slice(0, OFFERS_COUNT);
 
-  const branches: Branch[] = BRANCHES_ALL.filter(
-    (b) => b.name === "Las Piedras" || b.name === "La Paz"
-  );
+  // ───────── Lógica de sucursales ─────────
+  const hours: [string, string][] = [
+    ["Lun–Vie", "09:00–19:00"],
+    ["Sábado", "09:00–13:00"],
+    ["Domingo", "Cerrado"],
+  ];
+  const encode = (s: string) => encodeURIComponent(s);
+
+  const branches: Branch[] = [
+    {
+      name: "Las Piedras",
+      address:
+        "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode(
+          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
+        ),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode(
+          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
+        ) +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "Maroñas",
+      address: "Calle Dr. Capdehourat 2608, 11400 Montevideo",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode("Calle Dr. Capdehourat 2608, 11400 Montevideo") +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "La Paz",
+      address:
+        "César Mayo Gutiérrez, 15900 La Paz, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode(
+          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
+        ),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode(
+          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
+        ) +
+        "&output=embed",
+      hours,
+    },
+    {
+      name: "Progreso",
+      address: "Av. José Artigas, 15900 Progreso, Canelones",
+      mapsUrl:
+        "https://www.google.com/maps/search/?api=1&query=" +
+        encode("Av. José Artigas, 15900 Progreso, Canelones"),
+      embedUrl:
+        "https://www.google.com/maps?q=" +
+        encode(
+          "Av. José Artigas, 15900 Progreso, Canelones"
+        ) +
+        "&output=embed",
+      hours,
+    },
+  ];
 
   return (
     <>
@@ -400,15 +358,15 @@ export default async function LandingPage() {
       {/* Categorías con rotación diaria */}
       <CategoriesRow cats={catsDaily} />
 
-      {/* Ofertas (rotación diaria) — mismas que /ofertas, pero sin fetch extra */}
+      {/* Ofertas (rotación diaria) — mismas que /ofertas */}
       <OffersCarousel
         items={offersDaily as any}
         visible={3}
         rotationMs={6000}
       />
 
-      {/* Más vendidos (catálogo liviano reutilizando la misma data) */}
-      <BestSellersGrid items={bestSellersItems as any} />
+      {/* Más vendidos (catálogo liviano) */}
+      <BestSellersGrid items={catalog as any} />
 
       {/* Recetas populares (lazy) */}
       <RecipesPopularLazy />
@@ -417,7 +375,11 @@ export default async function LandingPage() {
       <TestimonialsBadgesLazy />
 
       {/* Mapa + horarios con múltiples sucursales (lazy) */}
-      <MapHoursLazy locations={branches} />
+      <MapHoursLazy
+        locations={branches.filter(
+          (b) => b.name === "Las Piedras" || b.name === "La Paz"
+        )}
+      />
 
       {/* Sello sustentable */}
       <Sustainability />
