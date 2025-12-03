@@ -1,4 +1,4 @@
-export const revalidate = 60; // cache incremental
+export const revalidate = 60; // cache incremental (igual que antes)
 
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
@@ -7,16 +7,37 @@ import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
 import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
-import RecipesPopular from "@/components/landing/RecipesPopular";
-import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
-import MapHours, { type Branch } from "@/components/landing/MapHours";
+// estos 4 ahora se cargarán con dynamic:
+import dynamic from "next/dynamic";
+import type { Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
-import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
 import { getAllOffersRaw, type LandingOffer } from "@/lib/offers-landing";
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
 const OFFERS_COUNT = 24;
+
+/* ───────── CARGA DIFERIDA DE BLOQUES PESADOS ───────── */
+
+const RecipesPopularLazy = dynamic(
+  () => import("@/components/landing/RecipesPopular"),
+  { loading: () => null }
+);
+
+const TestimonialsBadgesLazy = dynamic(
+  () => import("@/components/landing/TestimonialsBadges"),
+  { loading: () => null }
+);
+
+const MapHoursLazy = dynamic(
+  () => import("@/components/landing/MapHours"),
+  { loading: () => null }
+);
+
+const WhatsAppFloatLazy = dynamic(
+  () => import("@/components/landing/WhatsAppFloat"),
+  { loading: () => null }
+);
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
@@ -39,7 +60,7 @@ async function abs(path: string) {
 async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      next: { revalidate: 60 },
+      next: { revalidate: 60 }, // igual que tu versión original
       ...init,
     });
     if (!res.ok) return null;
@@ -347,14 +368,14 @@ export default async function LandingPage() {
       {/* Más vendidos (catálogo liviano) */}
       <BestSellersGrid items={catalog as any} />
 
-      {/* Recetas populares */}
-      <RecipesPopular />
+      {/* Recetas populares (lazy) */}
+      <RecipesPopularLazy />
 
-      {/* Testimonios + badges */}
-      <TestimonialsBadges />
+      {/* Testimonios + badges (lazy) */}
+      <TestimonialsBadgesLazy />
 
-      {/* Mapa + horarios con múltiples sucursales */}
-      <MapHours
+      {/* Mapa + horarios con múltiples sucursales (lazy) */}
+      <MapHoursLazy
         locations={branches.filter(
           (b) => b.name === "Las Piedras" || b.name === "La Paz"
         )}
@@ -363,7 +384,8 @@ export default async function LandingPage() {
       {/* Sello sustentable */}
       <Sustainability />
 
-      <WhatsAppFloat />
+      {/* WhatsApp flotante (lazy) */}
+      <WhatsAppFloatLazy />
     </>
   );
 }
