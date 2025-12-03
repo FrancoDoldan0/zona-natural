@@ -58,7 +58,6 @@ type ProductRow = {
   images?: ProductImageRow[];
   productTags?: ProductTagRow[];
 
-  // 🆕
   hasVariants?: boolean;
   variants?: ProductVariantRow[];
 };
@@ -70,7 +69,7 @@ export async function GET(req: NextRequest) {
     url.searchParams.get('debug') === '1';
 
   try {
-    // 🔹 ACEPTAR q / query / search / term
+    // 🔍 texto libre
     const rawQ =
       url.searchParams.get('q') ||
       url.searchParams.get('query') ||
@@ -95,6 +94,16 @@ export async function GET(req: NextRequest) {
       url.searchParams.get('subcategoryId') || '',
       10,
     );
+
+    // 🔹 lista de IDs explícita (para landing, ofertas, etc.)
+    const idsCsv = (url.searchParams.get('ids') || '').trim();
+    const ids =
+      idsCsv.length > 0
+        ? idsCsv
+            .split(',')
+            .map((s) => parseInt(s.trim(), 10))
+            .filter((n) => Number.isFinite(n)) as number[]
+        : [];
 
     // tags
     const tagIdSingle = parseInt(
@@ -132,6 +141,11 @@ export async function GET(req: NextRequest) {
     // Base del WHERE (SIN FILTRO DE ESTADO)
     const baseWhere: Prisma.ProductWhereInput = {};
 
+    // 🔑 Filtro por IDs explícitos (?ids=1,2,3)
+    if (ids.length) {
+      baseWhere.id = { in: ids };
+    }
+
     // Búsqueda de texto (AND con el resto de filtros)
     if (q) {
       const textOR: Prisma.ProductWhereInput['OR'] = [
@@ -151,11 +165,9 @@ export async function GET(req: NextRequest) {
     if (tagIds.length) {
       if (match === 'all') {
         // requiere que tenga TODOS los tags
-        const allConds: Prisma.ProductWhereInput[] = tagIds.map(
-          (id) => ({
-            productTags: { some: { tagId: id } },
-          }),
-        );
+        const allConds: Prisma.ProductWhereInput[] = tagIds.map((id) => ({
+          productTags: { some: { tagId: id } },
+        }));
         appendAND(baseWhere, allConds);
       } else {
         // cualquiera de los tags
@@ -168,16 +180,12 @@ export async function GET(req: NextRequest) {
     // Precio base (pre-discount)
     if (Number.isFinite(minPrice) || Number.isFinite(maxPrice)) {
       baseWhere.price = {};
-      if (Number.isFinite(minPrice))
-        baseWhere.price.gte = minPrice;
-      if (Number.isFinite(maxPrice))
-        baseWhere.price.lte = maxPrice;
+      if (Number.isFinite(minPrice)) baseWhere.price.gte = minPrice;
+      if (Number.isFinite(maxPrice)) baseWhere.price.lte = maxPrice;
     }
 
     // Orden principal
-    const sortParam = (
-      url.searchParams.get('sort') || '-id'
-    ).toLowerCase();
+    const sortParam = (url.searchParams.get('sort') || '-id').toLowerCase();
     let orderBy: Prisma.ProductOrderByWithRelationInput;
     switch (sortParam) {
       case 'price':
@@ -247,9 +255,7 @@ export async function GET(req: NextRequest) {
       id: p.id,
       price: (p.price ?? null) as number | null,
       categoryId: (p.categoryId ?? null) as number | null,
-      tags: (p.productTags ?? []).map(
-        (t: ProductTagRow) => t.tagId,
-      ),
+      tags: (p.productTags ?? []).map((t: ProductTagRow) => t.tagId),
     }));
 
     let priced: Map<
@@ -265,8 +271,7 @@ export async function GET(req: NextRequest) {
       );
       priced = new Map();
       for (const b of bare) {
-        const v =
-          typeof b.price === 'number' ? b.price : null;
+        const v = typeof b.price === 'number' ? b.price : null;
         priced.set(b.id, {
           priceOriginal: v,
           priceFinal: v,
@@ -275,50 +280,40 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Resolver cover: DB → carpeta por id → fallback por slug
+    // Resolver cover: DB o, si no hay, listar en R2
     async function resolveCoverKey(p: {
       id: number;
       slug?: string | null;
       images?: ProductImageRow[];
     }) {
-      const keysFromDb = (Array.isArray(p.images)
-        ? p.images
-        : []
-      )
+      const keysFromDb = (Array.isArray(p.images) ? p.images : [])
         .map((i) => i?.key)
         .filter(Boolean) as string[];
+
       if (keysFromDb.length > 0) return keysFromDb[0];
 
-      // 1️⃣ Legacy: carpeta por ID (products/{id}/…)
-      try {
-        const prefixById = `products/${p.id}/`;
-        const listedById = await r2List(prefixById, 1);
-        const firstById =
-          Array.isArray(listedById) && listedById[0]
-            ? typeof listedById[0] === 'string'
-              ? listedById[0]
-              : (listedById[0] as any).key
-            : null;
-        if (firstById) return firstById;
-      } catch {
-        // ignoramos y probamos por slug
+      // Fallback 1: carpeta por ID (products/123/...)
+      const prefixes: string[] = [];
+      prefixes.push(`products/${p.id}/`);
+
+      // Fallback 2: archivo suelto o carpeta por slug
+      if (p.slug) {
+        prefixes.push(`products/${p.slug}`);
+        prefixes.push(`products/${p.slug}/`);
       }
 
-      // 2️⃣ Alojadas directo por slug: products/{slug}*.jpg
-      const slug = (p.slug || '').trim();
-      if (slug) {
+      for (const prefix of prefixes) {
         try {
-          const prefixBySlug = `products/${slug}`;
-          const listedBySlug = await r2List(prefixBySlug, 1);
-          const firstBySlug =
-            Array.isArray(listedBySlug) && listedBySlug[0]
-              ? typeof listedBySlug[0] === 'string'
-                ? listedBySlug[0]
-                : (listedBySlug[0] as any).key
+          const listed = await r2List(prefix, 1);
+          const first =
+            Array.isArray(listed) && listed[0]
+              ? typeof listed[0] === 'string'
+                ? listed[0]
+                : (listed[0] as any).key
               : null;
-          if (firstBySlug) return firstBySlug;
+          if (first) return first;
         } catch {
-          // sin imagen, devolvemos null
+          // seguimos probando con el siguiente prefijo
         }
       }
 
@@ -332,26 +327,20 @@ export async function GET(req: NextRequest) {
 
         // ====== BASE de ofertas (tabla Offer) ======
         const basePriceOriginal =
-          pr?.priceOriginal ??
-          (typeof p.price === 'number' ? p.price : null);
-        const basePriceFinal =
-          pr?.priceFinal ?? basePriceOriginal;
+          pr?.priceOriginal ?? (typeof p.price === 'number' ? p.price : null);
+        const basePriceFinal = pr?.priceFinal ?? basePriceOriginal;
 
         const hasBase =
           typeof basePriceOriginal === 'number' &&
           typeof basePriceFinal === 'number' &&
           basePriceOriginal > 0;
-        const offerRatio = hasBase
-          ? basePriceFinal / basePriceOriginal
-          : 1;
+        const offerRatio = hasBase ? basePriceFinal / basePriceOriginal : 1;
 
         let priceOriginal: number | null = basePriceOriginal;
         let priceFinal: number | null = basePriceFinal;
 
         // ====== Variantes: respetar descuentos manuales ======
-        const activeVariants = Array.isArray(p.variants)
-          ? p.variants
-          : [];
+        const activeVariants = Array.isArray(p.variants) ? p.variants : [];
         const variants = activeVariants.map((v) => {
           // Descuento manual: priceOriginal (antes) vs price (ahora)
           const manualOrig =
@@ -362,15 +351,11 @@ export async function GET(req: NextRequest) {
               : null;
 
           const manualFinal =
-            typeof v.price === 'number'
-              ? v.price
-              : manualOrig;
+            typeof v.price === 'number' ? v.price : manualOrig;
 
           const vOrig = manualOrig;
           const vFinal =
-            manualFinal != null
-              ? manualFinal * (offerRatio || 1)
-              : null;
+            manualFinal != null ? manualFinal * (offerRatio || 1) : null;
 
           return {
             ...v,
@@ -383,20 +368,12 @@ export async function GET(req: NextRequest) {
         if (variants.length) {
           const finals = variants
             .map((v) => v.priceFinal)
-            .filter(
-              (x): x is number =>
-                typeof x === 'number',
-            );
+            .filter((x): x is number => typeof x === 'number');
           const origs = variants
             .map((v) => v.priceOriginal)
-            .filter(
-              (x): x is number =>
-                typeof x === 'number',
-            );
-          if (finals.length)
-            priceFinal = Math.min(...finals);
-          if (origs.length)
-            priceOriginal = Math.min(...origs);
+            .filter((x): x is number => typeof x === 'number');
+          if (finals.length) priceFinal = Math.min(...finals);
+          if (origs.length) priceOriginal = Math.min(...origs);
         }
 
         const hasDiscount =
@@ -406,9 +383,7 @@ export async function GET(req: NextRequest) {
 
         const discountPercent =
           hasDiscount && priceOriginal && priceFinal
-            ? Math.round(
-                (1 - priceFinal / priceOriginal) * 100,
-              )
+            ? Math.round((1 - priceFinal / priceOriginal) * 100)
             : 0;
 
         const coverKey = await resolveCoverKey(p);
@@ -425,8 +400,6 @@ export async function GET(req: NextRequest) {
           offer: pr?.offer ?? null,
           hasDiscount,
           discountPercent,
-
-          // 🆕 exposición pública para UI
           hasVariants: variants.length > 0,
           variants,
         };
@@ -442,15 +415,12 @@ export async function GET(req: NextRequest) {
       });
     } else if (statusParam === 'all') {
       filtered = filtered.filter(
-        (i) =>
-          String(i.status || '').toUpperCase() !==
-          'ARCHIVED',
+        (i) => String(i.status || '').toUpperCase() !== 'ARCHIVED',
       );
     } // raw => sin filtro
 
     // Post-filtros por precio FINAL
-    if (onSale)
-      filtered = filtered.filter((i) => i.hasDiscount);
+    if (onSale) filtered = filtered.filter((i) => i.hasDiscount);
     if (Number.isFinite(minFinal))
       filtered = filtered.filter(
         (i) => (i.priceFinal ?? Infinity) >= minFinal,
@@ -481,9 +451,7 @@ export async function GET(req: NextRequest) {
 
     const filteredTotal = filtered.length;
     const pageCount = Math.ceil((total ?? 0) / perPage);
-    const filteredPageCount = Math.ceil(
-      filteredTotal / perPage,
-    );
+    const filteredPageCount = Math.ceil(filteredTotal / perPage);
 
     return json({
       ok: true,
@@ -495,26 +463,17 @@ export async function GET(req: NextRequest) {
       filteredPageCount,
       appliedFilters: {
         q,
-        categoryId: Number.isFinite(categoryId)
-          ? categoryId
-          : null,
+        ids,
+        categoryId: Number.isFinite(categoryId) ? categoryId : null,
         subcategoryId: Number.isFinite(subcategoryId)
           ? subcategoryId
           : null,
         tagIds,
         match,
-        minPrice: Number.isFinite(minPrice)
-          ? minPrice
-          : null,
-        maxPrice: Number.isFinite(maxPrice)
-          ? maxPrice
-          : null,
-        minFinal: Number.isFinite(minFinal)
-          ? minFinal
-          : null,
-        maxFinal: Number.isFinite(maxFinal)
-          ? maxFinal
-          : null,
+        minPrice: Number.isFinite(minPrice) ? minPrice : null,
+        maxPrice: Number.isFinite(maxPrice) ? maxPrice : null,
+        minFinal: Number.isFinite(minFinal) ? minFinal : null,
+        maxFinal: Number.isFinite(maxFinal) ? maxFinal : null,
         onSale,
         sort: sortParam,
         status: statusParam,
