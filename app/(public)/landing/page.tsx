@@ -15,7 +15,7 @@ import { headers } from "next/headers";
 import { getAllOffersRaw, type LandingOffer } from "@/lib/offers-landing";
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
-const OFFERS_COUNT = 24;
+const OFFERS_COUNT = 9;
 
 /* ───────── CARGA DIFERIDA DE BLOQUES PESADOS ───────── */
 
