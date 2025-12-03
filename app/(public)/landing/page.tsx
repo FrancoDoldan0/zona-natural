@@ -1,7 +1,10 @@
+// app/(public)/landing/page.tsx
 export const revalidate = 60; // cache incremental
 
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
+
+// IMPORTS DE COMPONENTES
 import MainNav from "@/components/landing/MainNav";
 import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
@@ -12,34 +15,30 @@ import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
 import MapHours, { type Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
 import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
-import { headers } from "next/headers";
+
 import { getAllOffersRaw, type LandingOffer } from "@/lib/offers-landing";
+import { type LandingProduct } from "@/lib/catalog-helpers";
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
 const OFFERS_COUNT = 24;
 
-/* ───────── helpers comunes ───────── */
-async function abs(path: string) {
+/* ───────── helpers comunes (abs, safeJson, hash, seededRand, shuffleSeed) ───────── */
+
+/**
+ * Construye una URL absoluta usando la base pública si está definida.
+ * Versión SINCRÓNICA (no usa `headers()`, así la página puede ser estática con ISR).
+ */
+function abs(path: string) {
   if (path.startsWith("http")) return path;
-
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
-  if (base) return `${base}${path}`;
-
-  try {
-    const h = await headers();
-    const proto = h.get("x-forwarded-proto") ?? "https";
-    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
-    if (host) return `${proto}://${host}${path}`;
-  } catch {
-    // SSR sin headers(): devolvemos ruta relativa
-  }
-  return path;
+  return base ? `${base}${path}` : path;
 }
 
-async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
+async function safeJson<T>(path: string, init?: RequestInit): Promise<T | null> {
   try {
+    const url = abs(path);
     const res = await fetch(url, {
-      next: { revalidate: 60 },
+      next: { revalidate: 60 }, // deja que Next cachee por defecto
       ...init,
     });
     if (!res.ok) return null;
@@ -49,7 +48,6 @@ async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   }
 }
 
-/* ───────── helpers de shuffle con seed diaria ───────── */
 function hash(s: string) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -57,7 +55,8 @@ function hash(s: string) {
 }
 function seededRand(seed: string) {
   let x = hash(seed) || 1;
-  return () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  return () =>
+    (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
 }
 function shuffleSeed<T>(arr: T[], seed: string) {
   const rand = seededRand(seed);
@@ -70,6 +69,7 @@ function shuffleSeed<T>(arr: T[], seed: string) {
 }
 
 /* ───────── tipos ───────── */
+
 type Cat = {
   id: number;
   name: string;
@@ -80,7 +80,6 @@ type Cat = {
   cover?: any;
 };
 
-// Tipo compatible con ProductCard / BestSellersGrid
 type ProductForGrid = {
   id: number;
   name: string;
@@ -94,10 +93,42 @@ type ProductForGrid = {
   offer?: any | null;
 };
 
-/* ───────── data fetchers básicos ───────── */
+/* ───────── NUEVO: DATA FETCHER PARA LA LANDING (usa la nueva API) ───────── */
+
+type LandingApiResponse = {
+  status: string;
+  products: LandingProduct[];
+};
+
+/**
+ * Función que consume la API dedicada para la landing,
+ * la cual garantiza el fallback de imagen y el cálculo de precios.
+ */
+async function getLandingData(
+  ids?: number[],
+  perPage: number = 60
+): Promise<LandingProduct[]> {
+  const query =
+    ids && ids.length > 0
+      ? `ids=${ids.join(",")}`
+      : `perPage=${perPage}`;
+
+  const data = await safeJson<LandingApiResponse>(
+    `/api/public/landing-catalog?${query}`
+  );
+
+  if (!data || data.status !== "success" || !Array.isArray(data.products)) {
+    console.error("[Landing] Error al obtener datos de la API de landing.");
+    return [];
+  }
+
+  return data.products;
+}
+
+/* ───────── data fetchers (getBanners, getCategories) ───────── */
 
 async function getBanners(): Promise<BannerItem[]> {
-  const data = await safeJson<any>(await abs("/api/public/banners"));
+  const data = await safeJson<any>("/api/public/banners");
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return (list as any[])
     .map((b, i) => {
@@ -120,132 +151,78 @@ async function getBanners(): Promise<BannerItem[]> {
 }
 
 async function getCategories(): Promise<Cat[]> {
-  const data = await safeJson<any>(await abs("/api/public/categories"));
+  const data = await safeJson<any>("/api/public/categories");
   const list = Array.isArray(data) ? data : data?.items ?? [];
   return list as Cat[];
 }
 
 /**
  * Catálogo liviano para "Más vendidos".
- * Usa el endpoint general /api/public/catalogo, que ya resuelve imágenes y precios.
+ * Usa la API de landing para obtener solo los campos necesarios.
  */
-async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
-  const url = await abs(
-    `/api/public/catalogo?status=active&perPage=${perPage}&sort=-id`
-  );
-  const data = await safeJson<any>(url);
+async function getCatalogForGrid(perPage = 60): Promise<ProductForGrid[]> {
+  const items = await getLandingData(undefined, perPage);
 
-  const items: any[] =
-    (data as any)?.items ??
-    (data as any)?.data ??
-    (data as any)?.products ??
-    (Array.isArray(data) ? data : []);
-
-  if (!Array.isArray(items) || !items.length) return [];
-
-  return items.map((p: any) => {
-    const cover: string | null =
-      typeof p.cover === "string"
-        ? p.cover
-        : typeof p.imageUrl === "string"
-        ? p.imageUrl
-        : null;
-
-    const priceFinal =
-      typeof p.priceFinal === "number" ? p.priceFinal : null;
-    const priceOriginal =
-      typeof p.priceOriginal === "number" ? p.priceOriginal : null;
-
-    return {
-      id: Number(p.id),
-      name: String(p.name ?? ""),
-      slug: String(p.slug ?? ""),
-      cover,
-      image: cover, // lo que usa ProductCard
-      price: priceFinal,
-      originalPrice: priceOriginal,
-      status: p.status ?? null,
-      appliedOffer: p.offer ?? p.appliedOffer ?? null,
-      offer: p.offer ?? null,
-    } satisfies ProductForGrid;
-  });
-}
-
-/**
- * Ofertas para la landing:
- * 1) Usa getAllOffersRaw() para obtener la lista "oficial" de productos en oferta.
- * 2) Pide esos productos a /api/public/catalogo pasando sus IDs,
- *    para reutilizar la misma lógica de imágenes/precios que /ofertas y /tienda.
- */
-async function getOffersForLanding(
-  offersAllRaw: LandingOffer[]
-): Promise<ProductForGrid[]> {
-  const offerIds = (offersAllRaw || [])
-    .map((o) => o.id)
-    .filter((id): id is number => typeof id === "number");
-
-  if (!offerIds.length) return [];
-
-  const idsParam = offerIds.join(",");
-  const url = await abs(
-    `/api/public/catalogo?status=all&perPage=${offerIds.length}&ids=${idsParam}`
-  );
-  const data = await safeJson<any>(url);
-
-  const items: any[] = (data as any)?.items ?? [];
-
-  if (!Array.isArray(items) || !items.length) return [];
-
-  return items.map((p: any) => {
-    const cover: string | null =
-      typeof p.cover === "string"
-        ? p.cover
-        : typeof p.imageUrl === "string"
-        ? p.imageUrl
-        : null;
-
-    const priceFinal =
-      typeof p.priceFinal === "number" ? p.priceFinal : null;
-    const priceOriginal =
-      typeof p.priceOriginal === "number" ? p.priceOriginal : null;
-
-    const offerData = (offersAllRaw || []).find(
-      (o) => o.id === p.id
-    ) as LandingOffer | undefined;
-
-    return {
-      id: Number(p.id),
-      name: String(p.name ?? ""),
-      slug: String(p.slug ?? ""),
-      cover,
-      image: cover,
-      price: priceFinal,
-      originalPrice:
-        priceOriginal ??
-        (typeof offerData?.priceOriginal === "number"
-          ? offerData.priceOriginal
-          : null),
-      status: p.status ?? null,
-      appliedOffer: offerData?.offer ?? null,
-      offer: offerData?.offer ?? null,
-    } satisfies ProductForGrid;
-  });
+  return items.map((p) => ({
+    id: p.id,
+    name: p.name,
+    slug: p.slug,
+    cover: p.imageUrl,
+    image: p.imageUrl,
+    price: p.priceFinal, // price final ya resuelto por la API
+    originalPrice: undefined, // en este modo no exponemos el original
+    status: p.status,
+  })) as ProductForGrid[];
 }
 
 /* ───────── página ───────── */
+
 export default async function LandingPage() {
+  // Semilla diaria estable (AAAA-MM-DD)
   const seed = new Date().toISOString().slice(0, 10);
 
-  const [banners, cats, catalog, offersAllRaw] = await Promise.all([
+  const [banners, cats, catalogRaw, offersAllRaw] = await Promise.all([
     getBanners(),
     getCategories(),
-    getCatalogForGrid(200),
+    getCatalogForGrid(60), // Más vendidos: no necesitamos 200 productos
     getAllOffersRaw(),
   ]);
 
+  // Rotación diaria de categorías
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
 
-  const offersPool = await getOffersForLanding(offersAllRaw || []);
+  // ───────── Ofertas unificadas ─────────
+
+  const offerIds = (offersAllRaw || [])
+    .map((o: LandingOffer) => o.id)
+    .filter((id): id is number => typeof id === "number");
+
+  let offersPool: ProductForGrid[] = [];
+
+  if (offerIds.length > 0) {
+    // Obtiene desde la API de landing solo los productos en oferta
+    const rawOffers = await getLandingData(offerIds);
+
+    offersPool = rawOffers.map((p) => {
+      // Data original de la oferta (contiene metadatos de precios/aplicación)
+      const offerData = (offersAllRaw || []).find(
+        (o: LandingOffer) => o.id === p.id
+      );
+
+      return {
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        cover: p.imageUrl,
+        image: p.imageUrl,
+        price: p.priceFinal,
+        originalPrice: offerData?.priceOriginal ?? null,
+        status: p.status ?? null,
+        appliedOffer: offerData?.offer ?? null,
+        offer: offerData?.offer ?? null,
+      } satisfies ProductForGrid;
+    });
+  }
 
   const offersDaily = shuffleSeed(
     offersPool,
@@ -253,6 +230,7 @@ export default async function LandingPage() {
   ).slice(0, OFFERS_COUNT);
 
   // ───────── Lógica de sucursales ─────────
+
   const hours: [string, string][] = [
     ["Lun–Vie", "09:00–19:00"],
     ["Sábado", "09:00–13:00"],
@@ -267,14 +245,10 @@ export default async function LandingPage() {
         "Av. José Gervasio Artigas 600, Las Piedras, Canelones",
       mapsUrl:
         "https://www.google.com/maps/search/?api=1&query=" +
-        encode(
-          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
-        ),
+        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones"),
       embedUrl:
         "https://www.google.com/maps?q=" +
-        encode(
-          "Av. José Gervasio Artigas 600, Las Piedras, Canelones"
-        ) +
+        encode("Av. José Gervasio Artigas 600, Las Piedras, Canelones") +
         "&output=embed",
       hours,
     },
@@ -292,18 +266,13 @@ export default async function LandingPage() {
     },
     {
       name: "La Paz",
-      address:
-        "César Mayo Gutiérrez, 15900 La Paz, Canelones",
+      address: "César Mayo Gutiérrez, 15900 La Paz, Canelones",
       mapsUrl:
         "https://www.google.com/maps/search/?api=1&query=" +
-        encode(
-          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
-        ),
+        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones"),
       embedUrl:
         "https://www.google.com/maps?q=" +
-        encode(
-          "César Mayo Gutiérrez, 15900 La Paz, Canelones"
-        ) +
+        encode("César Mayo Gutiérrez, 15900 La Paz, Canelones") +
         "&output=embed",
       hours,
     },
@@ -315,9 +284,7 @@ export default async function LandingPage() {
         encode("Av. José Artigas, 15900 Progreso, Canelones"),
       embedUrl:
         "https://www.google.com/maps?q=" +
-        encode(
-          "Av. José Artigas, 15900 Progreso, Canelones"
-        ) +
+        encode("Av. José Artigas, 15900 Progreso, Canelones") +
         "&output=embed",
       hours,
     },
@@ -337,7 +304,7 @@ export default async function LandingPage() {
       {/* Categorías con rotación diaria */}
       <CategoriesRow cats={catsDaily} />
 
-      {/* Ofertas (rotación diaria) — mismas que /ofertas */}
+      {/* Ofertas (rotación diaria) */}
       <OffersCarousel
         items={offersDaily as any}
         visible={3}
@@ -345,7 +312,7 @@ export default async function LandingPage() {
       />
 
       {/* Más vendidos (catálogo liviano) */}
-      <BestSellersGrid items={catalog as any} />
+      <BestSellersGrid items={catalogRaw as any} />
 
       {/* Recetas populares */}
       <RecipesPopular />
