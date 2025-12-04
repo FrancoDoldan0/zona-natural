@@ -15,6 +15,7 @@ import {
   normalizeProduct,
   type NormalizedProduct,
 } from "@/lib/product";
+import { Suspense } from "react";
 
 /* ================= helpers base ================= */
 
@@ -44,9 +45,9 @@ async function abs(path: string) {
 
 async function safeJson<T>(url: string): Promise<T | null> {
   try {
+    // Dejamos que Next maneje el cache según `revalidate`
     const res = await fetch(url, {
-      cache: "no-store",
-      next: { revalidate: 0 },
+      next: { revalidate },
     });
     if (!res.ok) return null as any;
     return (await res.json()) as T;
@@ -112,6 +113,65 @@ async function fetchAllOffers(): Promise<NormalizedProduct[]> {
   return offers;
 }
 
+/* ================= Skeleton de ofertas ================= */
+
+function OffersGridSkeleton() {
+  const items = Array.from({ length: 8 });
+  return (
+    <section aria-label="Listado de ofertas">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+        {items.map((_, i) => (
+          <div
+            key={i}
+            className="h-48 rounded-2xl border border-emerald-100 bg-emerald-50/60 animate-pulse"
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ================= Sección de ofertas (async, con streaming) ================= */
+
+async function OffersSection() {
+  const offers = await fetchAllOffers();
+
+  return (
+    <section aria-label="Listado de ofertas">
+      {offers.length === 0 ? (
+        <p className="text-gray-600">
+          Por ahora no hay ofertas activas. Volvé más tarde 🙂
+        </p>
+      ) : (
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+          {offers.map((p) => (
+            <ProductCard
+              key={p.id}
+              slug={p.slug}
+              title={p.title}
+              image={p.image}
+              price={
+                typeof p.price === "number"
+                  ? p.price
+                  : undefined
+              }
+              originalPrice={
+                typeof p.originalPrice === "number"
+                  ? p.originalPrice
+                  : undefined
+              }
+              outOfStock={p.outOfStock}
+              brand={p.brand ?? undefined}
+              subtitle={p.subtitle ?? undefined}
+              variants={p.variants}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ================= Opiniones inline ================= */
 
 function OpinionsStrip() {
@@ -164,9 +224,7 @@ function OpinionsStrip() {
 
 /* ================= Página Ofertas ================= */
 
-export default async function OffersPage() {
-  const offers = await fetchAllOffers();
-
+export default function OffersPage() {
   return (
     <>
       <InfoBar />
@@ -186,42 +244,14 @@ export default async function OffersPage() {
           </Link>
         </div>
 
-        {/* Layout con sidebar de “Más vendidos” */}
+        {/* Layout con sidebar de “Más vendidos” + ofertas en streaming */}
         <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr]">
           <BestSellersSidebar />
 
-          <section aria-label="Listado de ofertas">
-            {offers.length === 0 ? (
-              <p className="text-gray-600">
-                Por ahora no hay ofertas activas. Volvé más tarde 🙂
-              </p>
-            ) : (
-              <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-                {offers.map((p) => (
-                  <ProductCard
-                    key={p.id}
-                    slug={p.slug}
-                    title={p.title}
-                    image={p.image}
-                    price={
-                      typeof p.price === "number"
-                        ? p.price
-                        : undefined
-                    }
-                    originalPrice={
-                      typeof p.originalPrice === "number"
-                        ? p.originalPrice
-                        : undefined
-                    }
-                    outOfStock={p.outOfStock}
-                    brand={p.brand ?? undefined}
-                    subtitle={p.subtitle ?? undefined}
-                    variants={p.variants}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
+          <Suspense fallback={<OffersGridSkeleton />}>
+            {/* @ts-expect-error Async Server Component */}
+            <OffersSection />
+          </Suspense>
         </div>
 
         {/* Opiniones */}
