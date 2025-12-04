@@ -249,7 +249,6 @@ export default function OffersPage() {
           <BestSellersSidebar />
 
           <Suspense fallback={<OffersGridSkeleton />}>
-            {/* @ts-expect-error Async Server Component */}
             <OffersSection />
           </Suspense>
         </div>
