@@ -61,10 +61,11 @@ async function safeJson<T>(url: string): Promise<T | null> {
 type Raw = Record<string, any>;
 
 async function fetchAllOffers(): Promise<NormalizedProduct[]> {
-  // Traemos sólo productos en oferta (onSale=1)
+  // Traemos sólo productos en oferta (onSale=1), en modo "ligero" (noMeta=1)
   const url = await abs(
-    `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id`,
+    `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id&noMeta=1`,
   );
+
   const data = await safeJson<any>(url);
 
   const raw: Raw[] =
@@ -78,8 +79,7 @@ async function fetchAllOffers(): Promise<NormalizedProduct[]> {
 
   // Filtro de seguridad: sólo donde price < originalPrice
   const offers = normalized.filter((p) => {
-    const price =
-      typeof p.price === "number" ? p.price : null;
+    const price = typeof p.price === "number" ? p.price : null;
     const orig =
       typeof p.originalPrice === "number"
         ? p.originalPrice
@@ -89,23 +89,19 @@ async function fetchAllOffers(): Promise<NormalizedProduct[]> {
 
   // Ordenamos por % de descuento (mayor primero)
   offers.sort((a, b) => {
-    const ap =
-      typeof a.price === "number" ? a.price : null;
+    const ap = typeof a.price === "number" ? a.price : null;
     const ao =
       typeof a.originalPrice === "number"
         ? a.originalPrice
         : null;
-    const bp =
-      typeof b.price === "number" ? b.price : null;
+    const bp = typeof b.price === "number" ? b.price : null;
     const bo =
       typeof b.originalPrice === "number"
         ? b.originalPrice
         : null;
 
-    const da =
-      ao && ap && ao > 0 && ap < ao ? 1 - ap / ao : 0;
-    const db =
-      bo && bp && bo > 0 && bp < bo ? 1 - bp / bo : 0;
+    const da = ao && ap && ao > 0 && ap < ao ? 1 - ap / ao : 0;
+    const db = bo && bp && bo > 0 && bp < bo ? 1 - bp / bo : 0;
 
     return db - da;
   });

@@ -105,6 +105,9 @@ export async function GET(req: NextRequest) {
             .filter((n) => Number.isFinite(n)) as number[]
         : [];
 
+    // 🆕 modo "ligero": evitar count() cuando no necesitamos metadata completa
+    const noMeta = parseBool(url.searchParams.get('noMeta'));
+
     // tags
     const tagIdSingle = parseInt(
       url.searchParams.get('tagId') || '',
@@ -217,9 +220,12 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * perPage;
 
     // Ejecutamos SIEMPRE sin filtro de estado en DB
-    const [total, itemsRaw] = await Promise.all([
-      prisma.product.count({ where: baseWhere }),
-      prisma.product.findMany({
+    let total = 0;
+    let itemsRaw: ProductRow[] = [];
+
+    if (noMeta) {
+      // Modo "ligero": evitamos el count() extra, útil para listados sin paginador
+      itemsRaw = await prisma.product.findMany({
         where: baseWhere,
         skip,
         take: perPage,
@@ -227,7 +233,6 @@ export async function GET(req: NextRequest) {
         include: {
           images: { select: { key: true } },
           productTags: { select: { tagId: true } },
-          // 🆕 incluir variantes activas
           variants: {
             where: { active: true },
             orderBy: { sortOrder: 'asc' },
@@ -243,8 +248,42 @@ export async function GET(req: NextRequest) {
             },
           },
         },
-      }),
-    ]);
+      });
+
+      // total aproximado: lo que vimos en esta página
+      total = skip + itemsRaw.length;
+    } else {
+      const [dbTotal, dbItems] = await Promise.all([
+        prisma.product.count({ where: baseWhere }),
+        prisma.product.findMany({
+          where: baseWhere,
+          skip,
+          take: perPage,
+          orderBy,
+          include: {
+            images: { select: { key: true } },
+            productTags: { select: { tagId: true } },
+            variants: {
+              where: { active: true },
+              orderBy: { sortOrder: 'asc' },
+              select: {
+                id: true,
+                label: true,
+                price: true,
+                priceOriginal: true,
+                sku: true,
+                stock: true,
+                sortOrder: true,
+                active: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+      total = dbTotal;
+      itemsRaw = dbItems as ProductRow[];
+    }
 
     const typedItems = itemsRaw as (ProductRow & {
       hasVariants?: boolean;
@@ -457,7 +496,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       page,
       perPage,
-      total, // total de la query base (sin estado)
+      total, // total de la query base (sin estado o aproximado si noMeta=1)
       pageCount,
       filteredTotal, // total luego de aplicar estado + post-filtros
       filteredPageCount,
