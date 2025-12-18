@@ -1,4 +1,4 @@
-// app/(public)/landing/page.tsx
+// app/(public)/landing/page.tsx 
 export const revalidate = 60; // cache incremental
 
 import InfoBar from "@/components/landing/InfoBar";
@@ -375,7 +375,17 @@ export default async function LandingPage() {
   ];
 
   return (
-    <>
+    <main className="bg-black text-[#00a650] min-h-screen">
+      <style dangerouslySetInnerHTML={{ __html: `
+        /* Forzamos el color verde en botones y links de componentes externos */
+        button, a { color: #00a650 !important; }
+        .bg-primary, button[type="submit"], .btn-primary { 
+          background-color: #00a650 !important; 
+          color: black !important; 
+        }
+        h1, h2, h3, h4, span, p { color: #00a650; }
+      `}} />
+      
       <InfoBar />
       <Header />
       <MainNav />
@@ -385,36 +395,38 @@ export default async function LandingPage() {
         <HeroSlider items={banners} />
       </div>
 
-      {/* Categorías con rotación diaria */}
-      <CategoriesRow cats={catsDaily} />
+      <div className="py-12 space-y-24">
+        {/* Categorías con rotación diaria */}
+        <CategoriesRow cats={catsDaily} />
 
-      {/* Ofertas (rotación diaria) */}
-      <OffersCarousel
-        items={offersDailyForCarousel as any}
-        visible={3}
-        rotationMs={6000}
-      />
+        {/* Ofertas (rotación diaria) */}
+        <OffersCarousel
+          items={offersDailyForCarousel as any}
+          visible={3}
+          rotationMs={6000}
+        />
 
-      {/* Más vendidos (catálogo liviano, con imágenes y precios) */}
-      <BestSellersGrid items={catalog as any} />
+        {/* Más vendidos (catálogo liviano, con imágenes y precios) */}
+        <BestSellersGrid items={catalog as any} />
 
-      {/* Recetas populares */}
-      <RecipesPopular />
+        {/* Recetas populares */}
+        <RecipesPopular />
 
-      {/* Testimonios + badges */}
-      <TestimonialsBadges />
+        {/* Testimonios + badges */}
+        <TestimonialsBadges />
 
-      {/* Mapa + horarios con múltiples sucursales */}
-      <MapHours
-        locations={branches.filter(
-          (b) => b.name === "Las Piedras" || b.name === "La Paz"
-        )}
-      />
+        {/* Mapa + horarios con múltiples sucursales */}
+        <MapHours
+          locations={branches.filter(
+            (b) => b.name === "Las Piedras" || b.name === "La Paz"
+          )}
+        />
 
-      {/* Sello sustentable */}
-      <Sustainability />
+        {/* Sello sustentable */}
+        <Sustainability />
+      </div>
 
       <WhatsAppFloat />
-    </>
+    </main>
   );
 }
