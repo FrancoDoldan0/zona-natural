@@ -9,11 +9,16 @@ export default function RecipesPopular() {
   const top = RECIPES.slice(0, 3);
 
   return (
-    <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-8">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl md:text-2xl font-semibold">Recetas populares</h2>
-          <Link href="/recetas" className="text-sm text-emerald-800 hover:underline">
+    <section className="bg-black">
+      <div className="mx-auto max-w-7xl px-4 py-12">
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-xl md:text-2xl font-semibold text-white">
+            Recetas populares
+          </h2>
+          <Link
+            href="/recetas"
+            className="text-sm text-emerald-400 hover:underline"
+          >
             Ver todas »
           </Link>
         </div>
@@ -23,9 +28,9 @@ export default function RecipesPopular() {
             <Link
               key={r.slug}
               href={`/recetas/${r.slug}`}
-              className="block rounded-2xl ring-1 ring-emerald-100 bg-white overflow-hidden hover:shadow transition-shadow"
+              className="block rounded-2xl ring-1 ring-emerald-900/40 bg-zinc-900 overflow-hidden hover:shadow transition-shadow"
             >
-              <div className="relative bg-emerald-50 aspect-[16/10]">
+              <div className="relative bg-zinc-800 aspect-[16/10]">
                 <img
                   src={r.img || FALLBACK_IMG}
                   alt={r.heroAlt || r.title}
@@ -35,8 +40,10 @@ export default function RecipesPopular() {
                 />
               </div>
               <div className="p-4">
-                <h3 className="font-medium">{r.title}</h3>
-                <p className="text-sm text-gray-600 line-clamp-2">{r.desc}</p>
+                <h3 className="font-medium text-white">{r.title}</h3>
+                <p className="text-sm text-zinc-400 line-clamp-2">
+                  {r.desc}
+                </p>
               </div>
             </Link>
           ))}
