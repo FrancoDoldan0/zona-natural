@@ -62,7 +62,7 @@ export default function BestSellersGrid({ items }: { items: Product[] }) {
   if (!picked.length) return null;
 
   return (
-    <section ref={ref} className="bg-white" aria-label="Más vendidos">
+    <section ref={ref} className="bg-black" aria-label="Más vendidos">
       <div className="mx-auto max-w-7xl px-4 py-8">
         <div className="flex items-baseline justify-between">
           <h2 className="text-xl md:text-2xl font-semibold reveal in">Más vendidos</h2>
