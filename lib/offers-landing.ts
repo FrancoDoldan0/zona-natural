@@ -54,12 +54,20 @@ export type LandingOffer = {
   }[];
 };
 
+type GetAllOffersOptions = {
+  /** 
+   * Si true (DEFAULT): incluye productos con variantes en descuento manual.
+   * Si false: solo productos que tengan una Offer explícita en /admin/ofertas.
+   */
+  includeVariantDiscounts?: boolean;
+};
+
 /**
  * Devuelve TODOS los productos en oferta para usar tanto en:
- *  - landing ("Mejores ofertas")
+ *  - landing (si se quiere el pool completo)
  *  - /ofertas
  *
- * Incluye:
+ * Incluye (por defecto):
  *  - Productos con Offer.productId activo
  *  - Productos con variantes donde priceOriginal > price
  *
@@ -67,7 +75,12 @@ export type LandingOffer = {
  *  - primero image.url (legacy)
  *  - si no, image.key con publicR2Url(key)
  */
-export async function getAllOffersRaw(): Promise<LandingOffer[]> {
+export async function getAllOffersRaw(
+  options?: GetAllOffersOptions
+): Promise<LandingOffer[]> {
+  const includeVariantDiscounts =
+    options?.includeVariantDiscounts ?? true;
+
   const now = new Date();
 
   // 1) Productos con Offer.productId activo (ventana de fechas)
@@ -92,27 +105,30 @@ export async function getAllOffersRaw(): Promise<LandingOffer[]> {
   }
 
   // 2) Productos con variantes con descuento manual (priceOriginal > price)
-  const variantDiscounts = await prisma.productVariant.findMany({
-    where: {
-      active: true,
-      price: { not: null },
-      priceOriginal: { not: null },
-    },
-    select: {
-      productId: true,
-      price: true,
-      priceOriginal: true,
-    },
-  });
+  //    SOLO si includeVariantDiscounts = true (para /ofertas y usos generales).
+  if (includeVariantDiscounts) {
+    const variantDiscounts = await prisma.productVariant.findMany({
+      where: {
+        active: true,
+        price: { not: null },
+        priceOriginal: { not: null },
+      },
+      select: {
+        productId: true,
+        price: true,
+        priceOriginal: true,
+      },
+    });
 
-  for (const v of variantDiscounts) {
-    if (
-      v.productId != null &&
-      typeof v.price === "number" &&
-      typeof v.priceOriginal === "number" &&
-      v.price < v.priceOriginal
-    ) {
-      productIds.add(v.productId);
+    for (const v of variantDiscounts) {
+      if (
+        v.productId != null &&
+        typeof v.price === "number" &&
+        typeof v.priceOriginal === "number" &&
+        v.price < v.priceOriginal
+      ) {
+        productIds.add(v.productId);
+      }
     }
   }
 
@@ -283,4 +299,28 @@ export async function getAllOffersRaw(): Promise<LandingOffer[]> {
   const discounted = mapped.filter((i) => i.hasDiscount);
 
   return discounted;
+}
+
+/**
+ * Versión optimizada para la landing:
+ * - Solo usa productos que tengan una Offer explícita en /admin/ofertas
+ *   (es decir, Offer.productId no nulo y dentro de la ventana de fechas).
+ * - No incluye los "pseudo-descuentos" por variantes manuales.
+ * - Limita el resultado a `limit` ítems (por defecto 9).
+ */
+export async function getLandingOffersExplicit(
+  limit: number = 9
+): Promise<LandingOffer[]> {
+  // Usamos la misma lógica de precios y mapeo que getAllOffersRaw,
+  // pero sin sumar productos por variantes en descuento.
+  const allExplicit = await getAllOffersRaw({
+    includeVariantDiscounts: false,
+  });
+
+  if (!allExplicit.length) return [];
+
+  if (limit <= 0) return allExplicit;
+
+  // getAllOffersRaw ya viene ordenado por id desc, slice alcanza.
+  return allExplicit.slice(0, limit);
 }

@@ -1,5 +1,5 @@
-// app/(public)/landing/page.tsx 
-export const revalidate = 60; // cache incremental
+// app/(public)/landing/page.tsx
+export const revalidate = 300; // cache incremental (antes 60)
 
 import InfoBar from "@/components/landing/InfoBar";
 import Header from "@/components/landing/Header";
@@ -8,45 +8,60 @@ import HeroSlider, { type BannerItem } from "@/components/landing/HeroSlider";
 import CategoriesRow from "@/components/landing/CategoriesRow";
 import OffersCarousel from "@/components/landing/OffersCarousel";
 import BestSellersGrid from "@/components/landing/BestSellersGrid";
-import RecipesPopular from "@/components/landing/RecipesPopular";
-import TestimonialsBadges from "@/components/landing/TestimonialsBadges";
-import MapHours, { type Branch } from "@/components/landing/MapHours";
+// estos 4 ahora se cargan con dynamic (sin ssr:false)
+import dynamic from "next/dynamic";
+import type { Branch } from "@/components/landing/MapHours";
 import Sustainability from "@/components/landing/Sustainability";
-import WhatsAppFloat from "@/components/landing/WhatsAppFloat";
 import { headers } from "next/headers";
-import { getAllOffersRaw } from "@/lib/offers-landing";
+import { getAllOffersRaw, type LandingOffer } from "@/lib/offers-landing";
 
 /** Cantidad de ofertas que usamos en el carrusel de la landing */
-const OFFERS_COUNT = 24;
+const OFFERS_COUNT = 9;
+
+/* ───────── CARGA DIFERIDA DE BLOQUES PESADOS ───────── */
+
+const RecipesPopularLazy = dynamic(
+  () => import("@/components/landing/RecipesPopular"),
+  { loading: () => null }
+);
+
+const TestimonialsBadgesLazy = dynamic(
+  () => import("@/components/landing/TestimonialsBadges"),
+  { loading: () => null }
+);
+
+const MapHoursLazy = dynamic(
+  () => import("@/components/landing/MapHours"),
+  { loading: () => null }
+);
+
+const WhatsAppFloatLazy = dynamic(
+  () => import("@/components/landing/WhatsAppFloat"),
+  { loading: () => null }
+);
 
 /* ───────── helpers comunes ───────── */
 async function abs(path: string) {
   if (path.startsWith("http")) return path;
 
-  // Si está seteada la base pública, la usamos.
   const base = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   if (base) return `${base}${path}`;
 
-  // En SSR/hidratación puede que no haya Request context; evitamos tirar error.
   try {
     const h = await headers();
     const proto = h.get("x-forwarded-proto") ?? "https";
     const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
     if (host) return `${proto}://${host}${path}`;
   } catch {
-    // sin headers(): devolvemos ruta relativa (Next la resuelve en runtime)
+    // SSR sin headers(): devolvemos ruta relativa
   }
-
   return path;
 }
 
-async function safeJson<T>(
-  url: string,
-  init?: RequestInit
-): Promise<T | null> {
+async function safeJson<T>(url: string, init?: RequestInit): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      next: { revalidate: 60 }, // deja que Next cachee por defecto
+      next: { revalidate: 300 }, // antes 60
       ...init,
     });
     if (!res.ok) return null;
@@ -88,67 +103,22 @@ type Cat = {
   cover?: any;
 };
 
-// Este tipo está pensado para ser compatible con ProductCard / BestSellersGrid
+// Tipo compatible con ProductCard / BestSellersGrid
 type ProductForGrid = {
   id: number;
   name: string;
   slug: string;
-  // BestSellersGrid espera image como string | null | undefined
   image?: string | null;
   cover?: string | null;
-  // precios ya calculados por la API pública
-  price?: number | null; // usamos priceFinal
-  originalPrice?: number | null; // usamos priceOriginal
+  price?: number | null;
+  originalPrice?: number | null;
   status?: string | null;
-  // campos extra opcionales que ProductCard ignora si no existen
   appliedOffer?: any | null;
   offer?: any | null;
 };
 
-/* ───────── helpers específicos de ofertas ───────── */
+/* ───────── data fetchers básicos ───────── */
 
-// Devuelve la primera URL de imagen válida que encuentre en la oferta
-function getOfferImageUrl(p: any): string | null {
-  const take = (v: any): string | null =>
-    typeof v === "string" && v.trim().length ? v : null;
-
-  const candidates: any[] = [
-    p.cover,
-    p.image,
-    p.imageUrl,
-    p.product?.cover,
-    p.product?.image,
-    p.product?.imageUrl,
-    p.product?.image?.url,
-    p.variant?.cover,
-    p.variant?.image,
-    p.variant?.imageUrl,
-    p.variant?.image?.url,
-  ];
-
-  for (const c of candidates) {
-    const val = take(c);
-    if (val) return val;
-  }
-
-  // arrays de imágenes
-  if (Array.isArray(p.images) && p.images[0]?.url) {
-    const val = take(p.images[0].url);
-    if (val) return val;
-  }
-  if (Array.isArray(p.product?.images) && p.product.images[0]?.url) {
-    const val = take(p.product.images[0].url);
-    if (val) return val;
-  }
-  if (Array.isArray(p.variant?.images) && p.variant.images[0]?.url) {
-    const val = take(p.variant.images[0].url);
-    if (val) return val;
-  }
-
-  return null;
-}
-
-/* ───────── data fetchers ───────── */
 async function getBanners(): Promise<BannerItem[]> {
   const data = await safeJson<any>(await abs("/api/public/banners"));
   const list = Array.isArray(data) ? data : data?.items ?? [];
@@ -178,29 +148,32 @@ async function getCategories(): Promise<Cat[]> {
   return list as Cat[];
 }
 
-// Catálogo liviano para "Más vendidos"
-async function getCatalogForGrid(perPage = 96): Promise<ProductForGrid[]> {
-  const data = await safeJson<any>(
-    await abs(
-      `/api/public/catalogo?status=all&perPage=${perPage}&sort=-id`
-    )
+/**
+ * Catálogo liviano para "Más vendidos".
+ * Usa el endpoint general /api/public/catalogo, que ya resuelve imágenes y precios.
+ */
+async function getCatalogForGrid(perPage = 200): Promise<ProductForGrid[]> {
+  const url = await abs(
+    `/api/public/catalogo?status=active&perPage=${perPage}&sort=-id`
   );
+  const data = await safeJson<any>(url);
 
   const items: any[] =
     (data as any)?.items ??
     (data as any)?.data ??
     (data as any)?.products ??
-    (data as any)?.results ??
-    [];
+    (Array.isArray(data) ? data : []);
 
   if (!Array.isArray(items) || !items.length) return [];
 
   return items.map((p: any) => {
-    // La API ya nos da cover con URL pública (R2)
     const cover: string | null =
-      typeof p.cover === "string" ? p.cover : null;
+      typeof p.cover === "string"
+        ? p.cover
+        : typeof p.imageUrl === "string"
+        ? p.imageUrl
+        : null;
 
-    // priceFinal / priceOriginal ya vienen calculados en /api/public/catalogo
     const priceFinal =
       typeof p.priceFinal === "number" ? p.priceFinal : null;
     const priceOriginal =
@@ -211,99 +184,96 @@ async function getCatalogForGrid(perPage = 96): Promise<ProductForGrid[]> {
       name: String(p.name ?? ""),
       slug: String(p.slug ?? ""),
       cover,
-      image: cover, // 👈 lo que usa ProductCard
+      image: cover,
       price: priceFinal,
       originalPrice: priceOriginal,
       status: p.status ?? null,
-      appliedOffer: p.appliedOffer ?? null,
+      appliedOffer: p.offer ?? p.appliedOffer ?? null,
       offer: p.offer ?? null,
+    } satisfies ProductForGrid;
+  });
+}
+
+/**
+ * Ofertas para la landing
+ */
+async function getOffersForLanding(
+  offersAllRaw: LandingOffer[]
+): Promise<ProductForGrid[]> {
+  if (!offersAllRaw || !offersAllRaw.length) return [];
+
+  const ids = offersAllRaw
+    .map((o) => o.id)
+    .filter((id): id is number => typeof id === "number");
+
+  if (!ids.length) return [];
+
+  const url = await abs(
+    `/api/public/catalogo?status=all&perPage=${ids.length}&ids=${ids.join(",")}`
+  );
+  const data = await safeJson<any>(url);
+
+  const items: any[] =
+    (data as any)?.items ??
+    (data as any)?.data ??
+    (data as any)?.products ??
+    (Array.isArray(data) ? data : []);
+
+  if (!Array.isArray(items) || !items.length) return [];
+
+  return items.map((p: any) => {
+    const cover: string | null =
+      typeof p.cover === "string"
+        ? p.cover
+        : typeof p.imageUrl === "string"
+        ? p.imageUrl
+        : null;
+
+    const priceFinal =
+      typeof p.priceFinal === "number" ? p.priceFinal : null;
+    const priceOriginal =
+      typeof p.priceOriginal === "number" ? p.priceOriginal : null;
+
+    const offerData = offersAllRaw.find((o) => o.id === p.id);
+
+    return {
+      id: Number(p.id),
+      name: String(p.name ?? ""),
+      slug: String(p.slug ?? ""),
+      cover,
+      image: cover,
+      price: priceFinal,
+      originalPrice:
+        priceOriginal ??
+        (typeof offerData?.priceOriginal === "number"
+          ? offerData.priceOriginal
+          : null),
+      status: p.status ?? null,
+      appliedOffer: offerData?.offer ?? null,
+      offer: offerData?.offer ?? null,
     } satisfies ProductForGrid;
   });
 }
 
 /* ───────── página ───────── */
 export default async function LandingPage() {
-  const [banners, cats, offersAllRaw, catalog] = await Promise.all([
-    getBanners(),
-    getCategories(),
-    getAllOffersRaw(), // pool completo de ofertas normalizadas (con cover y precios)
-    getCatalogForGrid(96),
-  ]);
-
-  // Normalizamos las ofertas para asegurarnos de que SIEMPRE tengan:
-  // cover (string), image (string) e imageUrl (string)
-  const offersAll = (offersAllRaw || []).map((p: any) => {
-    const primary = getOfferImageUrl(p);
-
-    return {
-      ...p,
-      cover: primary ?? (typeof p.cover === "string" ? p.cover : null),
-      imageUrl:
-        primary ?? (typeof p.imageUrl === "string" ? p.imageUrl : null),
-      image: primary ?? p.image ?? null,
-    };
-  });
-
-  // Semilla diaria estable (AAAA-MM-DD)
   const seed = new Date().toISOString().slice(0, 10);
 
-  // Rotación diaria de categorías
+  const [banners, cats, catalog, offersAllRaw] = await Promise.all([
+    getBanners(),
+    getCategories(),
+    getCatalogForGrid(200),
+    getAllOffersRaw(),
+  ]);
+
   const catsDaily = shuffleSeed(cats, `${seed}:cats`).slice(0, 8);
 
-  // Rotación diaria de ofertas (pool completo → mostramos OFFERS_COUNT)
-  const offersDailyRaw = shuffleSeed(
-    offersAll,
+  const offersPool = await getOffersForLanding(offersAllRaw || []);
+  const offersDaily = shuffleSeed(
+    offersPool,
     `${seed}:offers`
   ).slice(0, OFFERS_COUNT);
 
-  // Mapa rápido de catálogo por id (para reaprovechar imagen/precios que ya funcionan)
-  const catalogById = new Map<number, ProductForGrid>();
-  for (const item of catalog) {
-    catalogById.set(item.id, item);
-  }
-
-  // Adaptamos las ofertas al formato que espera ProductCard,
-  // usando imagen/precios del catálogo cuando estén disponibles.
-  const offersDailyForCarousel: ProductForGrid[] = offersDailyRaw.map(
-    (p: any) => {
-      const fromCatalog = catalogById.get(Number(p.id));
-
-      const image =
-        (fromCatalog?.image as string | null | undefined) ??
-        getOfferImageUrl(p);
-
-      const priceFinal =
-        typeof p.priceFinal === "number"
-          ? p.priceFinal
-          : typeof p.price === "number"
-          ? p.price
-          : fromCatalog?.price ??
-            null;
-
-      const priceOriginal =
-        typeof p.priceOriginal === "number"
-          ? p.priceOriginal
-          : typeof p.originalPrice === "number"
-          ? p.originalPrice
-          : fromCatalog?.originalPrice ??
-            null;
-
-      return {
-        id: Number(p.id),
-        name: String(p.name ?? fromCatalog?.name ?? ""),
-        slug: String(p.slug ?? fromCatalog?.slug ?? ""),
-        cover: image ?? fromCatalog?.cover ?? null,
-        image: image ?? fromCatalog?.image ?? null,
-        price: priceFinal,
-        originalPrice: priceOriginal,
-        status: p.status ?? fromCatalog?.status ?? null,
-        appliedOffer: p.appliedOffer ?? fromCatalog?.appliedOffer ?? null,
-        offer: p.offer ?? fromCatalog?.offer ?? null,
-      };
-    }
-  );
-
-  // ───────── Sucursales (tabs) ─────────
   const hours: [string, string][] = [
     ["Lun–Vie", "09:00–19:00"],
     ["Sábado", "09:00–13:00"],
@@ -375,58 +345,38 @@ export default async function LandingPage() {
   ];
 
   return (
-    <main className="bg-black text-[#00a650] min-h-screen">
-      <style dangerouslySetInnerHTML={{ __html: `
-        /* Forzamos el color verde en botones y links de componentes externos */
-        button, a { color: #00a650 !important; }
-        .bg-primary, button[type="submit"], .btn-primary { 
-          background-color: #00a650 !important; 
-          color: black !important; 
-        }
-        h1, h2, h3, h4, span, p { color: #00a650; }
-      `}} />
-      
+    <div className="bg-black text-emerald-400 min-h-screen">
       <InfoBar />
       <Header />
       <MainNav />
 
-      {/* HERO full-bleed */}
       <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen overflow-hidden">
         <HeroSlider items={banners} />
       </div>
 
-      <div className="py-12 space-y-24">
-        {/* Categorías con rotación diaria */}
-        <CategoriesRow cats={catsDaily} />
+      <CategoriesRow cats={catsDaily} />
 
-        {/* Ofertas (rotación diaria) */}
-        <OffersCarousel
-          items={offersDailyForCarousel as any}
-          visible={3}
-          rotationMs={6000}
-        />
+      <OffersCarousel
+        items={offersDaily as any}
+        visible={3}
+        rotationMs={6000}
+      />
 
-        {/* Más vendidos (catálogo liviano, con imágenes y precios) */}
-        <BestSellersGrid items={catalog as any} />
+      <BestSellersGrid items={catalog as any} />
 
-        {/* Recetas populares */}
-        <RecipesPopular />
+      <RecipesPopularLazy />
 
-        {/* Testimonios + badges */}
-        <TestimonialsBadges />
+      <TestimonialsBadgesLazy />
 
-        {/* Mapa + horarios con múltiples sucursales */}
-        <MapHours
-          locations={branches.filter(
-            (b) => b.name === "Las Piedras" || b.name === "La Paz"
-          )}
-        />
+      <MapHoursLazy
+        locations={branches.filter(
+          (b) => b.name === "Las Piedras" || b.name === "La Paz"
+        )}
+      />
 
-        {/* Sello sustentable */}
-        <Sustainability />
-      </div>
+      <Sustainability />
 
-      <WhatsAppFloat />
-    </main>
+      <WhatsAppFloatLazy />
+    </div>
   );
 }

@@ -1,62 +1,102 @@
 // lib/catalog-landing.ts
-import { createPrisma } from "@/lib/prisma-edge";
-import { publicR2Url } from "@/lib/storage";
 
-const prisma = createPrisma();
+import { PrismaClient, ProductStatus } from "@prisma/client/edge"; 
+import { withAccelerate } from "@prisma/extension-accelerate";
 
-type ProductImageRow = { key: string | null; url: string | null };
+const prisma = new PrismaClient().$extends(withAccelerate());
 
-type ProductLiteRow = {
-  id: number;
-  name: string;
-  slug: string;
-  status: string | null;
-  price: number | null;
-  imageUrl: string | null;
+// 🟢 Tipos auxiliares necesarios para el select/include
+type ProductImageRow = { key: string | null };
+
+type ProductVariantRow = {
+    price: number | null;
+    priceOriginal: number | null;
 };
 
-/**
- * Catálogo liviano para la landing:
- * - NO usa /api/public/catalogo
- * - NO hace computePricesBatch ni r2List
- * - Toma los últimos productos (simulación de "más vendidos" / destacados)
- * - Devuelve directamente imageUrl lista para usar en la UI
- */
+// 🔴 El tipo ProductLiteRow debe incluir las relaciones para el mapeo
+export type ProductLiteRow = {
+    id: number;
+    name: string;
+    slug: string;
+    status: string | null;
+    price: number | null; 
+    imageUrl: string | null;
+    // Añadimos los tipos de relaciones para que TypeScript no falle
+    images: ProductImageRow[];
+    variants: ProductVariantRow[];
+};
+
 export async function getLandingCatalog(
-  perPage = 48
+    perPage: number = 200,
+    productIds?: number[]
 ): Promise<ProductLiteRow[]> {
-  const products = await prisma.product.findMany({
-    where: {
-      // Podés ajustar este filtro si querés excluir borradores, etc.
-      // status: "ACTIVE" as any,
-    } as any,
-    orderBy: { id: "desc" },
-    take: perPage,
-    include: {
-      images: { select: { key: true, url: true } },
-    },
-  });
+    try {
+        // Utilizamos 'select' con las relaciones anidadas para mantener la consulta ligera
+        const itemsRaw = await prisma.product.findMany({
+            // ❌ LÍNEA ELIMINADA/COMENTADA: Esto desactiva la caché de Prisma para forzar una consulta fresca
+            // cacheStrategy: { ttl: 60 }, 
 
-  return products.map((p) => {
-    const imgs = (p as any).images as ProductImageRow[] | undefined;
-    const first = Array.isArray(imgs) ? imgs[0] : undefined;
+            select: {
+                id: true,
+                name: true,
+                slug: true,
+                status: true,
+                price: true,
+                
+                // 🔑 CORRECCIÓN 1: Usar 'key' en lugar de 'url' para R2
+                images: { 
+                    select: { key: true }, // La clave del archivo en R2
+                    take: 1, 
+                    orderBy: { id: "asc" }, 
+                },
+                
+                // 🔑 CORRECCIÓN 2: Incluir variantes para el cálculo correcto de precios
+                variants: { 
+                    where: { active: true },
+                    orderBy: { sortOrder: 'asc' },
+                    select: { price: true, priceOriginal: true }
+                }
+            },
+            where: {
+                id: productIds?.length ? { in: productIds } : undefined,
+                // El log de error en el deploy anterior decía que 'published' no era un ProductStatus válido.
+                // Asumimos que quieres solo los productos que están activos.
+                status: { equals: ProductStatus.ACTIVE }, 
+            },
+            take: productIds?.length ? undefined : (perPage > 0 ? perPage : undefined),
+            orderBy: { id: "asc" },
+        });
+        
+        // El casting es necesario para unificar el tipo al final
+        const items = itemsRaw as ProductLiteRow[];
 
-    let imageUrl: string | null = null;
-    if (first) {
-      if (first.url) {
-        imageUrl = first.url;
-      } else if (first.key) {
-        imageUrl = publicR2Url(first.key);
-      }
+        const publicR2Url = process.env.PUBLIC_R2_BASE_URL;
+
+        return items.map((p) => {
+            // 🔑 CORRECCIÓN 3: Usar 'key' en el mapeo en lugar de 'url'
+            const rawKey = p.images[0]?.key ?? null;
+            let imageUrl: string | null = null;
+            
+            if (rawKey && publicR2Url) {
+                imageUrl = `${publicR2Url.replace(/\/+$/, "")}/${rawKey.replace(
+                    /^\/|\/+$/,
+                    ""
+                )}`;
+            }
+            
+            return {
+                id: p.id,
+                name: p.name,
+                slug: p.slug,
+                status: p.status,
+                price: p.price,
+                imageUrl,
+                images: p.images,
+                variants: p.variants,
+            } as ProductLiteRow;
+        });
+    } catch (error) {
+        console.error("Error fetching landing catalog:", error);
+        return [];
     }
-
-    return {
-      id: p.id,
-      name: p.name,
-      slug: (p as any).slug,
-      status: (p as any).status ?? null,
-      price: (p as any).price ?? null,
-      imageUrl,
-    };
-  });
 }

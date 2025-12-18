@@ -15,6 +15,7 @@ import {
   normalizeProduct,
   type NormalizedProduct,
 } from "@/lib/product";
+import { Suspense } from "react";
 
 /* ================= helpers base ================= */
 
@@ -44,9 +45,9 @@ async function abs(path: string) {
 
 async function safeJson<T>(url: string): Promise<T | null> {
   try {
+    // Dejamos que Next maneje el cache según `revalidate`
     const res = await fetch(url, {
-      cache: "no-store",
-      next: { revalidate: 0 },
+      next: { revalidate },
     });
     if (!res.ok) return null as any;
     return (await res.json()) as T;
@@ -60,10 +61,11 @@ async function safeJson<T>(url: string): Promise<T | null> {
 type Raw = Record<string, any>;
 
 async function fetchAllOffers(): Promise<NormalizedProduct[]> {
-  // Traemos sólo productos en oferta (onSale=1)
+  // Traemos sólo productos en oferta (onSale=1), en modo "ligero" (noMeta=1)
   const url = await abs(
-    `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id`,
+    `/api/public/catalogo?perPage=500&status=all&onSale=1&sort=-id&noMeta=1`,
   );
+
   const data = await safeJson<any>(url);
 
   const raw: Raw[] =
@@ -77,8 +79,7 @@ async function fetchAllOffers(): Promise<NormalizedProduct[]> {
 
   // Filtro de seguridad: sólo donde price < originalPrice
   const offers = normalized.filter((p) => {
-    const price =
-      typeof p.price === "number" ? p.price : null;
+    const price = typeof p.price === "number" ? p.price : null;
     const orig =
       typeof p.originalPrice === "number"
         ? p.originalPrice
@@ -88,28 +89,83 @@ async function fetchAllOffers(): Promise<NormalizedProduct[]> {
 
   // Ordenamos por % de descuento (mayor primero)
   offers.sort((a, b) => {
-    const ap =
-      typeof a.price === "number" ? a.price : null;
+    const ap = typeof a.price === "number" ? a.price : null;
     const ao =
       typeof a.originalPrice === "number"
         ? a.originalPrice
         : null;
-    const bp =
-      typeof b.price === "number" ? b.price : null;
+    const bp = typeof b.price === "number" ? b.price : null;
     const bo =
       typeof b.originalPrice === "number"
         ? b.originalPrice
         : null;
 
-    const da =
-      ao && ap && ao > 0 && ap < ao ? 1 - ap / ao : 0;
-    const db =
-      bo && bp && bo > 0 && bp < bo ? 1 - bp / bo : 0;
+    const da = ao && ap && ao > 0 && ap < ao ? 1 - ap / ao : 0;
+    const db = bo && bp && bo > 0 && bp < bo ? 1 - bp / bo : 0;
 
     return db - da;
   });
 
   return offers;
+}
+
+/* ================= Skeleton de ofertas ================= */
+
+function OffersGridSkeleton() {
+  const items = Array.from({ length: 8 });
+  return (
+    <section aria-label="Listado de ofertas">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+        {items.map((_, i) => (
+          <div
+            key={i}
+            className="h-48 rounded-2xl border border-emerald-100 bg-emerald-50/60 animate-pulse"
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ================= Sección de ofertas (async, con streaming) ================= */
+
+async function OffersSection() {
+  const offers = await fetchAllOffers();
+
+  return (
+    <section aria-label="Listado de ofertas">
+      {offers.length === 0 ? (
+        <p className="text-gray-600">
+          Por ahora no hay ofertas activas. Volvé más tarde 🙂
+        </p>
+      ) : (
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+          {offers.map((p) => (
+            <ProductCard
+              key={p.id}
+              slug={p.slug}
+              title={p.title}
+              image={p.image}
+              price={
+                typeof p.price === "number"
+                  ? p.price
+                  : undefined
+              }
+              originalPrice={
+                typeof p.originalPrice === "number"
+                  ? p.originalPrice
+                  : undefined
+              }
+              outOfStock={p.outOfStock}
+              brand={p.brand ?? undefined}
+              subtitle={p.subtitle ?? undefined}
+              variants={p.variants}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 /* ================= Opiniones inline ================= */
@@ -164,9 +220,7 @@ function OpinionsStrip() {
 
 /* ================= Página Ofertas ================= */
 
-export default async function OffersPage() {
-  const offers = await fetchAllOffers();
-
+export default function OffersPage() {
   return (
     <>
       <InfoBar />
@@ -186,42 +240,13 @@ export default async function OffersPage() {
           </Link>
         </div>
 
-        {/* Layout con sidebar de “Más vendidos” */}
+        {/* Layout con sidebar de “Más vendidos” + ofertas en streaming */}
         <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr]">
           <BestSellersSidebar />
 
-          <section aria-label="Listado de ofertas">
-            {offers.length === 0 ? (
-              <p className="text-gray-600">
-                Por ahora no hay ofertas activas. Volvé más tarde 🙂
-              </p>
-            ) : (
-              <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-                {offers.map((p) => (
-                  <ProductCard
-                    key={p.id}
-                    slug={p.slug}
-                    title={p.title}
-                    image={p.image}
-                    price={
-                      typeof p.price === "number"
-                        ? p.price
-                        : undefined
-                    }
-                    originalPrice={
-                      typeof p.originalPrice === "number"
-                        ? p.originalPrice
-                        : undefined
-                    }
-                    outOfStock={p.outOfStock}
-                    brand={p.brand ?? undefined}
-                    subtitle={p.subtitle ?? undefined}
-                    variants={p.variants}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
+          <Suspense fallback={<OffersGridSkeleton />}>
+            <OffersSection />
+          </Suspense>
         </div>
 
         {/* Opiniones */}
