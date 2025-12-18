@@ -40,15 +40,18 @@ export default function CategoriesRow({ cats }: { cats: Cat[] }) {
   const list = cats.slice(0, 8);
 
   return (
-    <section ref={sectionRef} className="bg-white">
+    <section ref={sectionRef} className="bg-black text-emerald-400">
       <div className="mx-auto max-w-7xl px-4 py-12">
-        <h2 className="text-center text-2xl md:text-3xl font-semibold mb-8 reveal in">Categorías Destacadas</h2>
+        <h2 className="text-center text-2xl md:text-3xl font-semibold mb-8 reveal in">
+          Categorías Destacadas
+        </h2>
 
         <div className="flex flex-wrap items-start justify-center md:justify-between gap-x-10 gap-y-8">
           {list.map((c, i) => {
             const imgCandidate =
-              c.images?.[0]?.url ? { url: c.images[0].url } :
-              c.imageUrl ?? c.image ?? c.cover ?? null;
+              c.images?.[0]?.url
+                ? { url: c.images[0].url }
+                : c.imageUrl ?? c.image ?? c.cover ?? null;
             const src = toR2Url(imgCandidate as any);
 
             return (
@@ -59,7 +62,7 @@ export default function CategoriesRow({ cats }: { cats: Cat[] }) {
                 style={{ "--i": i } as React.CSSProperties}
                 className="reveal w-[108px] md:w-[120px] flex flex-col items-center text-center group"
               >
-                <div className="relative h-[108px] w-[108px] md:h-[120px] md:w-[120px] rounded-full ring-2 ring-emerald-200/70 overflow-hidden bg-white transition-transform group-hover:scale-[1.03]">
+                <div className="relative h-[108px] w-[108px] md:h-[120px] md:w-[120px] rounded-full ring-2 ring-emerald-500 overflow-hidden bg-black transition-transform group-hover:scale-[1.03]">
                   {src ? (
                     <img
                       src={src}
@@ -69,7 +72,7 @@ export default function CategoriesRow({ cats }: { cats: Cat[] }) {
                       decoding="async"
                     />
                   ) : (
-                    <div className="absolute inset-0 grid place-items-center bg-emerald-50 text-emerald-700 text-sm">
+                    <div className="absolute inset-0 grid place-items-center bg-emerald-900 text-emerald-300 text-sm">
                       {c.name.slice(0, 2).toUpperCase()}
                     </div>
                   )}

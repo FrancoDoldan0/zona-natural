@@ -201,7 +201,7 @@ export default function OffersCarousel({
   return (
     <section
       ref={ref}
-      className="bg-white"
+      className="bg-black"
       aria-label="Ofertas destacadas"
       onMouseEnter={() => setPlaying(false)}
       onMouseLeave={() => setPlaying(true)}
