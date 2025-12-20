@@ -50,7 +50,6 @@ export default function Header() {
       try {
         setLoadingSuggestions(true);
 
-        // pedimos un poco más (20) y después filtramos por nombre en el front
         const params = new URLSearchParams({
           q: term,
           status: "all",
@@ -72,12 +71,11 @@ export default function Header() {
         const items: Suggestion[] = Array.isArray(json?.items) ? json.items : [];
 
         const normTerm = normalize(term);
-        // 🔧 SOLO sugerencias donde el nombre contenga el término
         const byName = items.filter(
           (it) => it?.name && normalize(it.name).includes(normTerm)
         );
 
-        const final = byName.slice(0, 5); // mostramos hasta 5
+        const final = byName.slice(0, 5);
 
         setSuggestions(final);
         setSuggestionsOpen(final.length > 0);
@@ -91,7 +89,7 @@ export default function Header() {
           setLoadingSuggestions(false);
         }
       }
-    }, 250); // pequeño debounce
+    }, 250);
 
     return () => {
       clearTimeout(timer);
@@ -99,21 +97,23 @@ export default function Header() {
     };
   }, [q]);
 
-  // Cerrar sugerencias un poco después del blur para permitir clicks
   const closeSuggestionsSoon = () => {
     setTimeout(() => setSuggestionsOpen(false), 120);
   };
 
   return (
     <header
-      className={`sticky top-0 z-50 bg-white/80 supports-[backdrop-filter]:backdrop-blur-md transition-shadow ${
-        scrolled ? "shadow-sm" : ""
+      className={`sticky top-0 z-50 bg-black/80 supports-[backdrop-filter]:backdrop-blur-md transition-shadow ${
+        scrolled ? "shadow-lg shadow-black/40" : ""
       }`}
     >
-      {/* flex-wrap + gaps: evita overflow horizontal en mobile */}
       <div className="mx-auto max-w-7xl px-3 py-3 md:py-4 flex flex-wrap items-center gap-3 md:gap-5">
         {/* Logo */}
-        <Link href="/" aria-label="Zona Natural – inicio" className="shrink-0 flex items-center">
+        <Link
+          href="/"
+          aria-label="Zona Natural – inicio"
+          className="shrink-0 flex items-center"
+        >
           <img
             src="/brand/logo-zonanatural.png"
             alt="Zona Natural"
@@ -124,11 +124,10 @@ export default function Header() {
           />
         </Link>
 
-        {/* Buscador: min-w-0 evita que el contenido fuerce ancho mínimo */}
+        {/* Buscador */}
         <div className="min-w-0 flex-1">
-          {/* 🔧 <form> que navega igual que el buscador del catálogo */}
           <form
-            className="relative w-full rounded-full ring-1 ring-emerald-200 bg-white overflow-visible"
+            className="relative w-full rounded-full ring-1 ring-emerald-800/50 bg-zinc-900 overflow-visible"
             action="/catalogo"
             method="get"
             onSubmit={(e) => {
@@ -141,7 +140,7 @@ export default function Header() {
             }}
           >
             <input
-              className="block w-full min-w-0 h-11 md:h-12 rounded-full px-4 pr-14 outline-none text-sm"
+              className="block w-full min-w-0 h-11 md:h-12 rounded-full px-4 pr-14 outline-none text-sm bg-transparent text-gray-200 placeholder:text-gray-400"
               placeholder="Estoy buscando…"
               name="query"
               value={q}
@@ -150,6 +149,7 @@ export default function Header() {
               onBlur={closeSuggestionsSoon}
               aria-label="Buscar productos"
             />
+
             <button
               type="submit"
               onBlur={closeSuggestionsSoon}
@@ -161,15 +161,15 @@ export default function Header() {
 
             {/* Dropdown de sugerencias */}
             {suggestionsOpen && (
-              <div className="absolute left-0 right-0 top-full mt-1 rounded-2xl border border-emerald-100 bg-white shadow-lg max-h-80 overflow-auto z-50">
+              <div className="absolute left-0 right-0 top-full mt-1 rounded-2xl border border-emerald-900/40 bg-zinc-900 shadow-xl max-h-80 overflow-auto z-50">
                 {loadingSuggestions && !suggestions.length && (
-                  <div className="px-4 py-3 text-xs text-gray-500">
+                  <div className="px-4 py-3 text-xs text-gray-400">
                     Buscando productos…
                   </div>
                 )}
 
                 {!loadingSuggestions && !suggestions.length && (
-                  <div className="px-4 py-3 text-xs text-gray-500">
+                  <div className="px-4 py-3 text-xs text-gray-400">
                     No encontramos productos para “{q.trim()}”.
                   </div>
                 )}
@@ -186,7 +186,7 @@ export default function Header() {
                     <Link
                       key={s.id}
                       href={`/producto/${s.slug}`}
-                      className="flex items-center gap-3 px-3 py-2 hover:bg-emerald-50"
+                      className="flex items-center gap-3 px-3 py-2 hover:bg-emerald-900/20"
                       onClick={() => setSuggestionsOpen(false)}
                     >
                       {s.cover && (
@@ -198,9 +198,11 @@ export default function Header() {
                         />
                       )}
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate">{s.name}</p>
+                        <p className="text-sm font-medium truncate text-gray-200">
+                          {s.name}
+                        </p>
                         {price != null && (
-                          <p className="text-xs text-emerald-700 mt-0.5">
+                          <p className="text-xs text-emerald-400 mt-0.5">
                             ${price.toLocaleString("es-UY")}
                           </p>
                         )}
@@ -213,11 +215,11 @@ export default function Header() {
           </form>
         </div>
 
-        {/* Sobre nosotros: en mobile ocupa la línea completa; desde sm vuelve a auto */}
+        {/* Sobre nosotros */}
         <div className="w-full sm:w-auto shrink-0">
           <Link
             href="/sobre-nosotros"
-            className="w-full sm:w-auto inline-flex items-center justify-center rounded-full border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
+            className="w-full sm:w-auto inline-flex items-center justify-center rounded-full border border-emerald-700 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-900/20"
           >
             Sobre nosotros
           </Link>
