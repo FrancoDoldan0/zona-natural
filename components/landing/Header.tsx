@@ -117,7 +117,7 @@ export default function Header() {
           <img
             src="/brand/logo-zonanatural.png"
             alt="Zona Natural"
-            className="block h-12 sm:h-14 md:h-16 w-auto object-contain select-none"
+            className="block h-14 sm:h-16 md:h-20 w-auto object-contain select-none"
             loading="eager"
             decoding="async"
             draggable={false}
