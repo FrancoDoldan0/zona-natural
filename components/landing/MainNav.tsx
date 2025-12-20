@@ -1,9 +1,8 @@
-// components/landing/MainNav.tsx 
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import CartButton from "@/components/cart/CartButton"; // ← NUEVO
+import CartButton from "@/components/cart/CartButton";
 
 type Subcat = { id: number; name: string; slug?: string };
 type Cat = {
@@ -26,7 +25,11 @@ function useCategories() {
           headers: { Accept: "application/json" },
         });
         const json: any = res.ok ? await res.json().catch(() => ({})) : {};
-        const list: any[] = Array.isArray(json?.items) ? json.items : Array.isArray(json) ? json : [];
+        const list: any[] = Array.isArray(json?.items)
+          ? json.items
+          : Array.isArray(json)
+          ? json
+          : [];
         if (!alive) return;
         const norm: Cat[] = list.map((c: any) => ({
           id: Number(c?.id),
@@ -39,7 +42,9 @@ function useCategories() {
         setCats([]);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
   return { cats };
 }
@@ -50,7 +55,6 @@ export default function MainNav() {
   const [open, setOpen] = useState(false);
   const [activeCatId, setActiveCatId] = useState<number | null>(null);
 
-  // ── Estado para animación (mantiene el menú montado durante el "exit")
   const [menuRender, setMenuRender] = useState(false);
   const [menuIn, setMenuIn] = useState(false);
   const TRANS_MS = 180;
@@ -58,7 +62,6 @@ export default function MainNav() {
   useEffect(() => {
     if (open) {
       setMenuRender(true);
-      // esperar al siguiente frame para agregar clases "in"
       const t = requestAnimationFrame(() => setMenuIn(true));
       return () => cancelAnimationFrame(t);
     } else {
@@ -81,9 +84,10 @@ export default function MainNav() {
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const openNow = () => {
-    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+    if (closeTimer.current) clearTimeout(closeTimer.current);
     setOpen(true);
   };
+
   const scheduleClose = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
     closeTimer.current = setTimeout(() => {
@@ -102,7 +106,7 @@ export default function MainNav() {
   }, []);
 
   return (
-    <div className="w-full border-b border-emerald-100 bg-white">
+    <div className="w-full bg-black text-white">
       <div className="mx-auto max-w-7xl px-3 py-2 flex items-center gap-4 text-sm">
         <div
           ref={rootRef}
@@ -111,8 +115,8 @@ export default function MainNav() {
           onMouseLeave={scheduleClose}
         >
           <button
-            className="rounded-md bg-emerald-50 px-3 py-1 ring-1 ring-emerald-200 hover:bg-emerald-100"
-            onClick={() => (open ? setOpen(false) : setOpen(true))}
+            className="rounded-md bg-neutral-900 px-3 py-1 ring-1 ring-neutral-700 hover:bg-neutral-800"
+            onClick={() => setOpen(!open)}
             aria-haspopup="menu"
             aria-expanded={open}
           >
@@ -121,12 +125,16 @@ export default function MainNav() {
 
           {menuRender && (
             <div
-              className={
-                // Animación: fade+scale+slide con Tailwind (sin libs)
-                `absolute left-0 top-full w-[min(92vw,820px)] z-40 rounded-xl border border-emerald-100 bg-white shadow-lg mt-2
-                 transition-all duration-200 ease-out will-change-transform
-                 ${menuIn ? "opacity-100 translate-y-0 scale-100" : "opacity-0 -translate-y-1 scale-[0.98] pointer-events-none"}`
-              }
+              className={`
+                absolute left-0 top-full w-[min(92vw,820px)] z-40 rounded-xl
+                border border-neutral-800 bg-neutral-950 shadow-xl mt-2
+                transition-all duration-200 ease-out will-change-transform
+                ${
+                  menuIn
+                    ? "opacity-100 translate-y-0 scale-100"
+                    : "opacity-0 -translate-y-1 scale-[0.98] pointer-events-none"
+                }
+              `}
               role="menu"
               onMouseEnter={openNow}
               onMouseLeave={scheduleClose}
@@ -140,21 +148,21 @@ export default function MainNav() {
                         onMouseEnter={() => setActiveCatId(c.id)}
                         onFocus={() => setActiveCatId(c.id)}
                         onClick={() => setActiveCatId(c.id)}
-                        className={`flex w-full items-center justify-between px-4 py-2 text-left hover:bg-emerald-50 ${
-                          activeCatId === c.id ? "bg-emerald-50" : ""
+                        className={`flex w-full items-center justify-between px-4 py-2 text-left hover:bg-neutral-800 ${
+                          activeCatId === c.id ? "bg-neutral-800" : ""
                         }`}
                       >
                         <span className="truncate">{c.name}</span>
-                        <span className="ml-3 text-xs text-emerald-700">›</span>
+                        <span className="ml-3 text-xs text-neutral-400">›</span>
                       </button>
                     </li>
                   ))}
                   {!cats.length && (
-                    <li className="px-4 py-3 text-gray-500">Sin categorías</li>
+                    <li className="px-4 py-3 text-neutral-400">Sin categorías</li>
                   )}
                 </ul>
 
-                <div className="md:col-span-2 border-t md:border-t-0 md:border-l border-emerald-100 p-3">
+                <div className="md:col-span-2 border-t md:border-t-0 md:border-l border-neutral-800 p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <div className="font-semibold">
                       {activeCat?.name ?? "Subcategorías"}
@@ -162,7 +170,7 @@ export default function MainNav() {
                     {!!activeCat && (
                       <Link
                         href={`/catalogo?categoryId=${activeCat.id}`}
-                        className="text-emerald-700 hover:underline"
+                        className="text-neutral-300 hover:underline"
                       >
                         Ver todo
                       </Link>
@@ -173,27 +181,15 @@ export default function MainNav() {
                     {(activeCat?.subcats ??
                       activeCat?.subcategories ??
                       activeCat?.children ??
-                      []
-                    ).map((s) => (
+                      []).map((s) => (
                       <Link
                         key={s.id}
                         href={`/catalogo?categoryId=${activeCat!.id}&subcategoryId=${s.id}`}
-                        className="rounded-md px-3 py-2 hover:bg-emerald-50"
+                        className="rounded-md px-3 py-2 hover:bg-neutral-800"
                       >
                         {s.name}
                       </Link>
                     ))}
-                    {!!activeCat &&
-                      !(activeCat.subcats?.length ||
-                        activeCat.subcategories?.length ||
-                        activeCat.children?.length) && (
-                        <Link
-                          href={`/catalogo?categoryId=${activeCat.id}`}
-                          className="rounded-md px-3 py-2 hover:bg-emerald-50"
-                        >
-                          Ver productos de {activeCat.name}
-                        </Link>
-                      )}
                   </div>
                 </div>
               </div>
@@ -205,12 +201,10 @@ export default function MainNav() {
           Tienda
         </Link>
 
-        {/* ✅ Corregido: ahora usa Link a /recetas */}
         <Link href="/recetas" className="hover:underline">
           Recetas
         </Link>
 
-        {/* Carrito al extremo derecho */}
         <div className="ml-auto">
           <CartButton />
         </div>
