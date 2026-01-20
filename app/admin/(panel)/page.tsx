@@ -201,7 +201,6 @@ async function getProductOffersCount(): Promise<number> {
   try {
     const raw = await fetchProductOffersRaw();
 
-    // No necesitamos nombre ni slug, solo precio y precio original
     const normalized = raw.map(
       (r) => normalizeProduct(r) as PriceLike,
     );
@@ -223,7 +222,6 @@ async function getProductOffersCount(): Promise<number> {
 /* ───────── Página ───────── */
 
 export default async function AdminHome() {
-  // Guardia de login
   const store = await cookies();
   const token =
     store.get('admin_token')?.value ??
@@ -253,7 +251,6 @@ export default async function AdminHome() {
 
   const totalCategories = categories.length;
 
-  // Ofertas manuales activas (por fecha)
   const now = Date.now();
   const activeManualOffers = manualOffers.filter((o) => {
     const start = o.startAt ? Date.parse(o.startAt) : null;
@@ -263,11 +260,8 @@ export default async function AdminHome() {
     return true;
   }).length;
 
-  // Totales para la tarjeta
-  const totalOffers =
-    manualOffers.length + productOffersCount;
-  const activeOffers =
-    activeManualOffers + productOffersCount;
+  const totalOffers = manualOffers.length + productOffersCount;
+  const activeOffers = activeManualOffers + productOffersCount;
 
   const normBanners = banners.map((b) => ({
     ...b,
@@ -338,28 +332,16 @@ export default async function AdminHome() {
           Acciones rápidas
         </span>
         <div className="flex flex-wrap gap-2">
-          <Link
-            href="/admin/productos"
-            className="inline-flex items-center rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-white"
-          >
+          <Link href="/admin/productos" className="inline-flex items-center rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-white">
             + Nuevo producto
           </Link>
-          <Link
-            href="/admin/ofertas"
-            className="inline-flex items-center rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-white"
-          >
+          <Link href="/admin/ofertas" className="inline-flex items-center rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-white">
             + Nueva oferta
           </Link>
-          <Link
-            href="/admin/banners"
-            className="inline-flex items-center rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-white"
-          >
+          <Link href="/admin/banners" className="inline-flex items-center rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-white">
             + Nuevo banner
           </Link>
-          <Link
-            href="/admin/uploads"
-            className="inline-flex items-center rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-white"
-          >
+          <Link href="/admin/uploads" className="inline-flex items-center rounded-full border border-gray-300 px-3 py-1 text-xs hover:bg-white">
             Subir imagen/archivo
           </Link>
         </div>
@@ -367,7 +349,6 @@ export default async function AdminHome() {
 
       {/* Secciones + actividad / estado */}
       <section className="grid gap-6 lg:grid-cols-[2fr_1.4fr]">
-        {/* Secciones */}
         <div>
           <h2 className="mb-2 text-sm font-semibold text-gray-700">
             Secciones del panel
@@ -386,7 +367,6 @@ export default async function AdminHome() {
           </div>
         </div>
 
-        {/* Columna derecha */}
         <div className="space-y-4">
           {/* Actividad reciente */}
           <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -396,10 +376,7 @@ export default async function AdminHome() {
             {recent.length ? (
               <ul className="space-y-1.5 text-sm">
                 {recent.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center justify-between gap-2"
-                  >
+                  <li key={p.id} className="flex items-center justify-between gap-2">
                     <div className="min-w-0 flex-1 truncate">
                       <span className="truncate font-medium">{p.name}</span>
                       <span className="ml-1 text-xs text-gray-500">#{p.id}</span>
@@ -448,13 +425,26 @@ export default async function AdminHome() {
               </span>
             </div>
           </div>
+
+          {/* Contacto desarrollador */}
+          <div className="rounded-xl border border-yellow-300 bg-yellow-50 p-4 text-sm">
+            <h2 className="mb-1 font-semibold text-yellow-800">
+              Soporte técnico / Desarrollador
+            </h2>
+            <p className="text-yellow-800">
+              Ante cualquier problema técnico del sistema, contactarse con el desarrollador.
+            </p>
+            <a
+              href="https://wa.me/59892307404"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block font-medium text-green-700 underline"
+            >
+              WhatsApp: 092 307 404 – Franco Doldan
+            </a>
+          </div>
         </div>
       </section>
-
-      <p className="mt-4 text-xs text-gray-400">
-        Nota: la protección real de rutas la cubren el <code>middleware</code> y el{' '}
-        <code>layout</code> de /admin.
-      </p>
     </main>
   );
 }
